@@ -1,20 +1,5 @@
 # Design Review: Personal Knowledge Base / Life-in-Embeddings
 
-## Context on who's asking
-
-I'm a serving SRE at a company with ~3B daily active users. My team runs the web
-index, the knowledge graph, and the personalization layer for one of our frontier
-model products — populated primarily from search history and behavioral signals.
-
-So I know how these systems work at scale. I'm now trying to build a personal
-version: one person, one machine, local LLMs, no cloud. The irony is that I help
-serve personalization to billions and have none for myself.
-
-**Don't explain what a knowledge graph is. Engage at the level of someone who
-runs one in production.**
-
----
-
 ## The Vision
 
 A fully local system that:
