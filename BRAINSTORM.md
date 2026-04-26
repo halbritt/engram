@@ -1,28 +1,38 @@
-# Design Review: Personal Knowledge Base (stash-ingest)
+# Design Review: Personal Knowledge Base / Life-in-Embeddings
 
-I'm designing a personal, fully local knowledge base that ingests my AI conversation
-history (ChatGPT, Claude, Gemini), my notes (Evernote → Obsidian), and live captures
-from any MCP-compatible tool. A consolidation pipeline synthesizes raw episodes into
-structured knowledge (facts, patterns, goals, hypotheses). A wiki output layer writes
-that knowledge back as human-readable Markdown pages to my Obsidian vault.
+## Context on who's asking
 
-The full spec follows. Please read it, then answer the questions at the bottom.
-Don't build anything — I'm still in design. I want your honest critical take.
+I'm a serving SRE at a company with ~3B daily active users. My team runs the web
+index, the knowledge graph, and the personalization layer for one of our frontier
+model products — populated primarily from search history and behavioral signals.
+
+So I know how these systems work at scale. I'm now trying to build a personal
+version: one person, one machine, local LLMs, no cloud. The irony is that I help
+serve personalization to billions and have none for myself.
+
+**Don't explain what a knowledge graph is. Engage at the level of someone who
+runs one in production.**
 
 ---
 
-## The Spec
+## The Vision
 
-### What it is
+A fully local system that:
+1. Ingests everything — AI conversation history (ChatGPT, Claude, Gemini), notes
+   (Evernote → Obsidian), day-to-day activities, and live captures from any tool
+2. Builds a structured personal knowledge graph + vector index over all of it
+3. Automatically populates the context window for every AI interaction with
+   relevant personal facts, current goals, patterns, and entity relationships
+4. Writes synthesized knowledge back to Obsidian as human-readable wiki pages
+   (Karpathy's LLM Wiki pattern as output layer)
 
-A DIY Python knowledge base combining:
-- Batch ingestion of AI conversation history (ChatGPT, Claude, Gemini)
-- Live note capture from Obsidian and other sources
-- 8-stage consolidation pipeline (inspired by [Stash](https://github.com/alash3al/stash))
-- MCP server for query + capture from any MCP-compatible tool
-- Wiki output layer that writes synthesized knowledge back to Obsidian as Markdown
+The end state: every AI I interact with has coherent, current, personalized
+context about me — preferences, goals, history, failures, relationships — without
+me manually managing any of it.
 
-All local. No cloud services. No data leaving the machine.
+---
+
+## Current Design (stash-ingest)
 
 ### Infrastructure
 
@@ -33,16 +43,18 @@ All local. No cloud services. No data leaving the machine.
 | LLM reasoning | `qwen3.6-35b-a3b` via ik-llama (OpenAI-compatible local endpoint) |
 | Language | Python |
 
-### Sources
+### Sources (current scope)
 
 | Source | Type | Format |
 |--------|------|--------|
 | ChatGPT | Batch | JSON export — 3,437 conversations + 388 project conversations across 25 projects |
 | Claude | Batch | ZIP export (Anthropic data download) |
 | Gemini | Batch | Google Takeout JSON |
-| Evernote | Batch (migration) | ENEX → Markdown via yarle/enex2md, lands in Obsidian vault |
+| Evernote | Batch (migration) | ENEX → Markdown via yarle/enex2md, lands in Obsidian |
 | Obsidian | Live | Vault on disk / REST API plugin |
 | MCP capture | Live | `capture` tool from any MCP client |
+
+Future sources not yet specced: calendar, email, health data, git activity, etc.
 
 ### Schema (borrowed from Stash's 20 migrations)
 
@@ -65,6 +77,11 @@ All local. No cloud services. No data leaving the machine.
 
 HNSW indexes on `episodes` and `facts`. 768-dim vectors throughout.
 
+The `relationships` and `causal_links` tables are proto-graph — entities and edges
+stored relationally, not in a proper graph structure. I haven't decided whether to
+add Apache AGE (graph extension for PG), use a separate graph store, or just query
+the relational tables with graph-style SQL.
+
 ### Episode Granularity
 
 **Conversations:** One episode per human+assistant turn, with metadata preamble:
@@ -76,7 +93,7 @@ Assistant: For cold powder conditions you want...
 
 **Notes:** One episode per note (or per heading section for long notes).
 
-**Live captures:** One episode per capture call, typed: observation / task / idea / reference / person_note.
+**Live captures:** One episode per call, typed: observation / task / idea / reference / person_note.
 
 ### Namespace Design
 
@@ -101,72 +118,88 @@ Assistant: For cold powder conditions you want...
 7. **Failure Pattern Detection** — identify recurring failures, extract lessons
 8. **Hypothesis Evidence Scanning** — confirm or reject hypotheses based on accumulated evidence
 
+### Context Population (the personalization layer)
+
+Currently specced as passive MCP tools — the AI calls `search` or `recall` when it
+wants context. The real vision is active: a `context_for(conversation)` tool that
+automatically assembles a context package before each interaction:
+- Semantically relevant facts and episodes
+- Standing context (current goals, active projects, key relationships)
+- Recency signal (what happened in the last N days)
+- Entity graph neighborhood (who/what is mentioned → what does the graph say about them)
+
+I haven't designed this layer properly yet. It's the most important part.
+
 ### Wiki Output Layer (Karpathy LLM Wiki pattern)
 
-After consolidation, a wiki stage reads from the structured tables and writes
-human-readable Markdown pages back to the Obsidian vault.
+After consolidation, a wiki stage reads structured tables and writes human-readable
+Markdown pages to the Obsidian vault: entity pages, pattern pages, goal pages,
+topic index. Pages carry `<!-- wiki-id: uuid -->` markers for idempotent re-runs.
+Human edits in `## Notes` sections are preserved.
 
-**Flow:** Consolidation → wiki stage groups by concept/entity → Markdown pages land in `wiki/` folder in vault → lint pass checks for contradictions, orphans, stale claims.
+### Prior art I'm aware of
 
-**Page types:** Entity pages (person/project/tool/concept), pattern pages, goal pages, topic index.
-
-**Schema document:** `wiki/SCHEMA.md` in the vault defines page structure and naming conventions. The LLM reads this before writing to maintain consistency.
-
-**Idempotency:** Pages carry a `<!-- wiki-id: <uuid> -->` marker for overwrite on re-runs. Human edits in a `## Notes` section are preserved.
-
-### MCP Server
-
-Tools:
-- `capture` — submit an episode with optional type tag
-- `search` — semantic search across episodes/facts/patterns
-- `recall` — structured recall by namespace
-- `stats` — counts, top topics, recent activity
-- `wiki_refresh` — trigger wiki regeneration for a namespace or page
-
-### Repository Structure
-
-```
-db/migrations/        # SQL (adapted from Stash's 20 migrations)
-db/schema.py          # migration runner
-
-sources/base.py       # Episode dataclass, shared turn-extraction
-sources/chatgpt.py
-sources/claude.py
-sources/gemini.py
-sources/obsidian.py
-
-pipeline/ingest.py    # embed + insert episodes
-pipeline/consolidate.py
-pipeline/wiki.py      # reads consolidated tables, writes Markdown to vault
-pipeline/stages/      # facts, relationships, causal, patterns, decay, goals, failures, hypotheses
-
-mcp/server.py
-mcp/tools/            # capture, search, recall, stats
-
-llm/embedder.py       # nomic-embed-text via ollama, SHA256 cache
-llm/reasoner.py       # qwen3.6-35b via ik-llama, JSON extraction helpers
-
-config.py
-main.py               # CLI: --source --consolidate --wiki --serve --dry-run --limit N
-```
+- **[Graphiti](https://github.com/getzep/graphiti)** — temporal knowledge graph from conversational data, open source, by Zep
+- **[Mem0](https://github.com/mem0ai/mem0)** — personal memory layer for AI, vector + graph hybrid, has MCP server
+- **[Stash](https://github.com/alash3al/stash)** — consolidation pipeline inspiration (Go, but schema is the artifact)
+- **[OB1](https://github.com/NateBJones-Projects/OB1)** — MCP tools and capture pattern
 
 ---
 
-## Open Questions (what I'm genuinely uncertain about)
-
-- **Turn vs. conversation granularity:** I've chosen one episode per human+assistant turn. Is that the right unit for semantic search and consolidation? Or should whole conversations (or topic-delimited chunks) be the episode unit?
-- **Consolidation on a local MoE model:** qwen3.6-35b-a3b is capable but not GPT-4. Which of the 8 consolidation stages is most likely to produce garbage on a local model, and how would you de-risk it?
-- **Wiki vs. structured DB — duplication:** The wiki layer writes out what's already in PG tables. Is that redundant, or is the Markdown layer genuinely additive? What does it give me that a good MCP `recall` tool doesn't?
-- **Hallucination becoming permanent:** The consolidation pipeline synthesizes facts from raw episodes. Those facts then influence future consolidation runs. How do I prevent early bad extractions from compounding? What's the right circuit breaker?
-- **Episode provenance:** Once a fact is synthesized from 50 episodes, can I trace it back? The schema has confidence scores but I don't see a clean fact → source_episodes link. Is that a gap worth filling?
-- **What's overengineered?** Given this is a personal tool for one person's history, what would you cut from the schema or pipeline to get to something that actually works vs. something that's architecturally complete but never ships?
-
 ## What I Want From You
 
-1. **Critical assessment** — where does this design have blind spots, failure modes, or hidden complexity I'm not accounting for?
-2. **Concrete alternatives** — for any part you'd redesign, say specifically what you'd do instead and why.
-3. **Cut list** — what would you drop entirely for a first working version?
-4. **The wiki question** — Karpathy's pattern applied here: genuinely valuable output layer, or does it add maintenance burden without enough payoff for a single-user system?
-5. **Prompt engineering risk** — consolidation prompts tuned for qwen3.6-35b-a3b. What's the most likely failure mode and how would you design around it?
+I'm in design, not build. Engage critically. These are the actual questions:
 
-Be direct. I'd rather have a hard design critique now than debug a wrong architecture at 3,400 conversations.
+### 1. Knowledge graph architecture
+
+The `relationships` and `causal_links` tables are flat relational. Should I add
+Apache AGE and model this as a proper property graph in PG, use a dedicated store
+(Neo4j, FalkorDB), or is relational sufficient for a single-person corpus of this
+size? What does graph traversal actually buy me at personal scale that good SQL
+can't approximate?
+
+### 2. Context population design
+
+This is the part I've specced least and care about most. I run a personalization
+layer professionally. At scale, feature stores, real-time signals, and ranking
+models do this. At personal scale, with one user and a local LLM, what's the right
+architecture for `context_for(conversation)`? How do I assemble a context package
+that's relevant without being noisy — and how do I avoid the context window
+becoming a wall of stale facts about who I was 3 years ago?
+
+### 3. Temporal modeling
+
+My professional system has strong temporal signals — query recency, engagement
+decay, freshness scores. This design has confidence decay (stage 5) but it's naive:
+SQL-based age decay with a soft-delete threshold. For a personal knowledge graph
+where "who I was in 2022" is different from "who I am now," what's the right
+temporal model? Should facts be versioned? Should entity state be snapshotted?
+Graphiti handles this with temporal edges — is that the right primitive?
+
+### 4. Hallucination compounding
+
+The consolidation pipeline synthesizes facts from episodes. Those facts feed future
+consolidation. If early extractions are wrong, they compound. At work, this is
+handled by ground truth signals (clicks, engagement) that correct bad inferences
+over time. I have no equivalent feedback signal. What's the right circuit breaker
+for a system where the LLM is both writer and reader of its own knowledge base?
+
+### 5. The right unit of ingestion
+
+I've chosen one episode per human+assistant turn. Is that right? At work, document
+chunking strategy is a major tuning surface. For personal conversation history,
+should the unit be: a single turn, a full conversation, a topic-segmented chunk,
+or something else? What does the consolidation pipeline actually need as input to
+produce good facts?
+
+### 6. What would you cut for v1?
+
+Given the goal is "populate my context window with personal knowledge," what's the
+minimum viable path? What of the 8 consolidation stages, the wiki layer, and the
+graph structure is essential vs. nice-to-have for a first working version?
+
+---
+
+Be direct. Skip the caveats. I'd rather have a hard architecture critique now
+than discover the wrong structural choice after running consolidation on 3,400
+conversations.
