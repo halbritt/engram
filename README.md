@@ -1,10 +1,10 @@
 # engram
 
-> Your entire life in embeddings.
+> Your entire life in a knowledge graph and embeddings.
 
-A fully local personal knowledge graph that ingests your AI conversation history,
-notes, and day-to-day captures — then uses it to populate the context window for
-every AI interaction you have.
+A fully local personal memory system — knowledge graph plus vector index — that
+ingests your AI conversation history, notes, and day-to-day captures, then uses
+it to populate the context window for every AI interaction you have.
 
 No cloud. No data leaving the machine.
 
