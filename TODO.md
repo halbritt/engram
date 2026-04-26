@@ -31,11 +31,20 @@
 - [ ] Inspect export schema
 - [ ] Write `sources/gemini.py`
 
-## Ingestion — Obsidian
+## Evernote → Obsidian Migration (prerequisite to note ingestion)
 
-- [ ] Locate vault, inspect note structure
+- [ ] Evaluate yarle vs. enex2md for ENEX → Markdown quality
+- [ ] Decide on notebook → Obsidian folder structure
+- [ ] Export Evernote notebooks to ENEX
+- [ ] Convert ENEX → Markdown, land in Obsidian vault
+- [ ] Verify conversion quality (attachments, formatting, metadata)
+
+## Ingestion — Obsidian / Notes
+
+- [ ] Locate/establish vault path
+- [ ] Inspect converted note structure post-migration
 - [ ] Decide: vault watcher vs. REST API plugin vs. both
-- [ ] Write `sources/obsidian.py`
+- [ ] Write `sources/obsidian.py` — walk vault, emit episodes (Evernote origin notes + ongoing)
 - [ ] Decide on bidirectional sync strategy (writing facts/patterns back as notes)
 
 ## Consolidation Pipeline
@@ -53,6 +62,19 @@
 - [ ] Test consolidation quality on small namespace before full run
 - [ ] Tune batch size (Stash default 100) for 3,400+ corpus
 
+## Wiki Output Layer
+
+- [ ] Design `wiki/SCHEMA.md` — page types, naming conventions, section templates
+- [ ] Write `pipeline/wiki.py` — reads facts/patterns/goals/relationships, groups by concept/entity
+- [ ] Implement entity page generation (person, project, tool, concept)
+- [ ] Implement pattern page generation
+- [ ] Implement goal page generation with evidence of progress
+- [ ] Implement topic index generation
+- [ ] Add `<!-- wiki-id: <uuid> -->` marker for idempotent re-runs
+- [ ] Add `## Notes` section preservation (human edits not overwritten)
+- [ ] Implement lint pass: contradictions, orphaned pages, stale claims
+- [ ] Wire wiki output path to Obsidian vault directory
+
 ## MCP Server
 
 - [ ] Choose MCP framework: FastMCP vs. raw modelcontextprotocol SDK
@@ -61,6 +83,7 @@
 - [ ] Write `mcp/tools/search.py` — semantic search across episodes/facts/patterns
 - [ ] Write `mcp/tools/recall.py` — structured recall by namespace
 - [ ] Write `mcp/tools/stats.py` — counts, top topics, recent activity
+- [ ] Add `wiki_refresh` tool — trigger wiki regeneration for a namespace or page
 - [ ] Wire up Obsidian MCP plugin to server
 - [ ] Wire up Claude to server
 
