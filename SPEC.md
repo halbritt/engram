@@ -1,10 +1,9 @@
 # stash-ingest
 
-Ingestion pipeline for loading multi-source AI conversation history into
-[Stash](https://github.com/alash3al/stash) — a local PostgreSQL + pgvector
-knowledge base with an 8-stage consolidation pipeline (episodes → facts →
-relationships → patterns → causal links → contradictions → goals/failures →
-hypotheses).
+A DIY Python implementation of a Stash-inspired conversation history knowledge
+base. Borrows [Stash's](https://github.com/alash3al/stash) schema and
+8-stage consolidation pipeline design, reimplemented in Python against local
+infrastructure with prompts tuned for local LLMs.
 
 ## Goal
 
@@ -27,18 +26,46 @@ across 388 project conversations already exported via export-chatgpt).
 
 | Component | Implementation |
 |-----------|---------------|
-| Knowledge base | [Stash](https://github.com/alash3al/stash) — run as-is |
 | Database | Local PostgreSQL + pgvector |
 | Embeddings | `nomic-embed-text` via ollama at `http://127.0.0.1:11434` |
-| LLM reasoning | `qwen3.6-35b-a3b` via ik-llama at `http://127.0.0.1:8081/v1` |
-| Ingestion language | Python |
+| LLM reasoning | `qwen3.6-35b-a3b` via ik-llama at `http://127.0.0.1:8081/v1` (OpenAI-compatible) |
+| Language | Python |
 
-Stash is configured to use OpenAI-compatible endpoints for both embeddings
-and LLM reasoning — both ollama and ik-llama expose these.
+## Why DIY Instead of Running Stash
+
+- Stash's consolidation prompts are tuned for GPT-4-class API response formats;
+  local models need prompt adjustments that require forking Go code we don't own
+- Source-aware consolidation logic (weighting by model, tagging by provider,
+  handling multi-turn structure differently per source) is easier in Python
+- Full ownership of the stack — debug consolidation failures without reading
+  someone else's Go
+- Schema is the valuable artifact; the Go binary is not
+
+## Schema
+
+Borrowed directly from Stash's 20 migrations. Core tables:
+
+| Table | Purpose |
+|-------|---------|
+| `namespaces` | Logical partitions by source/project |
+| `episodes` | Raw conversation turns with embeddings |
+| `facts` | LLM-synthesized beliefs with confidence scores |
+| `relationships` | Entity connections extracted from facts |
+| `causal_links` | Cause-effect pairs between facts |
+| `patterns` | Higher-level abstractions over facts + relationships |
+| `contradictions` | Conflicts between facts, with resolution tracking |
+| `hypotheses` | Uncertain beliefs with evidence tracking |
+| `goals` | Intended outcomes with parent/child hierarchy |
+| `failures` | Failure records with lessons learned |
+| `embedding_cache` | SHA256-keyed vector cache to avoid re-embedding |
+| `consolidation_progress` | Per-namespace checkpoints for resumable consolidation |
+| `contexts` | Working memory (short-lived, expires) |
+| `settings` | Key-value config store |
+
+Vector columns use pgvector. HNSW indexes on episodes and facts.
+nomic-embed-text produces 768-dim vectors — configure pgvector accordingly.
 
 ## Namespace Design
-
-Namespaces partition the Stash knowledge base by source and project:
 
 ```
 /chatgpt/conversations          # regular ChatGPT conversations
@@ -47,89 +74,71 @@ Namespaces partition the Stash knowledge base by source and project:
 /gemini/conversations           # Gemini conversation history
 ```
 
-## Granularity
+## Episode Granularity
 
-Episodes are submitted at **conversation-turn granularity** — one episode per
-human+assistant exchange, not one per message and not one per whole
-conversation. This gives the consolidation pipeline meaningful units to reason
-over without drowning it in single-sentence fragments.
+One episode per human+assistant turn (not per message, not per whole
+conversation). Each episode content includes a metadata preamble:
 
-Each episode includes:
-- The human message
-- The assistant response
-- Metadata in the content preamble: source, model, conversation title, date
-
-Example episode content:
 ```
 [ChatGPT | gpt-4o | 2025-03-15 | "Snowboarding Layering Guide"]
 Human: What should I wear for a cold powder day?
 Assistant: For cold powder conditions you want...
 ```
 
-## Architecture
+## Consolidation Pipeline (all 8 stages)
+
+Runs as a background batch job per namespace, resumable via checkpoints.
+Prompts written for qwen3.6-35b-a3b — not GPT-4 defaults.
+
+1. **Episodes → Facts** — cluster similar episodes by vector similarity, synthesize into grounded beliefs with confidence scores; detect contradictions in parallel
+2. **Facts → Relationships** — extract entity connections with relation types and confidence
+3. **Facts → Causal Links** — detect temporal and cause-effect relationships between facts
+4. **Facts + Relationships → Patterns** — extract higher-level abstractions with coherence scores
+5. **Confidence Decay** — age facts over time via SQL; soft-delete below threshold
+6. **Goal Progress Inference** — analyze facts against goals, annotate progress, cascade completions
+7. **Failure Pattern Detection** — identify recurring failures, extract lessons
+8. **Hypothesis Evidence Scanning** — confirm or reject hypotheses based on accumulated evidence
+
+## Repository Structure
 
 ```
+db/
+  migrations/          # SQL migration files (adapted from Stash's 20 migrations)
+  schema.py            # migration runner
+
 sources/
-  chatgpt.py      # walks ~/chatgpt-export/, emits episodes
-  claude.py       # walks Claude ZIP export, emits episodes
-  gemini.py       # walks Gemini Takeout JSON, emits episodes
+  chatgpt.py           # walks ~/chatgpt-export/, emits episodes
+  claude.py            # walks Claude ZIP export, emits episodes
+  gemini.py            # walks Gemini Takeout JSON, emits episodes
+  base.py              # shared Episode dataclass and turn-extraction logic
 
 pipeline/
-  ingest.py       # takes episodes, POSTs to Stash remember API
-  normalize.py    # shared turn-extraction and formatting logic
+  ingest.py            # embed + insert episodes
+  consolidate.py       # orchestrates the 8-stage pipeline per namespace
+  stages/
+    facts.py           # stage 1: episodes → facts
+    relationships.py   # stage 2: facts → relationships
+    causal.py          # stage 3: facts → causal links
+    patterns.py        # stage 4: facts + relationships → patterns
+    decay.py           # stage 5: confidence decay (SQL only)
+    goals.py           # stage 6: goal progress inference
+    failures.py        # stage 7: failure pattern detection
+    hypotheses.py      # stage 8: hypothesis evidence scanning
 
-config.py         # stash URL, namespace roots, batch size, dry-run flag
-main.py           # CLI: --source chatgpt|claude|gemini|all --dry-run --limit N
+llm/
+  embedder.py          # ollama nomic-embed-text client with caching
+  reasoner.py          # ik-llama qwen3.6-35b client, JSON extraction helpers
+
+config.py              # DB URL, LLM endpoints, batch sizes, namespace roots
+main.py                # CLI: --source --consolidate --dry-run --limit N
 ```
-
-## Stash API
-
-Episodes are submitted via Stash's MCP `remember` tool or directly to the
-Stash CLI. The Python ingestion pipeline will call the Stash HTTP/MCP API:
-
-```
-POST /mcp (or stash remember CLI)
-{
-  "namespace": "/chatgpt/projects/meal-planning",
-  "content": "...",
-  "occurred_at": "2025-03-15T10:30:00Z"
-}
-```
-
-Stash handles embedding generation, storage, and background consolidation.
-The ingestion pipeline's only job is normalization and submission.
-
-## Stash Configuration
-
-Stash needs to be pointed at local endpoints instead of OpenAI:
-
-```yaml
-# stash config
-embedder:
-  base_url: http://127.0.0.1:11434/v1   # ollama
-  model: nomic-embed-text
-  dimensions: 768                         # nomic-embed-text output dims
-
-reasoner:
-  base_url: http://127.0.0.1:8081/v1     # ik-llama
-  model: qwen3.6-35b-a3b
-```
-
-## Ingestion Order
-
-1. ChatGPT (schema known, export on disk, highest volume — good for shakeout)
-2. Claude (needs export download first)
-3. Gemini (needs Takeout export first)
 
 ## Open Questions
 
-- [ ] Does Stash expose an HTTP REST API directly, or only MCP + CLI? Need to
-      confirm the calling convention for the Python client.
-- [ ] Stash consolidation batch size (default 100 episodes) — may need tuning
-      for 3,400+ conversation corpus.
-- [ ] Turn granularity vs. message granularity — validate with a small batch
-      before full ingest.
-- [ ] nomic-embed-text dimension: confirm ollama returns 768-dim vectors and
-      that Stash's dynamic dimension setting handles this correctly.
-- [ ] Stash's LLM prompts were written for GPT-4-class models — test
-      consolidation quality with qwen3.6-35b before full run.
+- [ ] Validate turn granularity with small batch before full ingest
+- [ ] Confirm nomic-embed-text dimension (expected 768) with a test call
+- [ ] Test consolidation prompt quality with qwen3.6-35b on a sample namespace
+      before running full pipeline
+- [ ] Stash consolidation default batch size is 100 — tune for 3,400+ corpus
+- [ ] Claude export schema — inspect after download
+- [ ] Gemini Takeout schema — inspect after download
