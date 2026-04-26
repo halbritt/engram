@@ -31,6 +31,13 @@
 - [ ] Inspect export schema
 - [ ] Write `sources/gemini.py`
 
+## Ingestion — Obsidian
+
+- [ ] Locate vault, inspect note structure
+- [ ] Decide: vault watcher vs. REST API plugin vs. both
+- [ ] Write `sources/obsidian.py`
+- [ ] Decide on bidirectional sync strategy (writing facts/patterns back as notes)
+
 ## Consolidation Pipeline
 
 - [ ] Write `pipeline/consolidate.py` — orchestrator, checkpoint management
@@ -45,6 +52,17 @@
 - [ ] Tune all prompts for qwen3.6-35b (not GPT-4 defaults)
 - [ ] Test consolidation quality on small namespace before full run
 - [ ] Tune batch size (Stash default 100) for 3,400+ corpus
+
+## MCP Server
+
+- [ ] Choose MCP framework: FastMCP vs. raw modelcontextprotocol SDK
+- [ ] Write `mcp/server.py` — entrypoint
+- [ ] Write `mcp/tools/capture.py` — submit episode with type tag
+- [ ] Write `mcp/tools/search.py` — semantic search across episodes/facts/patterns
+- [ ] Write `mcp/tools/recall.py` — structured recall by namespace
+- [ ] Write `mcp/tools/stats.py` — counts, top topics, recent activity
+- [ ] Wire up Obsidian MCP plugin to server
+- [ ] Wire up Claude to server
 
 ## Publishing (export-chatgpt)
 

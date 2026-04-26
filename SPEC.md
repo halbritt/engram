@@ -1,23 +1,28 @@
 # stash-ingest
 
-A DIY Python implementation of a Stash-inspired conversation history knowledge
-base. Borrows [Stash's](https://github.com/alash3al/stash) schema and
-8-stage consolidation pipeline design, reimplemented in Python against local
-infrastructure with prompts tuned for local LLMs.
+> **Note:** Name is a placeholder — will be renamed once the full scope crystallizes.
 
-## Goal
+A DIY Python knowledge base combining:
+- Batch ingestion of AI conversation history (ChatGPT, Claude, Gemini)
+- Live note capture from Obsidian and other sources
+- 8-stage consolidation pipeline (Stash-inspired)
+- MCP server for query + capture from any MCP-compatible tool (Claude, Obsidian, Cursor, etc.)
 
-Turn years of AI conversation history from multiple providers into a
-queryable, self-consolidating knowledge base running entirely on local
-infrastructure. No cloud services. No data leaving the machine.
+All running on local infrastructure. No cloud services. No data leaving the machine.
+
+Draws design inspiration from:
+- [Stash](https://github.com/alash3al/stash) — schema and consolidation pipeline
+- [OB1](https://github.com/NateBJones-Projects/OB1) — MCP tools and live capture pattern
 
 ## Sources
 
-| Source | Format | Location |
-|--------|--------|----------|
-| ChatGPT | JSON export (conversations + projects) | `~/chatgpt-export/user-afXFt1wByKh5XA1L7njvUZnI/` |
-| Claude | ZIP export (Anthropic data download) | TBD — needs export |
-| Gemini | Google Takeout JSON | TBD — needs export |
+| Source | Type | Format | Location |
+|--------|------|--------|----------|
+| ChatGPT | Batch | JSON export (conversations + projects) | `~/chatgpt-export/user-afXFt1wByKh5XA1L7njvUZnI/` |
+| Claude | Batch | ZIP export (Anthropic data download) | TBD — needs export |
+| Gemini | Batch | Google Takeout JSON | TBD — needs export |
+| Obsidian | Live | Vault on disk / REST API plugin | TBD — vault location |
+| MCP capture | Live | `capture` tool from any MCP client | via MCP server |
 
 ChatGPT export schema is well-understood (3,437 conversations + 25 projects
 across 388 project conversations already exported via export-chatgpt).
@@ -48,7 +53,7 @@ Borrowed directly from Stash's 20 migrations. Core tables:
 | Table | Purpose |
 |-------|---------|
 | `namespaces` | Logical partitions by source/project |
-| `episodes` | Raw conversation turns with embeddings |
+| `episodes` | Raw conversation turns and notes with embeddings |
 | `facts` | LLM-synthesized beliefs with confidence scores |
 | `relationships` | Entity connections extracted from facts |
 | `causal_links` | Cause-effect pairs between facts |
@@ -72,18 +77,26 @@ nomic-embed-text produces 768-dim vectors — configure pgvector accordingly.
 /chatgpt/projects/<slug>        # per-project conversations
 /claude/conversations           # Claude conversation history
 /gemini/conversations           # Gemini conversation history
+/obsidian/<vault>               # Obsidian notes
+/capture                        # ad-hoc captures via MCP
 ```
 
 ## Episode Granularity
 
-One episode per human+assistant turn (not per message, not per whole
-conversation). Each episode content includes a metadata preamble:
+**Conversations:** One episode per human+assistant turn. Each episode includes
+a metadata preamble:
 
 ```
 [ChatGPT | gpt-4o | 2025-03-15 | "Snowboarding Layering Guide"]
 Human: What should I wear for a cold powder day?
 Assistant: For cold powder conditions you want...
 ```
+
+**Notes:** One episode per note (or per heading section for long notes).
+Metadata preamble includes vault, path, and modification date.
+
+**Live captures:** One episode per capture call, typed (observation/task/idea/
+reference/person_note — from OB1).
 
 ## Consolidation Pipeline (all 8 stages)
 
@@ -99,6 +112,21 @@ Prompts written for qwen3.6-35b-a3b — not GPT-4 defaults.
 7. **Failure Pattern Detection** — identify recurring failures, extract lessons
 8. **Hypothesis Evidence Scanning** — confirm or reject hypotheses based on accumulated evidence
 
+## MCP Server
+
+Exposes the knowledge base to any MCP-compatible client (Claude, Obsidian,
+Cursor, etc.). Independent entrypoint, shares DB and `llm/` layers with the
+ingestion pipeline.
+
+Tools (inspired by OB1):
+- `capture` — submit a new episode (note, observation, idea) with optional type tag
+- `search` — semantic search across all episodes, facts, and patterns
+- `recall` — structured recall: facts, patterns, goals, hypotheses for a namespace
+- `stats` — counts, top topics, recent activity
+
+Bidirectional with Obsidian: notes flow in via `capture` or the vault watcher;
+consolidated facts/patterns can flow back out as generated notes.
+
 ## Repository Structure
 
 ```
@@ -107,30 +135,39 @@ db/
   schema.py            # migration runner
 
 sources/
+  base.py              # Episode dataclass, shared turn-extraction logic
   chatgpt.py           # walks ~/chatgpt-export/, emits episodes
   claude.py            # walks Claude ZIP export, emits episodes
   gemini.py            # walks Gemini Takeout JSON, emits episodes
-  base.py              # shared Episode dataclass and turn-extraction logic
+  obsidian.py          # walks Obsidian vault, emits episodes
 
 pipeline/
   ingest.py            # embed + insert episodes
   consolidate.py       # orchestrates the 8-stage pipeline per namespace
   stages/
-    facts.py           # stage 1: episodes → facts
-    relationships.py   # stage 2: facts → relationships
-    causal.py          # stage 3: facts → causal links
-    patterns.py        # stage 4: facts + relationships → patterns
-    decay.py           # stage 5: confidence decay (SQL only)
-    goals.py           # stage 6: goal progress inference
-    failures.py        # stage 7: failure pattern detection
-    hypotheses.py      # stage 8: hypothesis evidence scanning
+    facts.py
+    relationships.py
+    causal.py
+    patterns.py
+    decay.py
+    goals.py
+    failures.py
+    hypotheses.py
+
+mcp/
+  server.py            # MCP server entrypoint
+  tools/
+    capture.py
+    search.py
+    recall.py
+    stats.py
 
 llm/
-  embedder.py          # ollama nomic-embed-text client with caching
+  embedder.py          # ollama nomic-embed-text client with SHA256 caching
   reasoner.py          # ik-llama qwen3.6-35b client, JSON extraction helpers
 
 config.py              # DB URL, LLM endpoints, batch sizes, namespace roots
-main.py                # CLI: --source --consolidate --dry-run --limit N
+main.py                # CLI: --source --consolidate --serve --dry-run --limit N
 ```
 
 ## Open Questions
@@ -138,7 +175,9 @@ main.py                # CLI: --source --consolidate --dry-run --limit N
 - [ ] Validate turn granularity with small batch before full ingest
 - [ ] Confirm nomic-embed-text dimension (expected 768) with a test call
 - [ ] Test consolidation prompt quality with qwen3.6-35b on a sample namespace
-      before running full pipeline
-- [ ] Stash consolidation default batch size is 100 — tune for 3,400+ corpus
+- [ ] Tune consolidation batch size (Stash default 100) for 3,400+ corpus
+- [ ] Obsidian integration: vault watcher vs. REST API plugin vs. both
+- [ ] Obsidian bidirectional sync: how to write generated notes back without clobbering
 - [ ] Claude export schema — inspect after download
 - [ ] Gemini Takeout schema — inspect after download
+- [ ] MCP server framework: FastMCP vs. raw modelcontextprotocol SDK
