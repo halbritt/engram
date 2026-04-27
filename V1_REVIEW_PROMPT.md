@@ -83,6 +83,34 @@ Then:
 - Where your round-1 position has changed because the principles changed
   the analysis, note the change and the reasoning.
 
+Interim consideration to address — the eval gate's subset size:
+
+CONSENSUS_REVIEW's ~100-conversation gate before full-corpus consolidation
+is conservative-for-safety, not realistic-for-gold-set. With ~5,000
+conversations across three sources, a 100-300 random subset cannot ground
+gold-set prompts about specific people, projects, or years — most
+references will be absent from any small random sample, so the eval
+cannot pass even with a perfect pipeline.
+
+A tiered alternative is on the table:
+
+1. Smoke test (~100 conversations) — catches catastrophic pipeline
+   failures. Same as CONSENSUS's current gate.
+2. Gold-set validation (~1,000-2,000 conversations, stratified to the
+   gold set's actual targets — the people, projects, years, decisions
+   the prompts reference) — tests realistic retrieval. Gates full-corpus.
+3. Full corpus of AI conversations (~5,000+ across ChatGPT + Claude +
+   Gemini exports) — runs after tier-2 passes. Estimated 2-3 weeks of
+   continuous local-LLM compute. NOTE: this is full coverage of the
+   AI-conversation corpus only, NOT full biographical coverage. Other
+   domains (health, finances, locations, relationships, recipes, etc.)
+   require sources and pipelines that don't yet exist; much will be
+   manual entry over years. V1 ingests AI conversations only.
+
+Address in your review: does the tiered structure correctly identify the
+gap? Should the gold set be authored differently to make a smaller
+stratified subset sufficient? What's the right eval-gate structure?
+
 Output:
 Write the result to V1_REVIEW_<your-model-name>.md with the following
 sections:
