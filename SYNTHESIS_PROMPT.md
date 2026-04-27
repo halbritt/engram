@@ -45,25 +45,70 @@ Inputs:
   - self-hosted Qwen3.6:35B-MOE review, if present
 
 Task:
-Consolidate these reviews into an architecture decision brief. Do not summarize
-each review separately. Extract the architectural signal.
+Consolidate these reviews into repo artifacts. Do not summarize each review
+separately. Extract the architectural signal and write it back into the design
+files listed below.
+
+Files to update:
+- `CONSENSUS_REVIEW.md`: replace the template sections with the consolidated
+  synthesis.
+- `DECISION_LOG.md`: update proposed/accepted/deferred/rejected decisions and
+  open questions based on the synthesis.
+- `V1_ARCHITECTURE_DRAFT.md`: update only if the synthesis changes the proposed
+  v1 architecture, build order, schema primitives, or non-goals.
+
+Do not edit:
+- original model review files
+- `BRAINSTORM.md`
+- `README.md`
+- `SPEC.md`
+- `TODO.md`
+- `ADVERSARIAL_PROMPTS.md`, unless you identify a concrete defect in the prompts
+  that would make the next review round weaker.
 
 Output:
-1. Consensus points across reviews
-2. Important disagreements
-3. Decisions that are hard to reverse later
-4. Decisions that can safely be deferred
-5. Recommended v1 architecture
-6. Recommended research/experimental architecture
-7. A decision matrix with columns:
-   - decision
-   - options
-   - model positions
-   - risk
-   - recommendation
-   - reversibility
-8. Top 10 questions for the next adversarial review round
-9. The strongest dissenting argument against your own recommendation
+Update the files directly. At the end, report:
+1. Files changed
+2. Decisions accepted
+3. Decisions deferred
+4. Top unresolved questions for adversarial rounds
+5. Any review inputs that were missing or unreadable
+
+`CONSENSUS_REVIEW.md` must contain:
+- consensus points across reviews
+- important disagreements
+- decisions that are hard to reverse later
+- decisions that can safely be deferred
+- recommended v1 architecture
+- recommended research/experimental architecture
+- a decision matrix with columns:
+  - decision
+  - options
+  - model positions
+  - risk
+  - recommendation
+  - reversibility
+- top 10 questions for the next adversarial review round
+- the strongest dissenting argument against your own recommendation
+
+`DECISION_LOG.md` must contain:
+- accepted decisions
+- deferred decisions
+- rejected decisions, if any
+- open decisions with the evidence needed to resolve them
+- revisit triggers for decisions that should not be permanent yet
+
+`V1_ARCHITECTURE_DRAFT.md`, if updated, must preserve:
+- v1 goal
+- non-goals
+- canonical data flow
+- derived projections
+- minimal schema primitives
+- belief requirements
+- context_for shape
+- candidate lanes
+- first eval harness
+- build order
 
 Specific design areas to cover:
 - Canonical memory store vs derived projections
@@ -80,4 +125,3 @@ Specific design areas to cover:
 Be direct. Prefer decisions over commentary. If something is uncertain, state
 what evidence or experiment would resolve it.
 ```
-
