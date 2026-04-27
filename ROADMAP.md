@@ -72,6 +72,8 @@ not design.
 
 ## Explicitly deferred (so anxiety doesn't pull me back)
 
+### Engram features (v2-or-later)
+
 - Wiki output layer (replaced by belief review queue for v1)
 - Goal / failure / hypothesis / pattern inference
 - Causal-link mining
@@ -81,8 +83,17 @@ not design.
 - Bidirectional Obsidian sync
 - Async precompute of context packages
 
-These are not lost. They are explicitly v2-or-later. Returning to them now is
-scope creep.
+### External tooling for the build process (re-evaluate at step 7)
+
+- **Adopting an external dev-workflow orchestrator** (e.g.,
+  [chaohong-ai/ai-auto-work](https://github.com/chaohong-ai/ai-auto-work) —
+  Claude + Codex dual-model coding workflow). Methodologically aligned with
+  the consensus-design pattern, but it's a coding tool — design phase doesn't
+  benefit. Maturity is low (8 commits on main, no releases as of 2026-04).
+  Re-evaluate when V1 schema is locked and implementation begins.
+
+These are not lost. They are explicitly v2-or-later or step-7-or-later.
+Returning to them now is scope creep.
 
 ## When in doubt
 
