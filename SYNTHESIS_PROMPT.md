@@ -3,11 +3,21 @@
 Use this prompt after collecting the initial design reviews. The goal is to turn
 multiple model opinions into a decision surface.
 
+Repository path:
+
+```text
+~/git/engram/
+```
+
 ## Prompt
 
 ```text
 You are reviewing multiple architecture reviews for a local personal memory
 system called Engram.
+
+Work in this repository:
+
+~/git/engram/
 
 Engram vision:
 - Fully local personal memory system.
