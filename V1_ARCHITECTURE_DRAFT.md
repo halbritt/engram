@@ -1,52 +1,65 @@
 # V1 Architecture Draft
 
-Status: draft pending consensus review
+Status: revised after round-1 synthesis (CONSENSUS_REVIEW.md, 2026-04-27)
 
-This is a working target for the first useful version. It should be revised after
-`CONSENSUS_REVIEW.md` is filled and the adversarial rounds are complete.
+This is the working target for the first useful version. It will be revised
+again after the adversarial rounds.
 
 ## V1 Goal
 
-Given a new AI conversation, produce a compact, useful, current personal context
-package with evidence-backed memory.
+Given a new AI conversation, produce a compact, useful, current personal
+context package with evidence-backed memory.
 
-The first version is successful if `context_for(conversation)` improves real AI
-interactions without injecting stale, noisy, or unsupported personal facts.
+The first version is successful if `context_for(conversation)` improves real
+AI interactions without injecting stale, noisy, or unsupported personal
+facts.
 
 ## Non-Goals For V1
 
-- Full life graph completeness
-- Full automatic Obsidian wiki generation
-- Goal progress inference
-- Failure pattern inference
-- Hypothesis lifecycle
-- Causal-link mining
-- Broad graph algorithms in the live path
-- Letting synthesized facts become ground truth without raw evidence
+- Full life graph completeness.
+- Auto Obsidian wiki generation. (Replaced by a belief review queue.)
+- Goal progress inference.
+- Failure pattern inference.
+- Hypothesis lifecycle.
+- Causal-link mining.
+- Higher-order pattern extraction.
+- Broad graph algorithms in the live path.
+- Synthesized facts becoming ground truth without raw evidence.
+- Apache AGE / Neo4j / FalkorDB / Kuzu graph backend.
+- LLM cross-encoder reranker in the live path.
+- Bidirectional Obsidian sync.
+- Multi-source ingestion beyond ChatGPT + Obsidian + capture.
 
 ## Canonical Data Flow
 
 ```text
-raw sources
-  -> messages / notes / captures
-  -> topic segments
-  -> claims
-  -> beliefs
-  -> current_beliefs
-  -> context_for(conversation)
+sources
+  → conversations / notes / captures        (immutable raw evidence)
+  → messages                                (immutable raw evidence)
+  → segments                                (topic-segmented, embedded)
+  → claims                                  (LLM-extracted, evidence_ids required)
+  → beliefs                                 (bitemporal, status-tracked, stability-classed)
+  → current_beliefs (view / materialized)
+  → context_for(conversation)               (multi-lane compiler, sectioned output)
 ```
+
+Episodes / messages / notes / captures are immutable. Re-segmentation and
+re-extraction are non-destructive: new segment / claim / belief rows
+supersede prior rows; nothing is overwritten in place.
 
 ## Derived Projections
 
 ```text
 vector index
-entity graph
-wiki pages
+entity graph (relational entity_edges)
 context packages
 eval snapshots
+review-queue surface (belief inspection)
 ```
 
-Derived projections should be rebuildable from canonical evidence-backed state.
+Derived projections are rebuildable from canonical evidence-backed state.
+Wiki pages, full-graph stores, async precomputed context caches, and
+goal/failure/hypothesis tables are deferred.
 
 ## Minimal Schema Primitives
 
@@ -68,54 +81,125 @@ belief_audit
 
 ## Belief Requirements
 
-Accepted beliefs should include:
+Accepted beliefs include:
 
 ```text
-subject
+id
+subject_entity_id
 predicate
-object or value
+object_entity_id | value_text | value_json
 valid_from
-valid_to
+valid_to             (NULL = currently valid)
 observed_at
+recorded_at
+extracted_at
+superseded_by
+status               (candidate | provisional | accepted | superseded | rejected)
+stability_class      (identity | preference | project_status | goal | task | mood | relationship)
 confidence
-status
-stability_class
-evidence_ids
+evidence_ids         (NOT NULL — at least one raw episode/message/note/capture id)
 prompt_version
 model_version
 ```
 
+Invariants:
+
+- `evidence_ids` NOT NULL on `accepted` beliefs.
+- Beliefs are never UPDATEd on contradiction. The prior belief's `valid_to`
+  is closed; a new row is inserted with the new value and a `superseded_by`
+  back-pointer.
+- `belief_audit` rows are written on every state transition.
+
+## Vector Index Policy
+
+- Embed: topic segments and accepted beliefs (text form).
+- Do not embed: raw single turns, full conversations, or unsegmented notes.
+- Raw messages remain in Postgres for provenance and rendering only — not
+  in the vector index.
+- Embedding cache is SHA256-keyed.
+
 ## Context_For Shape
 
 ```text
-Standing Context
-Active Projects / Goals
-Relevant Beliefs
-Recent Signals
-Entity Context
-Raw Evidence Snippets
-Uncertain Or Conflicting Context
+Standing Context           (~300-800 tokens — identity, active goals/projects, pinned facts)
+Active Projects / Goals    (~700 tokens)
+Relevant Beliefs           (~1200 tokens — current_beliefs filtered by query)
+Recent Signals             (~600 tokens — last N days of activity)
+Entity Context             (~900 tokens — mentioned-entity neighborhood, conditional)
+Raw Evidence Snippets      (~1000 tokens — citations supporting Relevant Beliefs)
+Uncertain / Conflicting    (only when topic-relevant)
 ```
 
-Each section should have an explicit token budget. Historical facts should be
-included only when relevant and clearly dated.
+Each section has an explicit token budget. Defaults to current beliefs
+(`valid_to IS NULL`); historical beliefs surface only when the conversation
+asks for history or when an old belief scores high enough with explicit
+historical labeling.
 
 ## Candidate Lanes
 
 ```text
-semantic belief search
-semantic segment search
-keyword search
-recent activity
-active projects/goals
-mentioned entity neighborhood
-pinned profile facts
-open contradictions
+semantic belief search        (pgvector against belief embeddings)
+semantic segment search       (pgvector against segment embeddings)
+keyword / BM25 search         (Postgres FTS over segments + claims)
+recent activity               (segments / claims by recorded_at)
+active projects / goals       (manual capture, status=active)
+mentioned entity neighborhood (entity_edges, 1-2 hop, conditional)
+pinned profile facts          (curated standing context)
+open contradictions           (only when subject is topic-adjacent)
 ```
+
+The mentioned-entity lane only fires when entity extraction on the running
+conversation produces matches. Its inclusion in live context is gated on
+eval results — ship live only if it improves precision.
+
+## Live Ranking (v1)
+
+Simple weighted scorer over candidate set:
+
+```text
+score =
+    relevance
+  * currentness
+  * confidence
+  * specificity
+  * source_quality
+  * recurrence
+  * task_fit
+  - redundancy
+  - stale_penalty
+```
+
+`currentness` and `stale_penalty` are computed against `stability_class` —
+identity beliefs get near-flat decay, transient beliefs decay fast. An LLM
+cross-encoder reranker is an offline experiment, not part of v1 live serving.
+
+## HITL Feedback (v1)
+
+Two surfaces, both ship in v1:
+
+1. **Belief review queue.** A CLI (or thin web view) that surfaces newly
+   accepted beliefs for the user to accept / reject / correct / promote to
+   pinned. This is the v1 substitute for wiki-as-control-plane. Reviewer
+   actions write back to `beliefs` and `belief_audit`.
+2. **`context_feedback`.** One-keystroke annotations on `context_for`
+   outputs: `useful`, `wrong`, `stale`, `irrelevant`. Each annotation
+   records the belief ids and segment ids that produced the offending
+   section.
+
+## Sources (v1)
+
+- ChatGPT export (3,437 conversations + 388 project conversations across
+  25 projects).
+- Obsidian vault (read-only ingestion).
+- MCP `capture` tool for live observations / tasks / ideas / references /
+  person notes.
+
+Deferred sources: Claude export, Gemini Takeout, bulk Evernote → Obsidian
+migration. Same pipeline shape, no new architectural signal.
 
 ## First Eval Harness
 
-Start with 25 to 50 prompts that cover:
+Land 25–50 hand-written prompts covering:
 
 ```text
 current project continuation
@@ -123,7 +207,7 @@ past decision recall
 person/entity recall
 style preference recall
 active goal support
-failed approach avoidance
+failed-approach avoidance
 historical self-state
 stale fact suppression
 ```
@@ -140,20 +224,53 @@ token waste
 human usefulness rating
 ```
 
+Eval set runs on a small ChatGPT subset (≈100 conversations) before
+full-corpus consolidation. Full-corpus consolidation is gated on eval
+results.
+
 ## Build Order
 
 ```text
-1. Ingest ChatGPT into raw conversations/messages.
-2. Segment conversations by topic.
-3. Embed segments.
-4. Extract claims with evidence ids.
-5. Consolidate claims into beliefs with temporal validity.
-6. Extract and canonicalize entities.
-7. Materialize current_beliefs.
-8. Implement context_for candidate generation.
-9. Implement ranking and token packing.
-10. Expose context_for through MCP.
-11. Add feedback capture.
-12. Run evals before full-corpus consolidation.
+1.  PostgreSQL + pgvector baseline.
+2.  ChatGPT ingestion into immutable raw conversations / messages.
+3.  Topic segmentation (LLM-driven, batch, non-destructive).
+4.  Segment embeddings.
+5.  Claim extraction with evidence_ids.
+6.  Belief consolidation: bitemporal validity + stability_class + status.
+7.  Entity canonicalization + entity_edges.
+8.  current_beliefs (materialized view).
+9.  Belief review queue: accept / reject / correct / promote-to-pinned.
+10. context_for candidate generation (multi-lane).
+11. Ranking + sectioned token packing.
+12. MCP exposure of context_for.
+13. context_feedback capture (useful / wrong / stale / irrelevant).
+14. Eval harness: 25–50 prompt gold set against a 100-conversation subset.
+15. Gate: full-corpus consolidation only after eval pass.
+16. Add Obsidian as a source after evals stabilize.
 ```
 
+Stages 3–8 are non-destructive: re-running them produces new rows that
+supersede prior rows via `valid_to` and `superseded_by`. The pipeline is
+fully resumable per `consolidation_progress` checkpoints.
+
+## What Round 1 Cut From This Draft
+
+Compared to the prior draft, the synthesis added:
+
+- Belief review queue as a v1 build-order item (steps 9, 13).
+- Explicit eval gate before full-corpus consolidation (step 15).
+- `stability_class` and `prompt_version` / `model_version` as required
+  belief fields.
+- Vector index policy (segments + beliefs only; no raw turns).
+- Live ranking formula.
+- Explicit non-goals: AGE / Neo4j / FalkorDB / Kuzu, LLM reranker in the
+  live path, multi-source ingestion, bidirectional Obsidian sync.
+- Replacement of "consolidate claims into beliefs with temporal validity"
+  with the bitemporal close-and-insert invariant.
+
+Compared to the prior draft, the synthesis removed:
+
+- Auto wiki writeback as a v1 product surface.
+- Causal links, patterns, hypotheses, failures, goal progress inference
+  from any v1 stage.
+- Claude export and Gemini Takeout from v1 sources.
