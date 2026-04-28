@@ -52,6 +52,14 @@ every raw row preserves the original.
 **Leaves for next phase:** raw rows ready to be segmented; no
 derivations yet.
 
+## Phase 1.5 — Cleanup (interstitial)
+
+Closes the four findings from PHASE_1_REVIEW_FINDINGS.md (split-format
+test coverage, dedup-conflict test coverage, atomic source upsert) and
+adds the `reclassification` value to `captures.capture_type` per D023.
+Non-blocking for Phase 2 design; should land before Phase 2
+implementation begins. See [prompts/phase_1_5_cleanup.md](prompts/phase_1_5_cleanup.md).
+
 ## Phase 2 — Segmentation + embeddings
 
 **Scope:** topic segmentation of raw messages/notes; embedding generation
