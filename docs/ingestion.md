@@ -80,6 +80,57 @@ Attachments under `files/` are not imported as file blobs in Phase 1; attachment
 metadata and asset pointers remain preserved inside each message's
 `raw_payload`.
 
+## Claude.ai Export
+
+Claude.ai delivers each export as a zip archive, e.g.
+`data-<uuid>-<timestamp>-<batch>-batch-0000.zip`. The importer accepts either
+the zip directly or a directory the user has already extracted:
+
+```bash
+make ingest-claude PATH=/home/halbritt/Downloads/data-<uuid>-...-batch-0000.zip
+make ingest-claude PATH=/home/halbritt/claude-export
+```
+
+The relevant payload files are `conversations.json`, `users.json`,
+`projects.json`, and `memories.json`. Phase 1.5 only ingests
+`conversations.json`; the other files are hashed into the source manifest so
+they participate in change detection but are otherwise preserved as-is on
+disk. File attachments referenced by `chat_messages[].files` are not imported
+as blobs in V1, mirroring the ChatGPT decision; the `{file_uuid, file_name}`
+metadata stays inside each message's `raw_payload`.
+
+The importer writes:
+
+- One `sources` row per export archive or directory, with the resolved
+  filesystem path, a SHA-256 manifest hash, and the manifest JSON as
+  `raw_payload`.
+- One `conversations` row per Claude conversation (using `uuid` as the
+  external id and `name` as the title).
+- One `messages` row per `chat_messages` entry. `role` is the Claude
+  `sender` field (`human` or `assistant`), `sequence_index` follows the
+  array order in the export, and `content_text` is assembled from
+  `content[]` (preferring concatenated `text` parts, with markers like
+  `[tool_use:<name>]` and `[tool_result:<name>]` for non-text parts) and
+  falls back to the message-level `text` field.
+
+All sender types are ingested. Tool use and tool result content parts are
+preserved inside `messages.raw_payload`; downstream phases decide what to
+segment.
+
+### Dedup
+
+The Claude source dedup key is `(source_kind='claude', external_id)`, where
+`external_id` is the resolved zip path or directory path. The manifest hash
+covers the bytes of all four export JSON files. Re-running the same export
+path with the same content reuses the existing source row; running with the
+same path but different content raises an `IngestConflict`.
+
+Conversation dedup uses the Claude `uuid`. Message dedup uses
+`<conversation-uuid>:<message-uuid>` to stay safe against the (unlikely)
+case of a Claude message uuid colliding across conversations. The original
+message uuid is preserved inside `raw_payload`. Re-running the same export
+is a no-op.
+
 ## What Gets Stored
 
 The importer writes:

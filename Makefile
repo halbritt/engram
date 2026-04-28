@@ -5,7 +5,7 @@ DOCKER_DATABASE_URL ?= postgresql://engram:engram@127.0.0.1:54329/engram
 DOCKER_TEST_DATABASE_URL ?= postgresql://engram:engram@127.0.0.1:54329/engram_test
 EXPORT_PATH := $(if $(filter command line,$(origin PATH)),$(PATH),)
 
-.PHONY: install db-up db-down wait-db migrate migrate-docker ingest-chatgpt ingest-chatgpt-docker test test-db test-docker test-db-docker
+.PHONY: install db-up db-down wait-db migrate migrate-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker test test-db test-docker test-db-docker
 
 install: .venv/.installed
 
@@ -40,6 +40,14 @@ ingest-chatgpt: install
 ingest-chatgpt-docker: install wait-db
 	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make ingest-chatgpt-docker PATH=/path/to/chatgpt-export"; exit 2; fi
 	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli ingest-chatgpt "$(EXPORT_PATH)"
+
+ingest-claude: install
+	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make ingest-claude PATH=/path/to/claude-export"; exit 2; fi
+	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli ingest-claude "$(EXPORT_PATH)"
+
+ingest-claude-docker: install wait-db
+	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make ingest-claude-docker PATH=/path/to/claude-export"; exit 2; fi
+	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli ingest-claude "$(EXPORT_PATH)"
 
 test-db:
 	@createdb engram_test 2>/dev/null || true
