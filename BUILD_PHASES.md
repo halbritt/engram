@@ -96,6 +96,9 @@ index on segment embeddings per D009.
 **Leaves for next phase:** segments embedded and retrievable by
 similarity; ready for claim extraction.
 
+See [prompts/phase_2_segments_embeddings.md](prompts/phase_2_segments_embeddings.md)
+for the operational handoff.
+
 ## Phase 3 — Claim extraction + bitemporal beliefs
 
 **Scope:** LLM-driven claim extraction; belief consolidation with
