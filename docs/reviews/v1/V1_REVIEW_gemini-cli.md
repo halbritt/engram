@@ -2,7 +2,7 @@
 **Reviewer:** Gemini CLI
 **Date:** April 28, 2026
 
-This review evaluates the [V1_ARCHITECTURE_DRAFT.md](V1_ARCHITECTURE_DRAFT.md) against the seven foundational principles defined in [HUMAN_REQUIREMENTS.md](HUMAN_REQUIREMENTS.md).
+This review evaluates the [V1_ARCHITECTURE_DRAFT.md](../../design/V1_ARCHITECTURE_DRAFT.md) against the seven foundational principles defined in [HUMAN_REQUIREMENTS.md](../../../HUMAN_REQUIREMENTS.md).
 
 ---
 
@@ -59,7 +59,7 @@ This review evaluates the [V1_ARCHITECTURE_DRAFT.md](V1_ARCHITECTURE_DRAFT.md) a
 
 ## 3. Security implications
 
-Based on the principle review, the following must be added to [SECURITY.md](SECURITY.md):
+Based on the principle review, the following must be added to [SECURITY.md](../../../SECURITY.md):
 
 - **Process Sandboxing (P3):** The process executing `context_for` (the retrieval/compiler side) MUST be executed within an OS-level sandbox (e.g., `bubblewrap` on Linux, `sandbox-exec` on macOS) with no network interface. This is not a "TBD" but a requirement derived from the "separation" principle.
 - **Cryptographic Erasure for Tier-5 (P2):** Any belief tagged with Tier-5 (redact-on-death) must be encrypted with a key that is never shared with successors and is explicitly deleted upon the dead-man's-switch trigger.

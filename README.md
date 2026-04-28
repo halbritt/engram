@@ -24,7 +24,7 @@ No cloud. No data leaving the machine.
 ## Status
 
 Early design. See [SPEC.md](SPEC.md) for the full architecture and
-[BRAINSTORM.md](BRAINSTORM.md) for open design questions.
+[BRAINSTORM.md](docs/design/BRAINSTORM.md) for open design questions.
 
 ## Stack
 

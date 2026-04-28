@@ -217,7 +217,7 @@ them as acceptance criteria.
 
 ## References
 
-- [V1_ARCHITECTURE_DRAFT.md](V1_ARCHITECTURE_DRAFT.md) — schema
+- [V1_ARCHITECTURE_DRAFT.md](docs/design/V1_ARCHITECTURE_DRAFT.md) — schema
   primitives, build order, vector index policy, ranking formula.
 - [DECISION_LOG.md](DECISION_LOG.md) — accepted decisions referenced
   inline above.

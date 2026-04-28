@@ -1,13 +1,13 @@
 # Phase 1.5 Prompt — Phase 1 Cleanup
 
 > Hand this to a coding agent (Claude Code, Codex, or equivalent) to
-> close the findings from [PHASE_1_REVIEW_FINDINGS.md](../PHASE_1_REVIEW_FINDINGS.md)
+> close the findings from [PHASE_1_REVIEW_FINDINGS.md](../docs/phases/PHASE_1_REVIEW_FINDINGS.md)
 > and land the schema addition required by D023. Non-blocking for
 > Phase 2 design; should land before Phase 2 implementation begins.
 
 ## Read first
 
-1. [PHASE_1_REVIEW_FINDINGS.md](../PHASE_1_REVIEW_FINDINGS.md) —
+1. [PHASE_1_REVIEW_FINDINGS.md](../docs/phases/PHASE_1_REVIEW_FINDINGS.md) —
    the findings driving items 1–3.
 2. [DECISION_LOG.md](../DECISION_LOG.md) D023 — the schema decision
    driving item 4.

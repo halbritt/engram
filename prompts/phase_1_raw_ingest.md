@@ -11,7 +11,7 @@
    principles. Especially: "Why local-first is load-bearing," "Why
    corpus access and network egress are kept separate," "Why raw
    data is sacred."
-2. [V1_ARCHITECTURE_DRAFT.md](../V1_ARCHITECTURE_DRAFT.md) — schema
+2. [V1_ARCHITECTURE_DRAFT.md](../docs/design/V1_ARCHITECTURE_DRAFT.md) — schema
    primitives, build order, vector index policy.
 3. [DECISION_LOG.md](../DECISION_LOG.md) — accepted decisions; do
    not re-litigate. Binding for this phase: D002 (three-tier
