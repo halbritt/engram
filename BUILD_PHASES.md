@@ -33,9 +33,12 @@ loader.
 **LLM dependencies:** none.
 
 **Key tables / migrations:** `sources`, `conversations`, `messages`,
-`notes`, `captures`. `privacy_tier` default Tier 1 per D019.
-Row-level triggers prevent UPDATE/DELETE on raw tables (P4).
-`raw_payload` JSONB on every raw row preserves the original.
+`notes`, `captures`, `consolidation_progress` (control table — empty
+in Phase 1; Phase 2+ writes to it for resumability). `privacy_tier`
+default Tier 1 per D019. Row-level triggers prevent UPDATE/DELETE on
+raw tables (P4); `consolidation_progress` is *not* subject to the
+trigger — rows update as batches progress. `raw_payload` JSONB on
+every raw row preserves the original.
 
 **Acceptance criteria:**
 
@@ -182,9 +185,10 @@ These thread through every phase; each phase prompt should reaffirm
 them as acceptance criteria.
 
 - **`consolidation_progress` checkpoints.** Every batch stage that
-  touches the corpus must be resumable. Phase 2 (segmenter, embedder),
-  Phase 3 (extractor, consolidator), Phase 4 (entity canonicalizer)
-  each leave checkpoints.
+  touches the corpus must be resumable. Phase 1 creates the empty
+  table as part of the schema baseline; Phase 2 (segmenter, embedder),
+  Phase 3 (extractor, consolidator), and Phase 4 (entity canonicalizer)
+  each leave checkpoints in it.
 - **Local-only execution.** No outbound network from any pipeline
   process. Postgres + LLM endpoints all on 127.0.0.1 (P2 / P3 / D020).
 - **Raw immutability.** No UPDATE/DELETE on raw tables (P4 / D002).

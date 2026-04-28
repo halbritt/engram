@@ -60,6 +60,21 @@ embeddings, extraction, beliefs, entity canonicalization, or
    - Records the export's filesystem path and content hash in
      `sources` so re-ingestion of the same export is detectable.
 
+4. **Control table: `consolidation_progress`.** Empty in Phase 1;
+   Phase 2+ writes to it for resumability. Phase 1 creates and
+   migrates the table — nothing in Phase 1 writes rows.
+   - Minimum columns: `id` (PK), `stage` (text — values like
+     `segmenter | embedder | extractor | consolidator |
+     entity_canonicalizer`; downstream phases extend the value set),
+     `scope` (text — identifier for the batch this row tracks, e.g.
+     a `source_id` or a date range), `status` (enum:
+     `pending | in_progress | completed | failed`), `started_at`,
+     `updated_at`, `position` (JSONB — stage-specific checkpoint
+     payload; downstream phases define the shape).
+   - Not subject to the raw-immutability trigger. Rows update as
+     batches progress.
+   - Index on `(stage, scope)` for cheap status lookup.
+
 ## Constraints (load-bearing — do not relax)
 
 - Local only. No outbound network calls from any code path in this
@@ -81,6 +96,8 @@ embeddings, extraction, beliefs, entity canonicalization, or
 - `docs/ingestion.md` (or equivalent) covers: how to run, what gets
   ingested, what doesn't (e.g., system messages — document the
   choice), dedup strategy.
+- `consolidation_progress` table migrated and queryable, with zero
+  rows after a fresh ingest run (Phase 1 doesn't write to it).
 
 ## Non-goals (do not build in this phase)
 
