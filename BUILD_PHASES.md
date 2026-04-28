@@ -52,13 +52,20 @@ every raw row preserves the original.
 **Leaves for next phase:** raw rows ready to be segmented; no
 derivations yet.
 
-## Phase 1.5 — Cleanup (interstitial)
+## Phase 1.5 — Cleanup + multi-source ingestion (interstitial)
 
-Closes the four findings from PHASE_1_REVIEW_FINDINGS.md (split-format
-test coverage, dedup-conflict test coverage, atomic source upsert) and
-adds the `reclassification` value to `captures.capture_type` per D023.
-Non-blocking for Phase 2 design; should land before Phase 2
-implementation begins. See [prompts/phase_1_5_cleanup.md](prompts/phase_1_5_cleanup.md).
+Closes Phase 1 cleanup and brings the other two AI-conversation sources
+(Claude and Gemini) under the same schema before LLM-driven phases
+start. Per D024, having all three sources in raw before Phase 2
+(segmentation + embeddings) gives the segmenter a uniform corpus and
+Step 5 (gold-set authoring) richer evidence to ground against.
+
+- **Cleanup** — completed in commit `58a5a4a`. See
+  [prompts/phase_1_5_cleanup.md](prompts/phase_1_5_cleanup.md).
+- **Claude.ai export ingestion** — see
+  [prompts/phase_1_5_claude_ingest.md](prompts/phase_1_5_claude_ingest.md).
+- **Gemini Takeout ingestion** — see
+  [prompts/phase_1_5_gemini_ingest.md](prompts/phase_1_5_gemini_ingest.md).
 
 ## Phase 2 — Segmentation + embeddings
 

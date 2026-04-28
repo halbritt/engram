@@ -28,7 +28,7 @@ facts.
 - Apache AGE / Neo4j / FalkorDB / Kuzu graph backend.
 - LLM cross-encoder reranker in the live path.
 - Bidirectional Obsidian sync.
-- Multi-source ingestion beyond ChatGPT + Obsidian + capture.
+- Bulk Evernote → Obsidian migration (per F008).
 
 ## Canonical Data Flow
 
@@ -196,12 +196,17 @@ Two surfaces, both ship in v1:
 
 - ChatGPT export (3,437 conversations + 388 project conversations across
   25 projects).
+- Claude.ai conversation export (added in Phase 1.5 per D024).
+- Gemini Takeout (added in Phase 1.5 per D024).
 - Obsidian vault (read-only ingestion).
 - MCP `capture` tool for live observations / tasks / ideas / references /
   person notes.
 
-Deferred sources: Claude export, Gemini Takeout, bulk Evernote → Obsidian
-migration. Same pipeline shape, no new architectural signal.
+All three AI-conversation sources share the same `raw_evidence` schema;
+`source_kind` (chatgpt | claude | gemini | obsidian | capture | future)
+discriminates. Adding a source is parser work, not architectural work.
+
+Deferred sources: bulk Evernote → Obsidian migration (per F008 trimmed).
 
 Constraint: Engram makes no outbound network requests under any code path. Freshness via web search is explicitly out of scope.
 

@@ -41,7 +41,7 @@
 - Goal / failure / hypothesis / pattern inference
 - Causal-link mining
 - Apache AGE / graph backend
-- Multi-source ingestion beyond ChatGPT + Obsidian + capture
+- Bulk Evernote → Obsidian migration (Claude + Gemini brought into V1 per D024)
 - LLM cross-encoder reranker in live path
 - Bidirectional Obsidian sync
 - Async precompute of context packages
