@@ -54,7 +54,7 @@ HUMAN_REQUIREMENTS.md:
   classical security property, but the contract that prevents downstream
   misuse of context.
 
-## Process isolation **(TBD)**
+## Process isolation **(Resolved for V1)**
 
 The principle commits the design to: engram-reading process has no
 network egress; network-using process has no direct corpus access.
@@ -67,10 +67,9 @@ Implementation options under consideration:
 - **IPC-only communication** between processes (Unix domain sockets,
   explicit message types — never raw queries).
 
-Open: which mechanisms compose for V1. See V1_ARCHITECTURE_DRAFT for the
-eventual realization.
+**V1 Implementation:** Enforced via OS-level network namespace (Linux) or sandboxed app (macOS) for the engram-reading process, with default-deny on the network interface. The MCP server binds only to `127.0.0.1`.
 
-## Data at rest **(TBD)**
+## Data at rest **(Resolved for V1)**
 
 The database itself must be encrypted with a key not derivable from the
 OS login alone. Options:
@@ -83,9 +82,8 @@ OS login alone. Options:
 - Application-level encryption with key held in OS keychain / hardware
   enclave.
 
-Open: tier-aware encryption (different key per privacy tier) vs single
-DB key. Tier-5 (redact-on-death) requires a separate destroyable key
-regardless. See *Posthumous handoff*.
+**V1 Implementation:** Postgres data directory encrypted via LUKS (or equivalent FDE). Key held by user at login.
+*Note:* Tier-5 (redact-on-death) requires a separate destroyable key regardless (cryptographic erasure). See *Posthumous handoff*.
 
 ## Network egress **(TBD)**
 
@@ -251,4 +249,6 @@ Consolidated from the sections above:
 6. M-of-N parameters for posthumous key sharing, and who holds shares.
 7. Per-category default privacy tiers.
 8. Off-site backup rotation policy.
+9. Vulnerability disclosure contact and process.
+y.
 9. Vulnerability disclosure contact and process.

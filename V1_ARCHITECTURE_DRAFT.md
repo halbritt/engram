@@ -77,6 +77,8 @@ entity_edges
 embedding_cache
 context_feedback
 belief_audit
+contradictions
+settings
 ```
 
 ## Belief Requirements
@@ -100,6 +102,9 @@ confidence
 evidence_ids         (NOT NULL — at least one raw episode/message/note/capture id)
 prompt_version
 model_version
+original_prompt_version
+original_model_version
+privacy_tier         (integer, default 1)
 ```
 
 Invariants:
@@ -128,6 +133,7 @@ Recent Signals             (~600 tokens — last N days of activity)
 Entity Context             (~900 tokens — mentioned-entity neighborhood, conditional)
 Raw Evidence Snippets      (~1000 tokens — citations supporting Relevant Beliefs)
 Uncertain / Conflicting    (only when topic-relevant)
+Missing Data / Gaps        (~200 tokens — explicit "no data" when queried entities lack beliefs)
 ```
 
 Each section has an explicit token budget. Defaults to current beliefs
@@ -146,6 +152,7 @@ active projects / goals       (manual capture, status=active)
 mentioned entity neighborhood (entity_edges, 1-2 hop, conditional)
 pinned profile facts          (curated standing context)
 open contradictions           (only when subject is topic-adjacent)
+missing data detection        (fires when queries yield zero/low-scoring results for known entities)
 ```
 
 The mentioned-entity lane only fires when entity extraction on the running
@@ -179,8 +186,7 @@ Two surfaces, both ship in v1:
 
 1. **Belief review queue.** A CLI (or thin web view) that surfaces newly
    accepted beliefs for the user to accept / reject / correct / promote to
-   pinned. This is the v1 substitute for wiki-as-control-plane. Reviewer
-   actions write back to `beliefs` and `belief_audit`.
+   pinned. This is the v1 substitute for wiki-as-control-plane. `accept` / `reject` / `promote` write back to `beliefs` and `belief_audit`. `correct` inserts a new immutable `captures` row as raw evidence, which then supersedes the bad belief via the standard extraction pipeline.
 2. **`context_feedback`.** One-keystroke annotations on `context_for`
    outputs: `useful`, `wrong`, `stale`, `irrelevant`. Each annotation
    records the belief ids and segment ids that produced the offending
@@ -196,6 +202,8 @@ Two surfaces, both ship in v1:
 
 Deferred sources: Claude export, Gemini Takeout, bulk Evernote → Obsidian
 migration. Same pipeline shape, no new architectural signal.
+
+Constraint: Engram makes no outbound network requests under any code path. Freshness via web search is explicitly out of scope.
 
 ## First Eval Harness
 
@@ -224,13 +232,15 @@ token waste
 human usefulness rating
 ```
 
-Eval set runs on a small ChatGPT subset (≈100 conversations) before
-full-corpus consolidation. Full-corpus consolidation is gated on eval
-results.
+The eval uses a Tiered Structure:
+1.  **Smoke Test:** Runs on ~100 conversations to catch catastrophic pipeline failures.
+2.  **Gold-Set Validation:** Runs on a 1,000-2,000 stratified, target-closed subset containing the actual entities, projects, and years referenced by the gold prompts. This is the true eval gate.
+3.  **Full Corpus:** (3,400+ conversations) Proceeds only after Tier 2 passes without regressions.
 
 ## Build Order
 
 ```text
+0.  Configure network-disconnected runtime (OS namespace/sandbox) for the engram-reading process. MCP server binds to 127.0.0.1.
 1.  PostgreSQL + pgvector baseline.
 2.  ChatGPT ingestion into immutable raw conversations / messages.
 3.  Topic segmentation (LLM-driven, batch, non-destructive).
@@ -244,9 +254,10 @@ results.
 11. Ranking + sectioned token packing.
 12. MCP exposure of context_for.
 13. context_feedback capture (useful / wrong / stale / irrelevant).
-14. Eval harness: 25–50 prompt gold set against a 100-conversation subset.
-15. Gate: full-corpus consolidation only after eval pass.
-16. Add Obsidian as a source after evals stabilize.
+14. Smoke eval harness on ~100 conversations.
+15. Gold-set eval harness on target-closed stratified corpus slice (~1000-2000 conversations).
+16. Gate: full-corpus consolidation only after tier-2 pass.
+17. Add Obsidian as a source after evals stabilize.
 ```
 
 Stages 3–8 are non-destructive: re-running them produces new rows that
