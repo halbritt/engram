@@ -120,3 +120,10 @@ Raw evidence tables are protected by database triggers that block `UPDATE` and
 
 `consolidation_progress` is created in Phase 1 for later resumable stages. The
 ChatGPT importer does not write to it, so it remains empty after a fresh ingest.
+
+## Reclassification Vocabulary
+
+D023 adds `reclassification` to `captures.capture_type`. Phase 1.5 only adds
+the enum value so later review surfaces can record tier promotions or redaction
+requests as immutable captures. No Phase 1.5 code writes reclassification
+captures, and raw rows remain protected by the immutability trigger.

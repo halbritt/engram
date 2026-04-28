@@ -318,28 +318,6 @@ def parse_timestamp(value: Any) -> datetime | None:
 def get_or_create_source(conn: psycopg.Connection, manifest: dict[str, Any]) -> str:
     row = conn.execute(
         """
-        SELECT id, content_hash, raw_payload
-        FROM sources
-        WHERE source_kind = 'chatgpt' AND external_id = %s
-        """,
-        (manifest["external_id"],),
-    ).fetchone()
-    if row:
-        source_id, existing_hash, existing_payload = row
-        if existing_hash != manifest["content_hash"]:
-            raise IngestConflict(
-                "ChatGPT source content hash differs from immutable source row "
-                f"for {manifest['external_id']}"
-            )
-        if existing_payload != manifest:
-            raise IngestConflict(
-                "ChatGPT source manifest differs from immutable source row "
-                f"for {manifest['external_id']}"
-            )
-        return str(source_id)
-
-    source_id = conn.execute(
-        """
         INSERT INTO sources (
             source_kind,
             external_id,
@@ -348,6 +326,7 @@ def get_or_create_source(conn: psycopg.Connection, manifest: dict[str, Any]) -> 
             raw_payload
         )
         VALUES ('chatgpt', %s, %s, %s, %s)
+        ON CONFLICT (source_kind, external_id) DO NOTHING
         RETURNING id
         """,
         (
@@ -356,7 +335,35 @@ def get_or_create_source(conn: psycopg.Connection, manifest: dict[str, Any]) -> 
             manifest["content_hash"],
             Jsonb(manifest),
         ),
-    ).fetchone()[0]
+    ).fetchone()
+    if row:
+        return str(row[0])
+
+    existing = conn.execute(
+        """
+        SELECT id, content_hash, raw_payload
+        FROM sources
+        WHERE source_kind = 'chatgpt' AND external_id = %s
+        """,
+        (manifest["external_id"],),
+    ).fetchone()
+    if not existing:
+        raise IngestConflict(
+            "ChatGPT source insert conflicted but no existing source row was found "
+            f"for {manifest['external_id']}"
+        )
+
+    source_id, existing_hash, existing_payload = existing
+    if existing_hash != manifest["content_hash"]:
+        raise IngestConflict(
+            "ChatGPT source content hash differs from immutable source row "
+            f"for {manifest['external_id']}"
+        )
+    if existing_payload != manifest:
+        raise IngestConflict(
+            "ChatGPT source manifest differs from immutable source row "
+            f"for {manifest['external_id']}"
+        )
     return str(source_id)
 
 

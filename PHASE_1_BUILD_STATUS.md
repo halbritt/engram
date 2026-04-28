@@ -1,6 +1,6 @@
 # Phase 1 Build Status
 
-Status: implemented and verified on system Postgres
+Status: implemented; Phase 1.5 cleanup applied and verified on system Postgres
 Date: 2026-04-28
 
 ## Database
@@ -48,6 +48,11 @@ System cluster setup completed on 2026-04-28:
 - Conflict detection for changed export content.
 - Documentation in `docs/ingestion.md`.
 - Tests for idempotent re-ingest, immutability, and conflict handling.
+- Phase 1.5 cleanup:
+  - Split ChatGPT export test coverage.
+  - Internal duplicate conversation/message conflict test coverage.
+  - Atomic source insert with `ON CONFLICT DO NOTHING RETURNING id`.
+  - `captures.capture_type='reclassification'` enum value per D023.
 
 ## Verification
 
@@ -87,7 +92,19 @@ consolidation_progress   0
 Test result:
 
 ```text
-3 passed
+6 passed
+```
+
+Current `capture_type` values:
+
+```text
+observation
+task
+idea
+reference
+person_note
+user_correction
+reclassification
 ```
 
 ## Notes
