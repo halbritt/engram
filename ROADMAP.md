@@ -6,69 +6,32 @@
 
 ## Right now
 
-**Step 1: Principle review.** Read the foundational-principle sections of
-[HUMAN_REQUIREMENTS.md](HUMAN_REQUIREMENTS.md) (everything from "The
-distinguishing property" through "Why refusal of false precision is a
-contract"). For each principle, decide *keep / cut / amend*.
+**Step 4: Build pipeline + smoke pre-pass.** Implement V1 build order through the smoke gate (~200 random conversations) per D016. See V1_ARCHITECTURE_DRAFT for build steps. Done when smoke passes and the corpus inventory is browsable — that inventory is what Step 5 needs.
 
-Done when every principle has been individually grit-tested against my own
-intuition and the call has been made.
+## Already done
+
+- Step 1: principle review → HUMAN_REQUIREMENTS.
+- Step 2: ingestion-blocking open questions → privacy_tier defaults Tier 1 (D019); posthumous policy in HUMAN_REQUIREMENTS.
+- Step 3: V1 re-pass against principles → V1_SYNTHESIS_DELTAS, DECISION_LOG D016–D022.
 
 ## Up next, in order
 
-**Step 2: Resolve the two ingestion-blocking open questions.**
-- Privacy tier model — which categories default to which tier.
-- Posthumous handoff policy — even one line is better than silence.
+**Step 5: Author the gold set.** 25–50 entries via GOLD_SET_TEMPLATE. *Trap to watch:* `expected_facts` come from my real-life answer, not from what the smoke pipeline extracted. Reference evidence by content, not by id. Done after a 24-hour-gap re-read.
 
-These don't have to be perfect. They have to *exist* before any health,
-financial, or sensitive-relationship data lands.
+**Step 6: Adversarial round** on V1 + principles + gold set + smoke inventory.
 
-Done when both have a written answer in HUMAN_REQUIREMENTS.
+**Step 7: Synthesize.** Update DECISION_LOG and V1_ARCHITECTURE_DRAFT as needed.
 
-**Step 3: V1 re-pass against the principles.** V1_ARCHITECTURE_DRAFT was
-synthesized before the principles were explicitly named. Read
-[V1_ARCHITECTURE_DRAFT.md](V1_ARCHITECTURE_DRAFT.md) against the foundational
-principles. For each principle, ask: does V1 honor it, violate it, or stay
-silent? Where it stays silent, decide whether it should be named in V1.
+**Step 8: Full V1-corpus consolidation.** Runs unblocked. Multi-week local compute.
 
-Done when there is either a delta document or a "V1 confirmed as-is" note
-capturing the result.
-
-**Step 4: Author the gold set.** 25–50 entries using
-[GOLD_SET_TEMPLATE.md](GOLD_SET_TEMPLATE.md). The highest-leverage thing only
-I can do, and it must land before migrations. The gold set is the actual
-specification.
-
-Done when the set has been written and re-read once after at least a
-24-hour gap.
-
-**Step 5: Adversarial round on V1 + principles + gold set.** Multi-model
-adversarial review with all three artifacts in hand. The methodology has its
-best shot here, because the inputs are richer than they were for round 1.
-
-Done when adversarial responses are collected and a synthesis prompt has
-been run.
-
-**Step 6: Synthesize the adversarial round.** Decide what to act on, what to
-defer. Update DECISION_LOG. Update V1_ARCHITECTURE_DRAFT if needed.
-
-Done when synthesis lands as a commit.
-
-**Step 7: Start migrations.** Stop designing, start building. V1 build order
-step 1: Postgres + pgvector baseline. From here on, the work is engineering,
-not design.
+**Step 9: Gold set against consolidated V1 corpus.** Drives prompt/model re-extraction cycles via the non-destructive pipeline. Done when pass-rate stabilizes.
 
 ## Standing items I own forever
 
-- **Update this file when status changes.** This is an attention-management
-  artifact, not a one-shot.
-- **Resist per-decision review.** Decisions in DECISION_LOG and
-  CONSENSUS_REVIEW are technical decisions where multi-model convergence
-  beats my intuition. Anxiety telling me to weigh in on each one is a
-  background process, not a signal.
+- **Update this file when status changes.** Attention artifact, not a one-shot.
+- **Resist per-decision review.** Multi-model convergence beats my intuition on technical calls; anxiety to weigh in is background noise.
 - **Reauthor gold-set entries** as new categories of question come up.
-- **Run adversarial sweeps** on the live store after launch (per the
-  principle that adversarial review is permanent).
+- **Run adversarial sweeps** on the live store after launch (P6).
 
 ## Explicitly deferred (so anxiety doesn't pull me back)
 
@@ -83,23 +46,12 @@ not design.
 - Bidirectional Obsidian sync
 - Async precompute of context packages
 
-### External tooling for the build process (re-evaluate at step 7)
+### External tooling
 
-- **Adopting an external dev-workflow orchestrator** (e.g.,
-  [chaohong-ai/ai-auto-work](https://github.com/chaohong-ai/ai-auto-work) —
-  Claude + Codex dual-model coding workflow). Methodologically aligned with
-  the consensus-design pattern, but it's a coding tool — design phase doesn't
-  benefit. Maturity is low (8 commits on main, no releases as of 2026-04).
-  Re-evaluate when V1 schema is locked and implementation begins.
-
-These are not lost. They are explicitly v2-or-later or step-7-or-later.
-Returning to them now is scope creep.
+- **Dev-workflow orchestrator** (e.g., [ai-auto-work](https://github.com/chaohong-ai/ai-auto-work)) — skipped. Working pattern is single coding agent + multi-model adversarial review at decision boundaries. Revisit only if that breaks down.
 
 ## When in doubt
 
-- **The desired outcome:** *Biography of one human life, queryable at any
-  point in time, owned by me.*
-- **The desired process:** *Articulate principles. Articulate desired
-  outcome. Articulate the eval. Get out of the way.*
-- **My job:** *Steps 1, 2, 4. And to refuse to do steps 3, 5, 6, 7 until
-  1, 2, 4 are done.*
+- **Outcome:** *Biography of one human life, queryable at any point in time, owned by me.*
+- **Process:** *Articulate principles. Articulate desired outcome. Articulate the eval. Get out of the way.*
+- **My job:** Steps 1, 2, 5. Refuse to do Steps 6, 7, 9 until 5 is done. Steps 3, 4, 8 are engineering / model-driven.
