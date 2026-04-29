@@ -33,6 +33,12 @@
 - **Reauthor gold-set entries** as new categories of question come up.
 - **Run adversarial sweeps** on the live store after launch (P6).
 
+## Promoted into V1
+
+- Async context precompute / hot state — promoted by D025. Implement only
+  as minimal Phase 5 `context_snapshots` + `memory_events`; distributed
+  multi-GPU serving remains later-stage.
+
 ## Explicitly deferred (so anxiety doesn't pull me back)
 
 ### Engram features (v2-or-later)
@@ -44,7 +50,6 @@
 - Bulk Evernote → Obsidian migration (Claude + Gemini brought into V1 per D024)
 - LLM cross-encoder reranker in live path
 - Bidirectional Obsidian sync
-- Async precompute of context packages
 
 ### External tooling
 

@@ -159,18 +159,24 @@ canonicalized — ready to compose into context.
 ## Phase 5 — `context_for` + serving path
 
 **Scope:** multi-lane candidate generation; weighted ranking;
-sectioned token packing; MCP exposure; `context_feedback` capture.
+sectioned token packing; minimal async hot state via context snapshots;
+MCP exposure; `context_feedback` capture.
 
 **LLM dependencies:** none in the live serving path (D011 — simple
 weighted scorer; LLM reranker deferred per F003).
 
-**Key tables / migrations:** `context_feedback` (with
-`correction_note TEXT NULL`).
+**Key tables / migrations:** `memory_events`, `context_snapshots`,
+`context_feedback` (with `correction_note TEXT NULL`).
 
 **Acceptance criteria:**
 
 - `context_for(conversation)` runs as a pure read in a process with
   no network egress (D020).
+- Cold compile path produces a valid context package from canonical state.
+- Warm snapshot path returns a versioned context package without recomputing
+  every candidate lane (D025).
+- Capture / review / feedback / belief changes emit memory events that
+  invalidate or refresh affected snapshots.
 - MCP server binds 127.0.0.1 only.
 - Rendered context items carry inline `(conf=…, src=…)` tags per D022.
 - Gaps lane emits explicit "no data" markers rather than thin sections

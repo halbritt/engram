@@ -52,14 +52,15 @@ supersede prior rows; nothing is overwritten in place.
 ```text
 vector index
 entity graph (relational entity_edges)
-context packages
+context packages / context snapshots
 eval snapshots
 review-queue surface (belief inspection)
 ```
 
 Derived projections are rebuildable from canonical evidence-backed state.
-Wiki pages, full-graph stores, async precomputed context caches, and
-goal/failure/hypothesis tables are deferred.
+Wiki pages, full-graph stores, advanced cache services, and
+goal/failure/hypothesis tables are deferred. Minimal context snapshots are
+part of the Phase 5 serving path per D025.
 
 ## Minimal Schema Primitives
 
@@ -75,6 +76,8 @@ beliefs
 entities
 entity_edges
 embedding_cache
+memory_events
+context_snapshots
 context_feedback
 belief_audit
 contradictions
@@ -140,6 +143,35 @@ Each section has an explicit token budget. Defaults to current beliefs
 (`valid_to IS NULL`); historical beliefs surface only when the conversation
 asks for history or when an old belief scores high enough with explicit
 historical labeling.
+
+## Hot State / Context Snapshots
+
+`context_for(conversation)` is the context compiler and cache-miss path, not
+a mandatory full recompute before every user turn.
+
+Phase 5 ships a hybrid serving path:
+
+```text
+canonical store
+  → context_for candidate generation
+  → ranking + sectioned token packing
+  → context_snapshots
+  → MCP warm read or synchronous cold compile
+  → async refresh after capture / review / feedback / belief change
+```
+
+Minimum snapshot scopes:
+
+```text
+standing_user_state
+project_state
+session_state
+recent_signal_state
+```
+
+The first implementation can keep snapshots in Postgres. Separate cache
+services, model-side prefix / KV cache management, and multi-GPU memory
+workers are later optimizations, not V1 blockers.
 
 ## Candidate Lanes
 
@@ -257,12 +289,13 @@ The eval uses a Tiered Structure:
 9.  Belief review queue: accept / reject / correct / promote-to-pinned.
 10. context_for candidate generation (multi-lane).
 11. Ranking + sectioned token packing.
-12. MCP exposure of context_for.
-13. context_feedback capture (useful / wrong / stale / irrelevant).
-14. Smoke eval harness on ~100 conversations.
-15. Gold-set eval harness on target-closed stratified corpus slice (~1000-2000 conversations).
-16. Gate: full-corpus consolidation only after tier-2 pass.
-17. Add Obsidian as a source after evals stabilize.
+12. context_snapshots + memory_events for warm serving.
+13. MCP exposure of context_for (warm read, cold compile fallback).
+14. context_feedback capture (useful / wrong / stale / irrelevant).
+15. Smoke eval harness on ~100 conversations.
+16. Gold-set eval harness on target-closed stratified corpus slice (~1000-2000 conversations).
+17. Gate: full-corpus consolidation only after tier-2 pass.
+18. Add Obsidian as a source after evals stabilize.
 ```
 
 Stages 3–8 are non-destructive: re-running them produces new rows that
@@ -283,6 +316,14 @@ Compared to the prior draft, the synthesis added:
   live path, multi-source ingestion, bidirectional Obsidian sync.
 - Replacement of "consolidate claims into beliefs with temporal validity"
   with the bitemporal close-and-insert invariant.
+
+## 2026-04-29 Delta
+
+- D025 promotes async context snapshots / hot state into Phase 5.
+- `context_for(...)` remains the primary product surface, but the normal
+  warm path should serve a versioned snapshot and refresh asynchronously.
+- Larger memory-fabric optimizations remain staged. See
+  [ARCHITECTURE_EVOLUTION_DELTA_2026_04_29.md](ARCHITECTURE_EVOLUTION_DELTA_2026_04_29.md).
 
 Compared to the prior draft, the synthesis removed:
 
