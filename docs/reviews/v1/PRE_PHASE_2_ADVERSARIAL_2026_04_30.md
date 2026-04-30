@@ -6,7 +6,7 @@ Round: Round 0 (Phase 2 Segmentation + Embeddings Adversary)
 ## 1. Blocking before Phase 2
 
 ### Finding 1.1: KNN Pre-filtering Collapse Over Joins
-*   **Description:** The proposed schema puts the `HNSW` index on `embedding_cache.embedding`. However, semantic search *must* filter out superseded segments (`segments.superseded_by IS NOT NULL`) and inaccessible privacy tiers. Postgres cannot efficiently push filters across a JOIN into an HNSW index scan. Over time, as re-segmentation creates a graveyard of superseded rows, an HNSW scan on the cache table will return vectors that join to dead segments, starving your `LIMIT K` of active results. 
+*   **Description:** The proposed schema puts the `HNSW` index on `embedding_cache.embedding`. However, semantic search *must* filter out superseded segments (`segments.superseded_by IS NOT NULL`) and inaccessible privacy tiers. Postgres cannot efficiently push filters across a JOIN into an HNSW index scan. Over time, as re-segmentation creates a graveyard of superseded rows, an HNSW scan on the cache table will return vectors that join to dead segments, starving your `LIMIT K` of active results.
 *   **Decision or document touched:** `docs/design/V1_ARCHITECTURE_DRAFT.md`, `prompts/phase_2_segments_embeddings.md`, `BUILD_PHASES.md`, `DECISION_LOG.md` (D027).
 *   **Proposed doc / schema / prompt delta:** Denormalize the vector. Move the `embedding vector` column and its index to `segment_embeddings`. Add an `is_active` boolean and `privacy_tier` to `segment_embeddings` so pgvector can utilize a partial index (`CREATE INDEX ... WHERE is_active = true AND privacy_tier <= 2`). `embedding_cache` should remain a pure deduplication cache without a vector index.
 *   **Minimal experiment or inspection that would disprove the concern:** Insert 100,000 dummy vectors into a Postgres instance mimicking the 1-to-N join from `embedding_cache` to `segments`. Mark 95% of them as superseded. Apply a `LIMIT 10` vector search and measure the recall collapse and query execution time. This will instantly prove why the vector must be denormalized.
@@ -34,7 +34,7 @@ Round: Round 0 (Phase 2 Segmentation + Embeddings Adversary)
 *   **Cost of being wrong if Phase 2 ships unchanged:** Severe privacy and security breach; redacted or highly sensitive information remains accessible to the LLM context path.
 
 ### Finding 1.5: Poison-Pill Infinite Loops
-*   **Description:** The `segment_pending` resumable batcher targets "all conversations with no active segment row". A conversation that consistently crashes the segmenter (e.g., context window overflow, unparseable characters) will repeatedly fail, crashing the batcher forever. 
+*   **Description:** The `segment_pending` resumable batcher targets "all conversations with no active segment row". A conversation that consistently crashes the segmenter (e.g., context window overflow, unparseable characters) will repeatedly fail, crashing the batcher forever.
 *   **Decision or document touched:** `prompts/phase_2_segments_embeddings.md` (Schema migration, Segmenter contract).
 *   **Proposed doc / schema / prompt delta:** Add an `error_count INT DEFAULT 0` and `last_error TEXT` to `consolidation_progress` to allow the batcher to skip poison pills after N retries.
 *   **Minimal experiment or inspection that would disprove the concern:** Run the proposed `ik-llama` segmenter prompt on the single largest ChatGPT message in the raw corpus. Verify whether it hallucinates, truncates silently, or throws an error.

@@ -26,7 +26,8 @@
    units), D020 (no network egress), D021 (derivation versioning
    across the pipeline — `segmenter_version`, `embedding_model_version`),
    D026 (pre-Phase-2 adversarial review before implementation), D027
-   (denormalized vector index and `is_active` flag).
+   (denormalized vector index and `is_active` flag), D028
+   (privacy reclassification invalidates retrieval-visible derived rows).
 4. [BUILD_PHASES.md](../BUILD_PHASES.md) — Phase 2 row, cross-cutting
    concerns (`consolidation_progress` checkpoints, raw immutability,
    privacy_tier carry, derivation versioning).
@@ -52,7 +53,8 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
    stale; read the running services.
 
 2. **Schema migration** (`migrations/004_segments_embeddings.sql`).
-   Two new tables; no changes to raw tables (except adding `error_count` and `last_error` to `consolidation_progress`).
+   Three new derived tables plus progress tracking additions; no
+   changes to raw tables.
 
    `consolidation_progress` changes (D027):
    - Add `error_count INT NOT NULL DEFAULT 0`
@@ -118,13 +120,20 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
    - `embedding_cache_id UUID NOT NULL REFERENCES embedding_cache(id)`
    - `embedding vector(768) NOT NULL` — copied from cache (D027).
    - `embedding_model_version TEXT NOT NULL`
-   - `is_active BOOLEAN NOT NULL DEFAULT true`
-   - `privacy_tier INT NOT NULL`
+   - `is_active BOOLEAN NOT NULL DEFAULT true` — copied from the
+     parent segment at insert time and deactivated with it.
+   - `privacy_tier INT NOT NULL` — copied from the parent segment so
+     retrieval can filter before returning candidates.
    - `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`
    - `PRIMARY KEY (segment_id, embedding_model_version)` — multiple
      model versions can coexist on one segment (D021).
    - HNSW index over the active segments — concretely,
-     `CREATE INDEX ... USING hnsw (embedding vector_cosine_ops) WHERE is_active = true`. Verify the pgvector version supports HNSW; if not, fall back to ivfflat. (D009, D027.)
+     `CREATE INDEX ... USING hnsw (embedding vector_cosine_ops)
+     WHERE is_active = true`. Retrieval queries must also filter
+     `privacy_tier <= :allowed_tier`; add tier-specific partial
+     indexes only if EXPLAIN / smoke retrieval shows privacy filtering
+     collapses recall. Verify the pgvector version supports HNSW; if
+     not, fall back to ivfflat. (D009, D027.)
 
 3. **Segmenter** (`src/engram/segmenter.py`).
    - `segment_conversation(conn, conversation_id) -> SegmentationResult`.
@@ -144,9 +153,14 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      `scope` = `source_id` or batch identifier; `position` records
      the last completed conversation_id).
    - Re-segmentation under a new prompt/model version inserts new
-     rows and back-points the prior rows via `superseded_by`. Never
-     UPDATE existing segment columns other than `superseded_by`.
+     rows, then marks prior `segments` and their `segment_embeddings`
+     rows `is_active=false` in the same transaction. Never UPDATE
+     existing segment columns other than the `is_active` transition.
      Re-running with the **same** versions is a no-op.
+   - Reclassification captures (D023 / D028) that change effective
+     tier for any raw row covered by an active segment must deactivate
+     that segment and its `segment_embeddings` rows, then queue the
+     parent source for re-segmentation and re-embedding.
 
 4. **Embedder** (`src/engram/embedder.py`).
    - `embed_text(text, model_version) -> EmbeddingResult` — checks
@@ -158,7 +172,9 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      (`is_active = true`) lacking a `segment_embeddings` row
      for the current model version. Explicitly copies the vector payload
      from `embedding_cache` into the new `segment_embeddings.embedding`
-     column (D027). Resumable per `consolidation_progress` (`stage='embedder'`).
+     column and copies `is_active` / `privacy_tier` from the parent
+     segment (D027). Resumable per `consolidation_progress`
+     (`stage='embedder'`).
    - Multiple `embedding_model_version` rows can coexist on one
      segment. Re-embedding with a new model version is additive,
      not destructive.
@@ -193,6 +209,9 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      `consolidation_progress` position with no duplicates.
    - `privacy_tier` on segments inherits the max tier across the
      constituent messages.
+   - Reclassification capture against any constituent raw row
+     deactivates affected segments and `segment_embeddings` rows and
+     queues the affected parent source for reprocessing (D028).
 
 8. **Docs** (`docs/segmentation.md`, sibling to
    `docs/ingestion.md`): how to run, what the segmenter prompt
@@ -210,7 +229,9 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
   for the `is_active` transition.
 - Re-derivation is non-destructive: new rows + supersession, never
   in-place UPDATE.
-- `privacy_tier` carries onto segments (D019).
+- `privacy_tier` carries onto segments and segment embeddings (D019).
+  Reclassification captures invalidate retrieval-visible derived rows
+  before they can serve stale lower-tier vectors (D028).
 - Every derived row records its `*_prompt_version` /
   `*_model_version` (D021).
 - `consolidation_progress` checkpoints make both stages resumable.
@@ -224,9 +245,9 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
 - `make embed` embeds all active segments end-to-end. Re-running
   with the same model version is a no-op.
 - Bumping `segmenter_prompt_version` produces new active segments
-  and supersedes the prior generation; old `segment_embeddings`
-  rows remain pointing at the old (now superseded) segments —
-  re-embedding the new generation is a separate `embed` run.
+  and deactivates the prior generation's `segments` and
+  `segment_embeddings` rows; re-embedding the new generation is a
+  separate `embed` run.
 - `consolidation_progress` has rows for `stage='segmenter'` and
   `stage='embedder'` after a run; `status='completed'` on a clean
   finish.
@@ -257,14 +278,5 @@ Prefer the smallest change that satisfies the principles and the
 acceptance criteria. Reach for DECISION_LOG and V1_ARCHITECTURE_DRAFT
 before inventing. If a question isn't answered there, stop and ask
 rather than guessing — Phase 2 is where model-version variance
-enters the pipeline, and the wrong default propagates everywhere
-downstream.
- is where model-version variance
-enters the pipeline, and the wrong default propagates everywhere
-downstream.
-essing — Phase 2 is where model-version variance
-enters the pipeline, and the wrong default propagates everywhere
-downstream.
- is where model-version variance
 enters the pipeline, and the wrong default propagates everywhere
 downstream.

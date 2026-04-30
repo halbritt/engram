@@ -306,9 +306,10 @@ The eval uses a Tiered Structure:
 18. Add Obsidian as a source after evals stabilize.
 ```
 
-Stages 3–8 are non-destructive: re-running them produces new rows that
-supersede prior rows via `valid_to` and `superseded_by`. The pipeline is
-fully resumable per `consolidation_progress` checkpoints.
+Stages 3–8 are non-destructive: segment generations deactivate prior rows via
+`is_active=false` (D027), while belief generations close prior rows via
+`valid_to` / `superseded_by`. The pipeline is fully resumable per
+`consolidation_progress` checkpoints.
 
 ## What Round 1 Cut From This Draft
 
@@ -327,7 +328,11 @@ Compared to the prior draft, the synthesis added:
 
 ## 2026-04-30 Delta
 
-- D027 denormalizes vector embeddings to `segment_embeddings` and replaces `superseded_by` with `is_active` to prevent pgvector index scan collapse and fix N-to-M supersession.
+- D027 denormalizes vector embeddings to `segment_embeddings` and replaces
+  segment-level `superseded_by` with `is_active` to prevent pgvector index scan
+  collapse and fix N-to-M supersession.
+- D028 makes privacy reclassification invalidate retrieval-visible derived rows
+  before stale lower-tier vectors can be served.
 
 ## 2026-04-29 Delta
 

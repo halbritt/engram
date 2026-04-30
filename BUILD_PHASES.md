@@ -119,6 +119,9 @@ index on `segment_embeddings` directly (with copied vector) per D027.
 - Embedding cache hits on identical input + model version are free
   (no recomputation).
 - Multiple `embedding_model_version` rows can coexist on one segment.
+- Privacy reclassification captures deactivate affected segments and
+  `segment_embeddings` rows before retrieval can serve stale low-tier
+  vectors (D028).
 - `consolidation_progress` checkpoints make segmentation and embedding
   resumable per stage.
 
