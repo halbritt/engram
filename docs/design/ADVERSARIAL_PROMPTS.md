@@ -32,20 +32,9 @@ dated synthesis document. Accepted deltas should update DECISION_LOG,
 V1_ARCHITECTURE_DRAFT, BUILD_PHASES, or the Phase 2 prompt before coding
 begins.
 
-Every D026 finding must be classified as exactly one of:
-
-- **Blocking before Phase 2** — must change docs, schema, or prompt before
-  implementation starts.
-- **Non-blocking but document now** — should be captured before coding, but does
-  not block implementation.
-- **Defer** — useful later, but not a Phase 2 gate.
-
-For each finding, include:
-
-1. Decision or document touched.
-2. Proposed doc / schema / prompt delta.
-3. Minimal experiment or inspection that would disprove the concern.
-4. Cost of being wrong if Phase 2 ships unchanged.
+The shared prompt below contains the required D026 output contract. Include it
+with every D026 adversarial run; otherwise reviewers tend to produce useful but
+hard-to-synthesize prose.
 
 ## Shared Context For Every Round
 
@@ -90,6 +79,23 @@ Inputs:
 
 Be adversarial. Argue the assigned position strongly. Identify failure modes,
 irreversible choices, and experiments that would disprove your recommendation.
+
+If this is a D026 pre-Phase-2 review, every finding must be classified as
+exactly one of:
+- Blocking before Phase 2 — must change docs, schema, or prompt before
+  implementation starts.
+- Non-blocking but document now — should be captured before coding, but does not
+  block implementation.
+- Defer — useful later, but not a Phase 2 gate.
+
+For each D026 finding, include:
+1. Decision or document touched.
+2. Proposed doc / schema / prompt delta.
+3. Minimal experiment or inspection that would disprove the concern.
+4. Cost of being wrong if Phase 2 ships unchanged.
+
+D026 outputs should be easy to synthesize into DECISION_LOG,
+V1_ARCHITECTURE_DRAFT, BUILD_PHASES, or the Phase 2 prompt before coding begins.
 ```
 
 ## Round 0: Phase 2 Segmentation + Embeddings Adversary
