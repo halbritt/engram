@@ -149,6 +149,12 @@ historical labeling.
 `context_for(conversation)` is the context compiler and cache-miss path, not
 a mandatory full recompute before every user turn.
 
+V1 hot state is MCP snapshot-first. For external frontier-model consumers
+(Claude, ChatGPT, Gemini, Cursor, or any MCP client), Engram returns a compact
+rendered snapshot and makes no assumption about KV-cache residency or system
+prompt control. If a future local chat agent is co-resident with Engram, the
+same snapshot can later be promoted into a stable prefix / KV-cache artifact.
+
 Phase 5 ships a hybrid serving path:
 
 ```text

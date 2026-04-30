@@ -24,6 +24,10 @@ serving-path primitive. `context_for(...)` remains the primary product surface,
 but it should be treated as a context compiler and cache-miss path, not as the
 normal per-turn hot path.
 
+In V1, "hot state" means versioned MCP-ready context snapshots. It does not
+assume the consuming chat model is local or that Engram controls that model's
+KV cache.
+
 ## Decision Delta
 
 ### Promote Async Hot State Into V1
@@ -46,6 +50,29 @@ canonical store
 The live MCP tool may still call the compiler synchronously on a cold miss, but
 the preferred path is to serve a current snapshot and refresh asynchronously for
 the next turn.
+
+### Consumer Modes
+
+Engram has two distinct serving modes. They share the same canonical store and
+snapshot compiler, but have different latency mechanics.
+
+```text
+Mode A: External frontier consumer
+  - Claude / ChatGPT / Gemini / Cursor / other MCP client calls Engram.
+  - Engram returns a compact, policy-filtered context snapshot over MCP.
+  - Hot state lives in Postgres or a local cache as rendered text + ids.
+  - No assumption of KV-cache residency, prefix caching, or model-server
+    control.
+
+Mode B: Local agent consumer
+  - Engram and the chat model are co-resident on local hardware.
+  - The same snapshot can be promoted into a stable system prefix.
+  - Prefix / KV-cache optimization becomes possible through vLLM, SGLang,
+    ik-llama, or a later local inference stack.
+```
+
+V1 targets Mode A first. Mode B is an optimization layer, not a prerequisite for
+MCP utility.
 
 ### Keep The Rest Staged
 
@@ -73,8 +100,8 @@ should split compilation from delivery.
 user turn
   -> lightweight query/entity/task parse
   -> read hot state for session/project/user
-  -> deliver rendered context package
-  -> foreground model answers
+  -> deliver rendered context package over MCP
+  -> consuming model answers
   -> async refresh compiles next hot state
   -> feedback updates ranking/suppression signals
 ```
@@ -215,7 +242,7 @@ refresh jobs.
 
 | Track | Promotion Trigger | First Artifact |
 |-------|-------------------|----------------|
-| Prefix / KV cache | Repeated stable context dominates prefill latency | serving benchmark + model-server note |
+| Prefix / KV cache | Local agent mode shows repeated stable context dominates prefill latency | serving benchmark + model-server note |
 | TMS / ATMS belief revision | Supersession chains fail on multi-evidence conflicts | belief-revision ADR |
 | Spreading activation / HippoRAG-style retrieval | Fixed 1–2 hop entity expansion is noisy or low-recall | graph retrieval experiment |
 | Salience decay | Ranking overuses stale but still-valid facts | retrieval feature migration |
@@ -248,7 +275,7 @@ warm snapshot latency
 snapshot token count
 stale / wrong / irrelevant feedback rate
 context token waste
-foreground model prefill cost
+consumer context-insertion cost where measurable
 ```
 
 Only promote the larger distributed-memory architecture after those measurements
