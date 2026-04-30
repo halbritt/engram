@@ -32,7 +32,7 @@
    D029 (bounded windowed segmentation), D030 (segment provenance and
    active-ordering integrity), D031 (generation activation), D032
    (privacy inheritance / invalidation scope), D033 (dimension-flexible
-   embedding storage).
+   embedding storage), D034 (deterministic structured local-LLM calls).
 4. [BUILD_PHASES.md](../BUILD_PHASES.md) — Phase 2 row, cross-cutting
    concerns (`consolidation_progress` checkpoints, raw immutability,
    privacy_tier carry, derivation versioning).
@@ -58,12 +58,17 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
    stale; read the running services.
 
    Preflight probes before full implementation:
+   - Probe ik-llama with `GET /v1/models`, `GET /props`, and a minimal
+     `POST /v1/chat/completions` request. Record the exact model id,
+     context window, response shape, and the request parameters required
+     to return parseable JSON in `choices[0].message.content`.
    - Find the largest conversation by total message text length and
      run the draft segmenter prompt against it. Record whether it fits,
      truncates, errors, or needs windowing (D029).
-   - Probe the embedder dimension and pgvector version. Confirm the
-     index strategy for the active model/dimension before writing DDL
-     (D033).
+   - Probe the embedder through Ollama's current batch embedding endpoint
+     and record model identity plus returned vector dimension. Probe
+     pgvector version and confirm the index strategy for the active
+     model/dimension before writing DDL (D033).
    - Simulate two concurrent cache inserts for identical text and
      verify the intended conflict path (see Embedder below).
 
@@ -210,10 +215,48 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      new `segmenter_prompt_version`. Do not create an embeddable
      segment with empty `content_text`; if a parent/window has no
      embeddable text, record the skip in generation/progress metadata.
-   - Output contract: a list of `{message_ids: [...], summary: str | None,
-     content_text: str, raw: dict}`. The agent picks the prompt
-     shape; record `segmenter_prompt_version` and
-     `segmenter_model_version` on every row written.
+   - Qwen / ik-llama request contract (D034): use the OpenAI-compatible
+     `POST http://127.0.0.1:8081/v1/chat/completions` endpoint with the
+     exact probed model id. The current local probe returned
+     `/home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf`; do not
+     hardcode that path without checking the running service. Set
+     `stream=false`, `temperature=0`, `top_p=1`, and
+     `chat_template_kwargs={"enable_thinking": false}`. Set bounded
+     `max_tokens` from configuration; the starting default is 4096 per
+     parent/window unless the largest-conversation probe justifies a
+     different cap. Parse only `choices[0].message.content`; treat
+     `reasoning_content` as
+     diagnostic output, never as the segment payload. Record the exact
+     model id, probed context size, prompt version, and request-profile
+     version in `segmenter_model_version` / `segmenter_prompt_version`
+     metadata so re-derivation is reproducible.
+   - Structured output contract (D034): require
+     `response_format={"type":"json_schema", ...}` with a schema named
+     `SegmentationResult`. The response content must be a single JSON
+     object with this shape:
+
+     ```json
+     {
+       "segments": [
+         {
+           "message_ids": ["uuid"],
+           "summary": "string or null",
+           "content_text": "non-empty string",
+           "raw": {}
+         }
+       ]
+     }
+     ```
+
+     The schema must require `segments`, `message_ids`, `content_text`,
+     and `raw`; allow `summary` to be `null`; set
+     `additionalProperties=false` at the response and segment levels;
+     and allow `raw` to carry model-specific diagnostic fields. Reject
+     empty `segments` unless the whole parent/window is explicitly
+     recorded as skipped in generation/progress metadata. Do not accept
+     Markdown fences or explanatory text as the normal path. Invalid JSON
+     or schema violations fail the parent/window and are recorded in
+     `consolidation_progress.last_error`.
    - `segment_pending(conn, batch_size, model_version) ->
      BatchResult`. Drives segmentation across all conversations
      with no active or pending generation under the current
@@ -280,6 +323,12 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
    - Segmenter end-to-end against a stubbed ik-llama response
      (mock the HTTP client at the boundary; do not call the real
      model in tests).
+   - Segmenter client request-shape test: the ik-llama boundary sends
+     `stream=false`, `temperature=0`, bounded `max_tokens`,
+     `chat_template_kwargs.enable_thinking=false`, and
+     `response_format.type='json_schema'`; it parses
+     `choices[0].message.content` and rejects payloads that are only in
+     `reasoning_content`, Markdown-fenced, or schema-invalid (D034).
    - Idempotent re-segmentation under the same versions: count
      before == count after.
    - Version bump produces new active rows, supersedes prior rows
@@ -320,11 +369,11 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      reprocessing (D028 / D032).
 
 8. **Docs** (`docs/segmentation.md`, sibling to
-   `docs/ingestion.md`): how to run, what the segmenter prompt
-   looks like (in-repo path), what counts as a segment, how
-   versioning works, how supersession works, what's deferred
-   (re-embedding existing rows is operator-driven; no automatic
-   re-embed on segment supersession in this phase).
+   `docs/ingestion.md`): how to run, what the segmenter prompt and
+   local request profile look like (in-repo paths), what counts as a
+   segment, how versioning works, how supersession works, what's
+   deferred (re-embedding existing rows is operator-driven; no
+   automatic re-embed on segment supersession in this phase).
 
 ## Constraints (load-bearing — do not relax)
 
@@ -340,6 +389,8 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
   before they can serve stale lower-tier vectors (D028 / D032).
 - Every derived row records its `*_prompt_version` /
   `*_model_version` (D021).
+- Local LLM calls use deterministic structured request contracts, not
+  endpoint defaults (D034).
 - Retrieval-visible segment generations activate only after required
   embeddings exist (D031).
 - Embedding storage is dimension-flexible; ANN indexes are per active
@@ -352,6 +403,9 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
 - `make migrate` brings up the new tables from a Phase-1.5 schema.
 - `make segment` segments all conversations end-to-end. Re-running
   with the same versions is a no-op (zero new rows).
+- The segmenter ik-llama client uses the D034 request profile and
+  fails clearly on non-JSON, fenced JSON, `reasoning_content`-only, or
+  schema-invalid responses.
 - `make embed` embeds all pending-generation segments end-to-end and
   activates completed generations. Re-running with the same model
   version is a no-op.

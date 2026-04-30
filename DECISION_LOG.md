@@ -1,6 +1,6 @@
 # Decision Log
 
-Status: post D026 pre-Phase-2 synthesis
+Status: post D026 pre-Phase-2 synthesis + D034 local model request contract
 Date: 2026-04-30
 
 This file records architecture decisions after review. Keep decisions short,
@@ -53,6 +53,7 @@ superseded
 | D031 | accepted | Segment generations become retrieval-visible only after required embeddings exist. | D027 moves vectors to `segment_embeddings`; activating segments before embeddings creates retrieval gaps during version bumps. | Phase 2 uses generation-state activation or an equivalent cutover invariant: new segment generations are not retrieval-visible until required embeddings exist, and prior retrieval-visible rows remain available until cutover. | Revisit when serving supports explicit maintenance windows or generation-aware retrieval. |
 | D032 | accepted | Segment privacy inheritance and invalidation are parent-scoped. | Reclassifying one message must not reprocess an entire export source, and segment privacy must include parent-level tiers as well as constituent row tiers. | Segment `privacy_tier` is the max of parent conversation/note/capture tier and covered raw-row tiers. Reclassification invalidates only affected parent conversations/notes/captures and queues those parents for reprocessing. | Revisit if effective-tier computation replaces materialized privacy tiers on retrieval-visible rows. |
 | D033 | accepted | Embedding storage supports per-model dimensions; indexes are per model/dimension. | D021 requires model portability, but hardcoding `vector(768)` prevents coexistence with future embedding dimensions. Pgvector indexes still require dimension-specific index definitions. | Embedding columns are dimension-flexible storage; retrieval indexes are created per active `(embedding_model_version, embedding_dimension)` using pgvector-supported dimension-specific partial/expression indexes or an equivalent additive table strategy. | Revisit if pgvector gains native mixed-dimension ANN indexing. |
+| D034 | accepted | Local LLM-derived stages use deterministic structured request contracts. | Phase 2 probes showed the local Qwen / ik-llama endpoint can emit assistant text in `reasoning_content` unless thinking is disabled, and loose JSON modes can return Markdown-fenced output. Leaving model defaults in control would make segmentation non-reproducible and brittle. | Segmenter calls pin the probed OpenAI-compatible endpoint/model id, disable streaming and thinking, use deterministic sampling settings, bound output tokens, require JSON schema response format, parse only `choices[0].message.content`, and record the request profile in derivation version metadata. Later extraction stages inherit the same default unless they make and log a narrower decision. | Revisit when ik-llama or the local model changes structured-output semantics, or when evals show deterministic decoding harms segmentation quality. |
 
 ## Deferred Decisions
 
