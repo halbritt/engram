@@ -53,10 +53,11 @@ prior rows without overwriting them.
 
 ## Build order
 
-D026 adds a pre-Phase-2 adversarial gate before segmentation +
-embeddings. After that gate, five phases run with a smoke gate at the
-end. Currently at **Phase 1.5 complete** (all three AI conversation
-sources ingested, schema stable).
+D026's pre-Phase-2 adversarial gate has been synthesized into D027-D033.
+Current work is Phase 2 preflight probes, then segmentation + embeddings.
+After Phase 2, the remaining phases run with a smoke gate at the end.
+Currently at **Phase 1.5 complete** (all three AI conversation sources
+ingested, schema stable).
 
 See [BUILD_PHASES.md](BUILD_PHASES.md) for the full phase breakdown and
 acceptance criteria.

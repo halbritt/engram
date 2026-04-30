@@ -6,14 +6,10 @@
 
 ## Right now
 
-**Step 4A: Pre-Phase-2 adversarial round.** Before implementing segmentation +
-embeddings, run the specialized prompts in
-[docs/design/ADVERSARIAL_PROMPTS.md](docs/design/ADVERSARIAL_PROMPTS.md) against
-the current canonical docs. Synthesize any material findings into DECISION_LOG,
-V1_ARCHITECTURE_DRAFT, and BUILD_PHASES. This is D026.
-
-**Step 4B: Build pipeline + smoke pre-pass.** Implement V1 build order through
-the smoke gate (~200 random conversations) per D016. See V1_ARCHITECTURE_DRAFT
+**Step 4B: Build pipeline + smoke pre-pass.** Run the Phase 2 preflight probes,
+then implement V1 build order through the smoke gate (~200 random
+conversations) per D016. See V1_ARCHITECTURE_DRAFT and
+[prompts/phase_2_segments_embeddings.md](prompts/phase_2_segments_embeddings.md)
 for build steps. Done when smoke passes and the corpus inventory is browsable —
 that inventory is what Step 5 needs.
 
@@ -22,6 +18,8 @@ that inventory is what Step 5 needs.
 - Step 1: principle review → HUMAN_REQUIREMENTS.
 - Step 2: ingestion-blocking open questions → privacy_tier defaults Tier 1 (D019); posthumous policy in HUMAN_REQUIREMENTS.
 - Step 3: V1 re-pass against principles → V1_SYNTHESIS_DELTAS, DECISION_LOG D016–D022.
+- Step 4A: D026 pre-Phase-2 adversarial round → Gemini + Opus reviews,
+  synthesis, DECISION_LOG D027-D033.
 
 ## Up next, in order
 

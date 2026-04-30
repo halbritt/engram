@@ -96,6 +96,10 @@ Acceptance criteria:
 This is narrower than the later post-smoke adversarial round over V1 +
 principles + gold set + smoke inventory.
 
+D026 synthesis landed in
+[docs/reviews/v1/PRE_PHASE_2_ADVERSARIAL_SYNTHESIS_2026_04_30.md](docs/reviews/v1/PRE_PHASE_2_ADVERSARIAL_SYNTHESIS_2026_04_30.md)
+and produced D027-D033.
+
 ## Phase 2 — Segmentation + embeddings
 
 **Scope:** topic segmentation of raw messages/notes; embedding generation
@@ -105,23 +109,35 @@ for segments; pgvector index over segments.
 project setup); local embedder via Ollama (`nomic-embed-text` or
 equivalent).
 
-**Key tables / migrations:** `segments` (with `segmenter_version` and
-`is_active` per D027); `embedding_cache` (SHA256-keyed input,
-`embedding_model_version`, `embedding_dimension`); pgvector HNSW
-index on `segment_embeddings` directly (with copied vector) per D027.
+**Key tables / migrations:** `segment_generations` (generation-state
+activation per D031); `segments` (with `segmenter_version`, `is_active`,
+`window_strategy`, and provenance guards per D027 / D029 / D030);
+`embedding_cache` (SHA256-keyed input, `embedding_model_version`,
+`embedding_dimension`); pgvector HNSW index on `segment_embeddings`
+directly (with copied vector) per D027 / D033.
 
 **Acceptance criteria:**
 
 - Segmenter produces topic-coherent segments; short conversations may
   yield a single segment (D005).
+- Over-budget parents use deterministic windowed segmentation with
+  resumable intra-parent checkpoints (D029).
+- Segment provenance and active ordering are enforced at the database
+  boundary: valid ordered `message_ids`, unique active sequence per
+  parent (D030).
 - Re-segmentation under a new `segmenter_version` is non-destructive;
-  prior rows close via `is_active=false`.
+  the new generation becomes retrieval-visible only after required
+  embeddings exist, then prior rows close via `is_active=false` (D031).
 - Embedding cache hits on identical input + model version are free
   (no recomputation).
 - Multiple `embedding_model_version` rows can coexist on one segment.
 - Privacy reclassification captures deactivate affected segments and
-  `segment_embeddings` rows before retrieval can serve stale low-tier
-  vectors (D028).
+  `segment_embeddings` rows for the affected parent conversation /
+  note / capture before retrieval can serve stale low-tier vectors
+  (D028 / D032).
+- Embedding storage supports multiple dimensions via per-model /
+  per-dimension indexes rather than hardcoding one vector dimension
+  into the schema (D033).
 - `consolidation_progress` checkpoints make segmentation and embedding
   resumable per stage.
 
@@ -251,7 +267,7 @@ them as acceptance criteria.
   Re-derivation is non-destructive in every downstream phase.
 - **`privacy_tier` default Tier 1.** Carried on raw tables and
   retrieval-visible derived units (segments, beliefs) — by carry or
-  inheritance (D019).
+  inheritance (D019 / D032).
 - **Derivation versioning.** Every derived stage records its
   `*_prompt_version` / `*_model_version` so the corpus survives the
   model (D021 / P4).

@@ -24,9 +24,10 @@ No cloud. No data leaving the machine.
 
 Phase 1 / 1.5 is complete: raw ingestion exists for ChatGPT, Claude, and Gemini.
 
-Current work is the D026 pre-Phase-2 adversarial review, then Phase 2:
-topic segmentation + embeddings. See [BUILD_PHASES.md](BUILD_PHASES.md),
-[docs/design/ADVERSARIAL_PROMPTS.md](docs/design/ADVERSARIAL_PROMPTS.md),
+The D026 pre-Phase-2 adversarial review is synthesized. Current work is Phase
+2 preflight probes, then topic segmentation + embeddings. See
+[BUILD_PHASES.md](BUILD_PHASES.md),
+[docs/reviews/v1/PRE_PHASE_2_ADVERSARIAL_SYNTHESIS_2026_04_30.md](docs/reviews/v1/PRE_PHASE_2_ADVERSARIAL_SYNTHESIS_2026_04_30.md),
 and [prompts/phase_2_segments_embeddings.md](prompts/phase_2_segments_embeddings.md).
 
 ## Architecture

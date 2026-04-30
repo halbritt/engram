@@ -19,8 +19,8 @@ Step 4 from the roadmap: build the V1 pipeline through the smoke pre-pass.
 
 Active implementation target:
 
-- Pre-Phase-2 adversarial review (D026), using
-  [docs/design/ADVERSARIAL_PROMPTS.md](docs/design/ADVERSARIAL_PROMPTS.md).
+- Phase 2 preflight probes from
+  [docs/reviews/v1/PRE_PHASE_2_ADVERSARIAL_SYNTHESIS_2026_04_30.md](docs/reviews/v1/PRE_PHASE_2_ADVERSARIAL_SYNTHESIS_2026_04_30.md).
 - Phase 2 — segmentation + embeddings.
 - Operational prompt:
   [prompts/phase_2_segments_embeddings.md](prompts/phase_2_segments_embeddings.md).
@@ -34,10 +34,11 @@ Active implementation target:
 - Raw immutability triggers.
 - `privacy_tier` defaulting and reclassification vocabulary.
 - Phase 2 implementation prompt.
+- D026 pre-Phase-2 adversarial review and synthesis.
 
 ## Next Major Milestones
 
-- D026 synthesis: accept/reject pre-Phase-2 adversarial findings.
+- Phase 2 preflight probes.
 - Phase 2: topic segmentation + segment embeddings.
 - Phase 3: claims + bitemporal beliefs.
 - Phase 4: entity canonicalization + belief review queue.

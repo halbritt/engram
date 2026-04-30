@@ -1,9 +1,9 @@
 # V1 Architecture Draft
 
-Status: revised after round-1 synthesis (CONSENSUS_REVIEW.md, 2026-04-27)
+Status: revised after D026 pre-Phase-2 synthesis (2026-04-30)
 
 This is the working target for the first useful version. It will be revised
-again after the adversarial rounds.
+again after the Phase 2 smoke path and later adversarial rounds.
 
 ## V1 Goal
 
@@ -70,12 +70,14 @@ conversations
 messages
 notes
 captures
+segment_generations
 segments
 claims
 beliefs
 entities
 entity_edges
 embedding_cache
+segment_embeddings
 memory_events
 context_snapshots
 context_feedback
@@ -124,7 +126,11 @@ Invariants:
 - Do not embed: raw single turns, full conversations, or unsegmented notes.
 - Raw messages remain in Postgres for provenance and rendering only — not
   in the vector index.
-- Embedding cache is SHA256-keyed. The HNSW index lives on the retrieval table (`segment_embeddings`), not the cache table, to allow pushdown filtering by active state and privacy tier (D027).
+- Embedding cache is SHA256-keyed. The HNSW index lives on the
+  retrieval table (`segment_embeddings`), not the cache table, to
+  allow pushdown filtering by active state and privacy tier (D027).
+  Embedding storage is dimension-flexible; ANN indexes are scoped per
+  active model/dimension (D033).
 
 ## Context_For Shape
 
@@ -288,7 +294,7 @@ The eval uses a Tiered Structure:
 2.  ChatGPT ingestion into immutable raw conversations / messages.
 2.5 Run D026 pre-Phase-2 adversarial review and synthesize accepted deltas before
     segmentation + embeddings implementation.
-3.  Topic segmentation (LLM-driven, batch, non-destructive).
+3.  Topic segmentation (LLM-driven, bounded/windowed, batch, non-destructive).
 4.  Segment embeddings.
 5.  Claim extraction with evidence_ids.
 6.  Belief consolidation: bitemporal validity + stability_class + status.
@@ -306,10 +312,12 @@ The eval uses a Tiered Structure:
 18. Add Obsidian as a source after evals stabilize.
 ```
 
-Stages 3–8 are non-destructive: segment generations deactivate prior rows via
-`is_active=false` (D027), while belief generations close prior rows via
+Stages 3–8 are non-destructive: segment generations activate only after
+required embeddings exist and then deactivate prior retrieval-visible rows via
+`is_active=false` (D027 / D031), while belief generations close prior rows via
 `valid_to` / `superseded_by`. The pipeline is fully resumable per
-`consolidation_progress` checkpoints.
+`consolidation_progress` checkpoints, including intra-parent window progress
+for long conversations (D029).
 
 ## What Round 1 Cut From This Draft
 
@@ -333,6 +341,16 @@ Compared to the prior draft, the synthesis added:
   collapse and fix N-to-M supersession.
 - D028 makes privacy reclassification invalidate retrieval-visible derived rows
   before stale lower-tier vectors can be served.
+- D029 requires bounded/windowed segmentation for parents that exceed the local
+  segmenter's context budget.
+- D030 requires database enforcement for segment provenance and active parent
+  ordering.
+- D031 makes segment generations retrieval-visible only after required
+  embeddings exist.
+- D032 scopes privacy inheritance and reclassification invalidation to the
+  affected parent conversation/note/capture.
+- D033 requires dimension-flexible embedding storage with per-model/dimension
+  indexes.
 
 ## 2026-04-29 Delta
 

@@ -18,7 +18,8 @@
    data is sacred," "Why model portability is a first-class concern."
 2. [V1_ARCHITECTURE_DRAFT.md](../docs/design/V1_ARCHITECTURE_DRAFT.md) —
    schema primitives, vector index policy (segments + accepted beliefs
-   only; no raw turns), 768-dim embeddings, build order steps 3–4.
+   only; no raw turns), embedding dimension policy, build order steps
+   3–4.
 3. [DECISION_LOG.md](../DECISION_LOG.md) — accepted decisions; do not
    re-litigate. Binding for this phase: D005 (segments are the main
    embedding/extraction unit), D009 (vector index policy), D019
@@ -27,7 +28,11 @@
    across the pipeline — `segmenter_version`, `embedding_model_version`),
    D026 (pre-Phase-2 adversarial review before implementation), D027
    (denormalized vector index and `is_active` flag), D028
-   (privacy reclassification invalidates retrieval-visible derived rows).
+   (privacy reclassification invalidates retrieval-visible derived rows),
+   D029 (bounded windowed segmentation), D030 (segment provenance and
+   active-ordering integrity), D031 (generation activation), D032
+   (privacy inheritance / invalidation scope), D033 (dimension-flexible
+   embedding storage).
 4. [BUILD_PHASES.md](../BUILD_PHASES.md) — Phase 2 row, cross-cutting
    concerns (`consolidation_progress` checkpoints, raw immutability,
    privacy_tier carry, derivation versioning).
@@ -52,16 +57,46 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
    shapes. Do not assume from external documentation that may be
    stale; read the running services.
 
+   Preflight probes before full implementation:
+   - Find the largest conversation by total message text length and
+     run the draft segmenter prompt against it. Record whether it fits,
+     truncates, errors, or needs windowing (D029).
+   - Probe the embedder dimension and pgvector version. Confirm the
+     index strategy for the active model/dimension before writing DDL
+     (D033).
+   - Simulate two concurrent cache inserts for identical text and
+     verify the intended conflict path (see Embedder below).
+
 2. **Schema migration** (`migrations/004_segments_embeddings.sql`).
-   Three new derived tables plus progress tracking additions; no
-   changes to raw tables.
+   Derived/control schema additions plus one raw-schema backfill:
+   add `notes.privacy_tier INT NOT NULL DEFAULT 1` if it does not
+   already exist. Do not mutate raw evidence rows.
 
    `consolidation_progress` changes (D027):
    - Add `error_count INT NOT NULL DEFAULT 0`
    - Add `last_error TEXT NULL`
+   - `position JSONB` must support intra-parent progress, e.g.
+     `{conversation_id, window_index}` for windowed segmentation.
+
+   `segment_generations` (D031):
+   - `id UUID PK`
+   - `parent_kind TEXT NOT NULL CHECK (parent_kind IN ('conversation',
+     'note', 'capture'))`
+   - `parent_id UUID NOT NULL`
+   - `segmenter_prompt_version TEXT NOT NULL`
+   - `segmenter_model_version TEXT NOT NULL`
+   - `status TEXT NOT NULL CHECK (status IN ('segmenting', 'segmented',
+     'embedding', 'active', 'superseded', 'failed'))`
+   - `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`
+   - `activated_at TIMESTAMPTZ NULL`
+   - `superseded_at TIMESTAMPTZ NULL`
+   - `raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb`
+   - Partial unique index for active generation per parent:
+     `(parent_kind, parent_id) WHERE status = 'active'`
 
    `segments`:
    - `id UUID PK`
+   - `generation_id UUID NOT NULL REFERENCES segment_generations(id)`
    - `source_id UUID NOT NULL REFERENCES sources(id)`
    - `source_kind source_kind NOT NULL` — segments inherit the kind
      of their source row.
@@ -82,33 +117,46 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      embedder, with role/source markers as the segmenter chose.
    - `summary_text TEXT NULL` — optional segmenter-emitted topic
      label or short summary, if it produces one.
+   - `window_strategy TEXT NOT NULL DEFAULT 'whole' CHECK
+     (window_strategy IN ('whole', 'windowed'))` — D029.
+   - `window_index INT NULL` — set for windowed segmentation.
    - `segmenter_prompt_version TEXT NOT NULL`
    - `segmenter_model_version TEXT NOT NULL`
-   - `is_active BOOLEAN NOT NULL DEFAULT true` — D027. True =
-     currently active. Re-segmentation under a new prompt/model
-     version inserts new rows and marks prior rows false.
-   - `privacy_tier INT NOT NULL DEFAULT 1` — carry from the source
-     conversation/message; max() across the message set if they
-     diverge (D019).
+   - `is_active BOOLEAN NOT NULL DEFAULT false` — retrieval-visible
+     only after the generation activation cutover (D031).
+   - `invalidated_at TIMESTAMPTZ NULL`
+   - `invalidation_reason TEXT NULL`
+   - `privacy_tier INT NOT NULL DEFAULT 1` — D032:
+     `max(parent privacy_tier, covered raw-row privacy_tiers)`. For
+     conversation segments, parent = `conversations.privacy_tier` and
+     covered rows = `messages.privacy_tier`.
    - `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`
    - `raw_payload JSONB NOT NULL` — the segmenter's raw output for
      this segment, including any rationales or scores it emits.
    - Subject to the immutability trigger in the same shape as raw
-     tables: UPDATE allowed only on `is_active`; DELETE blocked.
-     Implement as a trigger that lets `is_active` transition from
-     true to false and rejects every other column change.
-   - Indexes: `(conversation_id, sequence_index)` partial WHERE
-     `is_active = true`; GIN on `message_ids`.
+     tables: UPDATE allowed only for generation activation /
+     deactivation (`is_active`) and invalidation metadata
+     (`invalidated_at`, `invalidation_reason`); DELETE blocked.
+   - Indexes: unique active ordering per parent:
+     `(conversation_id, sequence_index)` partial WHERE
+     `is_active = true AND conversation_id IS NOT NULL`, plus
+     analogous note/capture indexes. GIN on `message_ids`.
+   - INSERT trigger validates conversation `message_ids` (D030):
+     non-empty for conversation segments, all UUIDs exist in
+     `messages`, all belong to `segments.conversation_id`, and array
+     order matches `messages.sequence_index`.
 
    `embedding_cache`:
    - `id UUID PK`
    - `input_sha256 TEXT NOT NULL` — SHA256 over the exact embedded
-     text (not the segment id — the cache is content-keyed so beliefs
-     in Phase 3 can share it).
+     UTF-8 byte string sent to the embedder after canonicalization
+     (not the segment id — the cache is content-keyed so beliefs in
+     Phase 3 can share it).
    - `embedding_model_version TEXT NOT NULL`
    - `embedding_dimension INT NOT NULL`
-   - `embedding vector(768) NOT NULL` — dimension matches what the
-     probed embedder returns (768 for nomic-embed-text; verify).
+   - `embedding vector NOT NULL` — dimension-flexible storage per
+     D033; row dimension must equal `embedding_dimension`.
+   - Check constraint: `vector_dims(embedding) = embedding_dimension`.
    - `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`
    - `UNIQUE (input_sha256, embedding_model_version)` — same input
      can have multiple model rows; same input + model is unique.
@@ -117,23 +165,29 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
 
    `segment_embeddings`:
    - `segment_id UUID NOT NULL REFERENCES segments(id)`
+   - `generation_id UUID NOT NULL REFERENCES segment_generations(id)`
    - `embedding_cache_id UUID NOT NULL REFERENCES embedding_cache(id)`
-   - `embedding vector(768) NOT NULL` — copied from cache (D027).
+   - `embedding vector NOT NULL` — copied from cache (D027 / D033).
    - `embedding_model_version TEXT NOT NULL`
-   - `is_active BOOLEAN NOT NULL DEFAULT true` — copied from the
-     parent segment at insert time and deactivated with it.
+   - `embedding_dimension INT NOT NULL`
+   - Check constraint: `vector_dims(embedding) = embedding_dimension`.
+   - `is_active BOOLEAN NOT NULL DEFAULT false` — activated only in
+     the generation cutover transaction and deactivated with the
+     parent segment.
    - `privacy_tier INT NOT NULL` — copied from the parent segment so
      retrieval can filter before returning candidates.
    - `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`
    - `PRIMARY KEY (segment_id, embedding_model_version)` — multiple
      model versions can coexist on one segment (D021).
-   - HNSW index over the active segments — concretely,
-     `CREATE INDEX ... USING hnsw (embedding vector_cosine_ops)
-     WHERE is_active = true`. Retrieval queries must also filter
-     `privacy_tier <= :allowed_tier`; add tier-specific partial
-     indexes only if EXPLAIN / smoke retrieval shows privacy filtering
-     collapses recall. Verify the pgvector version supports HNSW; if
-     not, fall back to ivfflat. (D009, D027.)
+   - HNSW indexes are per active `(embedding_model_version,
+     embedding_dimension)` using a pgvector-supported
+     dimension-specific partial/expression index, e.g. casting to the
+     active dimension when required. Retrieval queries must also
+     filter `is_active = true` and `privacy_tier <= :allowed_tier`.
+     Add tier-specific partial indexes only if EXPLAIN / smoke
+     retrieval shows privacy filtering collapses recall. Verify the
+     pgvector version supports the chosen HNSW strategy; if not,
+     document the ivfflat fallback parameters. (D009, D027, D033.)
 
 3. **Segmenter** (`src/engram/segmenter.py`).
    - `segment_conversation(conn, conversation_id) -> SegmentationResult`.
@@ -141,40 +195,70 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      calls ik-llama, parses the structured response into 1..N
      segments. Short conversations may return a single segment
      (D005).
+   - Long-conversation handling (D029): probe the effective local
+     model context window, reserve margin for instructions/output, and
+     set a per-parent budget. If a parent exceeds budget, segment
+     overlapping message windows, record `window_strategy='windowed'`
+     and `window_index`, and merge adjacent boundary segments only
+     when the overlap shows they cover the same topic. Window-boundary
+     uncertainty belongs in `raw_payload`.
+   - Message canonicalization: include NULL-content messages in
+     `message_ids` when they are within the segment span, but exclude
+     non-text placeholders from the embedded text unless they carry
+     semantic content. Strip high-frequency tool/image markers from
+     `content_text` before embedding; changes to this policy require a
+     new `segmenter_prompt_version`. Do not create an embeddable
+     segment with empty `content_text`; if a parent/window has no
+     embeddable text, record the skip in generation/progress metadata.
    - Output contract: a list of `{message_ids: [...], summary: str | None,
      content_text: str, raw: dict}`. The agent picks the prompt
      shape; record `segmenter_prompt_version` and
      `segmenter_model_version` on every row written.
    - `segment_pending(conn, batch_size, model_version) ->
      BatchResult`. Drives segmentation across all conversations
-     with no active segment row under the current
-     (`segmenter_prompt_version`, `segmenter_model_version`).
+     with no active or pending generation under the current
+     (`segmenter_prompt_version`, `segmenter_model_version`), plus
+     parents explicitly queued by invalidation.
      Resumable per `consolidation_progress` (`stage='segmenter'`,
-     `scope` = `source_id` or batch identifier; `position` records
-     the last completed conversation_id).
+     `scope` = `conversation:<uuid>`, `note:<uuid>`,
+     `capture:<uuid>`, or batch identifier; `position` records the
+     last completed parent and, for windowed parents, window index).
    - Re-segmentation under a new prompt/model version inserts new
-     rows, then marks prior `segments` and their `segment_embeddings`
-     rows `is_active=false` in the same transaction. Never UPDATE
-     existing segment columns other than the `is_active` transition.
-     Re-running with the **same** versions is a no-op.
+     rows under a new `segment_generations` row. New rows remain
+     `is_active=false` until the required embedding rows exist and
+     the generation is activated (D031). Re-running with the **same**
+     versions is a no-op.
    - Reclassification captures (D023 / D028) that change effective
      tier for any raw row covered by an active segment must deactivate
-     that segment and its `segment_embeddings` rows, then queue the
-     parent source for re-segmentation and re-embedding.
+     that segment and its `segment_embeddings` rows, set
+     `invalidated_at` / `invalidation_reason`, then queue only the
+     affected parent conversation, note, or capture for
+     re-segmentation and re-embedding (D032).
 
 4. **Embedder** (`src/engram/embedder.py`).
-   - `embed_text(text, model_version) -> EmbeddingResult` — checks
-     `embedding_cache` by `(sha256(text), model_version)`. Cache hit
-     returns the existing row id; cache miss calls Ollama, inserts
-     the cache row, returns the new id.
+   - `embed_text(text, model_version) -> EmbeddingResult` — hashes
+     exactly the UTF-8 byte string sent to the embedder after
+     canonicalization. Cache hit returns the existing row id; cache
+     miss calls Ollama, then inserts with
+     `INSERT ... ON CONFLICT (input_sha256, embedding_model_version)
+     DO NOTHING RETURNING id`; if no row is returned, SELECT the
+     existing row by the unique key. Do not use no-op UPDATE, because
+     `embedding_cache` is immutable.
    - `embed_pending_segments(conn, batch_size, model_version) ->
-     BatchResult`. Drives embedding across active segments
-     (`is_active = true`) lacking a `segment_embeddings` row
-     for the current model version. Explicitly copies the vector payload
-     from `embedding_cache` into the new `segment_embeddings.embedding`
-     column and copies `is_active` / `privacy_tier` from the parent
-     segment (D027). Resumable per `consolidation_progress`
-     (`stage='embedder'`).
+     BatchResult`. Drives embedding across segments in pending
+     generations (`segment_generations.status IN ('segmented',
+     'embedding')`) lacking a `segment_embeddings` row for the current
+     model version.
+     Explicitly copies the vector payload and dimension from
+     `embedding_cache` into `segment_embeddings`, and copies
+     `privacy_tier` from the parent segment (D027 / D033). Resumable
+     per `consolidation_progress` (`stage='embedder'`).
+   - Generation activation (D031): after all required
+     `segment_embeddings` rows exist for a generation, activate the new
+     generation in one transaction: mark its generation, segments, and
+     segment_embeddings active, then mark the prior active generation
+     and its retrieval-visible rows inactive. Before that transaction,
+     the prior generation remains retrieval-visible.
    - Multiple `embedding_model_version` rows can coexist on one
      segment. Re-embedding with a new model version is additive,
      not destructive.
@@ -183,7 +267,10 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
    - `engram segment [--source-id ID] [--batch-size N] [--limit N]`
    - `engram embed [--model-version V] [--batch-size N] [--limit N]`
    - `engram pipeline` — convenience: run `segment` then `embed` with
-     defaults.
+     defaults. `pipeline` is the normal path and must leave no
+     completed segment generation without required embeddings. A
+     standalone `segment` run that creates inactive generations should
+     warn that `engram embed` is required before retrieval visibility.
 
 6. **Makefile targets** parallel to existing ingest targets:
    `segment`, `embed`, `pipeline`, plus `-docker` variants.
@@ -198,20 +285,39 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
    - Version bump produces new active rows, supersedes prior rows
      via `is_active=false`, and prior rows are no longer
      `is_active=true`.
+   - Generation cutover: after `segment` but before `embed`, the prior
+     generation remains retrieval-visible; after `embed` completes,
+     the new generation becomes active and the old generation becomes
+     inactive.
+   - Long conversation over the configured budget uses windowed
+     segmentation, records `window_strategy='windowed'`, and resumes
+     from a window checkpoint after interruption.
+   - Active sequence uniqueness rejects two active segments with the
+     same `(parent, sequence_index)`.
+   - `message_ids` validation rejects unknown message ids,
+     cross-conversation message ids, empty arrays for conversation
+     segments, and arrays ordered differently from message sequence.
+   - NULL/tool/image-only message windows do not produce empty
+     embeddable segments, but their skip is recorded.
    - Immutability trigger blocks UPDATE on segment columns other
-     than `is_active`; DELETE blocked outright.
+     than allowed activation/invalidation fields; DELETE blocked
+     outright.
    - Embedder cache hit on identical input + model version (one
      model call, one cache row, two `segment_embeddings` rows).
+   - Concurrent cache miss for identical input + model version creates
+     one cache row and all expected `segment_embeddings` rows without
+     UNIQUE violations.
    - Two distinct `embedding_model_version` rows coexist on the
      same segment.
    - Resumability: simulate a mid-batch interrupt by raising after
      N segments; re-running picks up at the recorded
      `consolidation_progress` position with no duplicates.
    - `privacy_tier` on segments inherits the max tier across the
-     constituent messages.
+     parent row and constituent raw rows.
    - Reclassification capture against any constituent raw row
      deactivates affected segments and `segment_embeddings` rows and
-     queues the affected parent source for reprocessing (D028).
+     queues only the affected parent conversation/note/capture for
+     reprocessing (D028 / D032).
 
 8. **Docs** (`docs/segmentation.md`, sibling to
    `docs/ingestion.md`): how to run, what the segmenter prompt
@@ -226,14 +332,18 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
   127.0.0.1 (D020).
 - Postgres binds to 127.0.0.1 (already enforced in Phase 1).
 - Raw tables remain immutable. Segments are *also* immutable except
-  for the `is_active` transition.
+  for generation activation/deactivation and invalidation metadata.
 - Re-derivation is non-destructive: new rows + supersession, never
   in-place UPDATE.
 - `privacy_tier` carries onto segments and segment embeddings (D019).
   Reclassification captures invalidate retrieval-visible derived rows
-  before they can serve stale lower-tier vectors (D028).
+  before they can serve stale lower-tier vectors (D028 / D032).
 - Every derived row records its `*_prompt_version` /
   `*_model_version` (D021).
+- Retrieval-visible segment generations activate only after required
+  embeddings exist (D031).
+- Embedding storage is dimension-flexible; ANN indexes are per active
+  model/dimension (D033).
 - `consolidation_progress` checkpoints make both stages resumable.
   Phase 1 created the empty table; Phase 2 is the first writer.
 
@@ -242,12 +352,20 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
 - `make migrate` brings up the new tables from a Phase-1.5 schema.
 - `make segment` segments all conversations end-to-end. Re-running
   with the same versions is a no-op (zero new rows).
-- `make embed` embeds all active segments end-to-end. Re-running
-  with the same model version is a no-op.
+- `make embed` embeds all pending-generation segments end-to-end and
+  activates completed generations. Re-running with the same model
+  version is a no-op.
 - Bumping `segmenter_prompt_version` produces new active segments
-  and deactivates the prior generation's `segments` and
-  `segment_embeddings` rows; re-embedding the new generation is a
-  separate `embed` run.
+  only after the new generation's required embeddings exist; the prior
+  generation remains retrieval-visible until cutover.
+- Over-budget parents use windowed segmentation and can resume at a
+  window checkpoint.
+- Conversation segments enforce `message_ids` integrity and active
+  sequence uniqueness at the database boundary.
+- Embedding cache writes are race-safe under concurrent workers.
+- The vector schema accepts the probed embedding dimension and records
+  per-row `embedding_dimension`; the active ANN index is scoped to
+  that model/dimension.
 - `consolidation_progress` has rows for `stage='segmenter'` and
   `stage='embedder'` after a run; `status='completed'` on a clean
   finish.
@@ -266,8 +384,9 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
 - Embedding raw turns or full conversations (D009 — segments only).
 - Embedding beliefs (Phase 3 — beliefs don't exist yet).
 - LLM cross-encoder reranker (F003 — deferred).
-- Auto-re-embed on segment supersession. The new generation embeds
-  on the next `embed` run.
+- Auto-re-embed inside `segment`. A standalone segment run may create
+  inactive generations, but retrieval visibility requires the
+  subsequent `embed` / `pipeline` activation step.
 - Obsidian / capture segmentation. Same pipeline shape, separate
   phase or follow-up prompt; the schema columns are present but
   unused here.
