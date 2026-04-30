@@ -64,8 +64,10 @@ Step 5 (gold-set authoring) richer evidence to ground against.
   [prompts/phase_1_5_cleanup.md](prompts/phase_1_5_cleanup.md).
 - **Claude.ai export ingestion** — see
   [prompts/phase_1_5_claude_ingest.md](prompts/phase_1_5_claude_ingest.md).
+  Completed before Phase 2 implementation.
 - **Gemini Takeout ingestion** — see
   [prompts/phase_1_5_gemini_ingest.md](prompts/phase_1_5_gemini_ingest.md).
+  Completed before Phase 2 implementation.
 
 ## Phase 2 — Segmentation + embeddings
 

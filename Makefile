@@ -5,7 +5,7 @@ DOCKER_DATABASE_URL ?= postgresql://engram:engram@127.0.0.1:54329/engram
 DOCKER_TEST_DATABASE_URL ?= postgresql://engram:engram@127.0.0.1:54329/engram_test
 EXPORT_PATH := $(if $(filter command line,$(origin PATH)),$(PATH),)
 
-.PHONY: install db-up db-down wait-db migrate migrate-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker test test-db test-docker test-db-docker
+.PHONY: install db-up db-down wait-db migrate migrate-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker test test-db test-docker test-db-docker
 
 install: .venv/.installed
 
@@ -48,6 +48,14 @@ ingest-claude: install
 ingest-claude-docker: install wait-db
 	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make ingest-claude-docker PATH=/path/to/claude-export"; exit 2; fi
 	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli ingest-claude "$(EXPORT_PATH)"
+
+ingest-gemini: install
+	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make ingest-gemini PATH=/path/to/google-takeout"; exit 2; fi
+	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli ingest-gemini "$(EXPORT_PATH)"
+
+ingest-gemini-docker: install wait-db
+	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make ingest-gemini-docker PATH=/path/to/google-takeout"; exit 2; fi
+	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli ingest-gemini "$(EXPORT_PATH)"
 
 test-db:
 	@createdb engram_test 2>/dev/null || true

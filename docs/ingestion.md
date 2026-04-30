@@ -58,6 +58,8 @@ Use the optional Docker database explicitly with:
 ```bash
 make migrate-docker
 make ingest-chatgpt-docker PATH=/home/halbritt/chatgpt-export
+make ingest-claude-docker PATH=/home/halbritt/Downloads/data-<uuid>-...-batch-0000.zip
+make ingest-gemini-docker PATH=/home/halbritt/Downloads/Takeout
 make test-docker
 ```
 
@@ -130,6 +132,59 @@ Conversation dedup uses the Claude `uuid`. Message dedup uses
 case of a Claude message uuid colliding across conversations. The original
 message uuid is preserved inside `raw_payload`. Re-running the same export
 is a no-op.
+
+## Gemini Takeout
+
+Gemini is exported by Google Takeout under the My Activity layout observed at:
+
+```text
+Takeout/My Activity/Gemini Apps/MyActivity.json
+```
+
+Ingest the extracted Takeout directory:
+
+```bash
+make ingest-gemini PATH=/home/halbritt/Downloads/Takeout
+```
+
+The CLI also accepts the subcommand form directly:
+
+```bash
+engram ingest-gemini --path /home/halbritt/Downloads/Takeout
+```
+
+The importer intentionally ignores non-Gemini Takeout categories such as
+Search, YouTube, and Photos. It reads only Gemini Apps `MyActivity.json`.
+
+The observed Gemini My Activity format is an array of activity records rather
+than a threaded conversation export. Phase 1.5 maps each activity record to one
+raw `conversations` row:
+
+- The conversation external id is the activity `time` when present, falling
+  back to a SHA-256 hash of the raw activity payload.
+- The conversation `raw_payload` is the full original activity record.
+- A user `messages` row is created when `title` starts with `Prompted `.
+- An assistant `messages` row is created when `safeHtmlItem[].html` is present;
+  the HTML is converted to plain text for `content_text`.
+- Activity records such as `Used an Assistant feature` that have no prompt or
+  response still land as raw conversations with zero messages.
+
+Adjacent files in `My Activity/Gemini Apps/` include images, PDFs, audio, and
+other uploaded/generated blobs. V1 does not ingest those blobs. Their filenames
+and metadata remain preserved when Google includes them in the activity
+`raw_payload` fields such as `attachedFiles` or `imageFile`.
+
+### Dedup
+
+The Gemini source dedup key is `(source_kind='gemini', external_id)`, where
+`external_id` is the resolved Takeout directory path. The source manifest hash
+covers `MyActivity.json`. Re-running the same Takeout path with the same
+content reuses the existing source row; running with the same path but changed
+content raises an `IngestConflict`.
+
+Conversation dedup uses the activity `time` value, falling back to a payload
+hash only if `time` is absent. Message dedup uses `<conversation-id>:user` and
+`<conversation-id>:assistant`. Re-running the same export is a no-op.
 
 ## What Gets Stored
 

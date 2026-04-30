@@ -9,6 +9,8 @@ from engram.chatgpt_export import ingest_chatgpt_export
 from engram.claude_export import IngestConflict as ClaudeIngestConflict
 from engram.claude_export import ingest_claude_export
 from engram.db import connect
+from engram.gemini_export import IngestConflict as GeminiIngestConflict
+from engram.gemini_export import ingest_gemini_export
 from engram.migrations import migrate
 
 
@@ -29,6 +31,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Ingest a local Claude.ai export (directory or .zip)",
     )
     claude_parser.add_argument("path", type=Path)
+
+    gemini_parser = subparsers.add_parser(
+        "ingest-gemini",
+        help="Ingest a local Gemini Google Takeout directory",
+    )
+    gemini_parser.add_argument("path", nargs="?", type=Path)
+    gemini_parser.add_argument("--path", dest="path_option", type=Path)
 
     args = parser.parse_args(argv)
 
@@ -55,7 +64,16 @@ def main(argv: list[str] | None = None) -> int:
                 result = ingest_claude_export(conn, args.path)
             print_ingest_result(result)
             return 0
-    except (ChatGPTIngestConflict, ClaudeIngestConflict) as exc:
+
+        if args.command == "ingest-gemini":
+            ingest_path = args.path_option or args.path
+            if ingest_path is None:
+                parser.error("ingest-gemini requires PATH or --path PATH")
+            with connect() as conn:
+                result = ingest_gemini_export(conn, ingest_path)
+            print_ingest_result(result)
+            return 0
+    except (ChatGPTIngestConflict, ClaudeIngestConflict, GeminiIngestConflict) as exc:
         print(f"ingest conflict: {exc}", file=sys.stderr)
         return 1
 
