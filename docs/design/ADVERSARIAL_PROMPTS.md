@@ -51,6 +51,7 @@ For each finding, include:
 
 ```text
 You are reviewing Engram, a fully local personal memory system.
+Repo: ~/git/engram/
 
 Engram ingests AI conversation history, notes, live captures, and eventually
 other personal signals. It builds a memory layer with embeddings, temporal
