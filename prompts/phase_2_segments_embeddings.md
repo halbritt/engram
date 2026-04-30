@@ -5,6 +5,11 @@
 > BUILD_PHASES.md for the phase-plan context; this file is the
 > operational handoff.
 
+> Precondition: D026's pre-Phase-2 adversarial review has run and any
+> accepted deltas have already landed. If not, stop and run/synthesize
+> [ADVERSARIAL_PROMPTS.md](../docs/design/ADVERSARIAL_PROMPTS.md)
+> before implementing this prompt.
+
 ## Read first, in order
 
 1. [HUMAN_REQUIREMENTS.md](../HUMAN_REQUIREMENTS.md) — load-bearing
@@ -20,7 +25,8 @@
    (`privacy_tier` carry/inheritance on retrieval-visible derived
    units), D020 (no network egress), D021 (derivation versioning
    across the pipeline — `segmenter_version`, `embedding_model_version`,
-   `superseded_by`).
+   `superseded_by`), D026 (pre-Phase-2 adversarial review before
+   implementation).
 4. [BUILD_PHASES.md](../BUILD_PHASES.md) — Phase 2 row, cross-cutting
    concerns (`consolidation_progress` checkpoints, raw immutability,
    privacy_tier carry, derivation versioning).

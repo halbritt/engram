@@ -286,6 +286,8 @@ The eval uses a Tiered Structure:
 0.  Configure network-disconnected runtime (OS namespace/sandbox) for the engram-reading process. MCP server binds to 127.0.0.1.
 1.  PostgreSQL + pgvector baseline.
 2.  ChatGPT ingestion into immutable raw conversations / messages.
+2.5 Run D026 pre-Phase-2 adversarial review and synthesize accepted deltas before
+    segmentation + embeddings implementation.
 3.  Topic segmentation (LLM-driven, batch, non-destructive).
 4.  Segment embeddings.
 5.  Claim extraction with evidence_ids.
@@ -326,6 +328,8 @@ Compared to the prior draft, the synthesis added:
 ## 2026-04-29 Delta
 
 - D025 promotes async context snapshots / hot state into Phase 5.
+- D026 adds a pre-Phase-2 adversarial gate before topic segmentation and
+  embeddings implementation.
 - `context_for(...)` remains the primary product surface, but the normal
   warm path should serve a versioned snapshot and refresh asynchronously.
 - Larger memory-fabric optimizations remain staged. See

@@ -6,7 +6,16 @@
 
 ## Right now
 
-**Step 4: Build pipeline + smoke pre-pass.** Implement V1 build order through the smoke gate (~200 random conversations) per D016. See V1_ARCHITECTURE_DRAFT for build steps. Done when smoke passes and the corpus inventory is browsable — that inventory is what Step 5 needs.
+**Step 4A: Pre-Phase-2 adversarial round.** Before implementing segmentation +
+embeddings, run the specialized prompts in
+[docs/design/ADVERSARIAL_PROMPTS.md](docs/design/ADVERSARIAL_PROMPTS.md) against
+the current canonical docs. Synthesize any material findings into DECISION_LOG,
+V1_ARCHITECTURE_DRAFT, and BUILD_PHASES. This is D026.
+
+**Step 4B: Build pipeline + smoke pre-pass.** Implement V1 build order through
+the smoke gate (~200 random conversations) per D016. See V1_ARCHITECTURE_DRAFT
+for build steps. Done when smoke passes and the corpus inventory is browsable —
+that inventory is what Step 5 needs.
 
 ## Already done
 
@@ -19,6 +28,8 @@
 **Step 5: Author the gold set.** 25–50 entries via GOLD_SET_TEMPLATE. *Trap to watch:* `expected_facts` come from my real-life answer, not from what the smoke pipeline extracted. Reference evidence by content, not by id. Done after a 24-hour-gap re-read.
 
 **Step 6: Adversarial round** on V1 + principles + gold set + smoke inventory.
+This is the post-smoke round and does not replace the narrower D026
+pre-Phase-2 round.
 
 **Step 7: Synthesize.** Update DECISION_LOG and V1_ARCHITECTURE_DRAFT as needed.
 

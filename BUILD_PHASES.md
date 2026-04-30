@@ -1,9 +1,10 @@
-# Build Phases (V1, Step 4 — Smoke Pre-Pass)
+# Build Phases (V1, Step 4 — Adversarial Gate + Smoke Pre-Pass)
 
 > ROADMAP Step 4 ("Build pipeline + smoke pre-pass") decomposes into
-> five phases. Each phase is a testable, reversible chunk. The smoke
-> gate (D016) is the integrated test that runs at the end of Phase 5
-> against a ~200-conversation subset, not a per-phase test.
+> a pre-Phase-2 adversarial gate plus five phases. Each phase is a
+> testable, reversible chunk. The smoke gate (D016) is the integrated
+> test that runs at the end of Phase 5 against a ~200-conversation
+> subset, not a per-phase test.
 
 ## Why these boundaries
 
@@ -68,6 +69,32 @@ Step 5 (gold-set authoring) richer evidence to ground against.
 - **Gemini Takeout ingestion** — see
   [prompts/phase_1_5_gemini_ingest.md](prompts/phase_1_5_gemini_ingest.md).
   Completed before Phase 2 implementation.
+
+## Pre-Phase-2 adversarial gate (D026)
+
+Phase 2 is the first model-derived stage: segmentation prompt output becomes
+retrieval-visible schema, and embedding policy starts shaping every downstream
+retrieval/eval result. Before implementing Phase 2, run a specialized
+adversarial round using
+[docs/design/ADVERSARIAL_PROMPTS.md](docs/design/ADVERSARIAL_PROMPTS.md).
+
+This gate should challenge:
+
+- whether topic segmentation is still the right first derived unit;
+- whether segment schema/versioning/privacy fields are sufficient;
+- whether the embedding policy preserves future belief, entity, and eval needs;
+- whether pre-Phase-2 assumptions in BUILD_PHASES, DECISION_LOG, and
+  V1_ARCHITECTURE_DRAFT need revision.
+
+Acceptance criteria:
+
+- Review outputs are archived under `docs/reviews/` or summarized in a dated
+  synthesis document.
+- Material deltas land in DECISION_LOG / V1_ARCHITECTURE_DRAFT / BUILD_PHASES.
+- If no deltas are accepted, the decision to proceed to Phase 2 is recorded.
+
+This is narrower than the later post-smoke adversarial round over V1 +
+principles + gold set + smoke inventory.
 
 ## Phase 2 — Segmentation + embeddings
 

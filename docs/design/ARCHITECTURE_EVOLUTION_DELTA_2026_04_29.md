@@ -263,8 +263,9 @@ refresh jobs.
 
 ## Practical Next Step
 
-Continue the current build order through Phase 2. Do not implement the hot-state
-tables before the serving path exists.
+Continue the current build order through the D026 pre-Phase-2 adversarial gate,
+then Phase 2. Do not implement the hot-state tables before the serving path
+exists.
 
 When Phase 5 begins, build the simplest possible snapshot layer in Postgres and
 measure:

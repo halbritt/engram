@@ -1,8 +1,31 @@
 # Adversarial Review Prompts
 
-These prompts are for the second review phase after the initial model reviews
-have been consolidated. Each round should specialize. Do not ask every model for
-another broad architecture review.
+These prompts support two review gates:
+
+- **Pre-Phase-2 gate (D026):** run before segmentation + embeddings are
+  implemented, while the first model-derived schema is still cheap to change.
+- **Post-smoke gate:** run later against V1 + principles + gold set + smoke
+  inventory.
+
+Each round should specialize. Do not ask every model for another broad
+architecture review.
+
+## Pre-Phase-2 Usage
+
+For D026, run these prompts against the current canonical docs and focus on
+decisions that affect Phase 2 or become expensive after Phase 2 lands:
+
+- segment schema and versioning;
+- topic-boundary safety;
+- embedding cache/index policy;
+- privacy-tier inheritance on retrieval-visible derived units;
+- whether later claims, beliefs, entities, context snapshots, and evals have
+  the identifiers and provenance they will need.
+
+Archive the raw review outputs under `docs/reviews/` or summarize them in a
+dated synthesis document. Accepted deltas should update DECISION_LOG,
+V1_ARCHITECTURE_DRAFT, BUILD_PHASES, or the Phase 2 prompt before coding
+begins.
 
 ## Shared Context For Every Round
 
@@ -30,12 +53,19 @@ Important context:
   graph retrieval, temporal modeling, and context engineering.
 
 Inputs:
-- BRAINSTORM.md
 - README.md
+- HUMAN_REQUIREMENTS.md
+- DECISION_LOG.md
+- BUILD_PHASES.md
+- ROADMAP.md
 - SPEC.md
 - TODO.md
-- CONSENSUS_REVIEW.md, if present
-- Initial model reviews, if present
+- docs/design/V1_ARCHITECTURE_DRAFT.md
+- docs/design/ARCHITECTURE_EVOLUTION_DELTA_2026_04_29.md
+- docs/design/GOLD_SET_TEMPLATE.md
+- prompts/phase_2_segments_embeddings.md, for the D026 pre-Phase-2 gate
+- docs/reviews/v1/CONSENSUS_REVIEW.md, as historical synthesis context
+- Prior model reviews, if relevant
 
 Be adversarial. Argue the assigned position strongly. Identify failure modes,
 irreversible choices, and experiments that would disprove your recommendation.
@@ -239,4 +269,3 @@ Output:
 7. Regression testing after prompt/model/schema changes
 8. Minimal eval set before full corpus consolidation
 ```
-
