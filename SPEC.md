@@ -1,4 +1,4 @@
-# stash-ingest
+# engram
 
 > **Note:** Name is a placeholder — will be renamed once the full scope crystallizes.
 
