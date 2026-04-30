@@ -5,7 +5,7 @@ DOCKER_DATABASE_URL ?= postgresql://engram:engram@127.0.0.1:54329/engram
 DOCKER_TEST_DATABASE_URL ?= postgresql://engram:engram@127.0.0.1:54329/engram_test
 EXPORT_PATH := $(if $(filter command line,$(origin PATH)),$(PATH),)
 
-.PHONY: install db-up db-down wait-db migrate migrate-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker test test-db test-docker test-db-docker
+.PHONY: install db-up db-down wait-db migrate migrate-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker test test-db test-docker test-db-docker schema-docs
 
 install: .venv/.installed
 
@@ -68,3 +68,6 @@ test: install test-db
 
 test-docker: install test-db-docker
 	ENGRAM_TEST_DATABASE_URL="$(DOCKER_TEST_DATABASE_URL)" $(PYTHON) -m pytest
+
+schema-docs: install
+	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) scripts/gen_schema_docs.py
