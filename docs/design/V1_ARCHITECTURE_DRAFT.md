@@ -124,7 +124,7 @@ Invariants:
 - Do not embed: raw single turns, full conversations, or unsegmented notes.
 - Raw messages remain in Postgres for provenance and rendering only — not
   in the vector index.
-- Embedding cache is SHA256-keyed.
+- Embedding cache is SHA256-keyed. The HNSW index lives on the retrieval table (`segment_embeddings`), not the cache table, to allow pushdown filtering by active state and privacy tier (D027).
 
 ## Context_For Shape
 
@@ -324,6 +324,10 @@ Compared to the prior draft, the synthesis added:
   live path, multi-source ingestion, bidirectional Obsidian sync.
 - Replacement of "consolidate claims into beliefs with temporal validity"
   with the bitemporal close-and-insert invariant.
+
+## 2026-04-30 Delta
+
+- D027 denormalizes vector embeddings to `segment_embeddings` and replaces `superseded_by` with `is_active` to prevent pgvector index scan collapse and fix N-to-M supersession.
 
 ## 2026-04-29 Delta
 

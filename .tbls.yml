@@ -1,0 +1,19 @@
+dsn: postgresql://halbritt@/engram?host=/var/run/postgresql
+
+docPath: docs/schema
+
+format:
+  adjust: true
+
+er:
+  format: mermaid
+  comment: true
+
+exclude:
+  - schema_migrations
+
+lint:
+  requireColumnComment:
+    enabled: false
+  requireTableComment:
+    enabled: false

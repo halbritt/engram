@@ -24,9 +24,9 @@
    embedding/extraction unit), D009 (vector index policy), D019
    (`privacy_tier` carry/inheritance on retrieval-visible derived
    units), D020 (no network egress), D021 (derivation versioning
-   across the pipeline — `segmenter_version`, `embedding_model_version`,
-   `superseded_by`), D026 (pre-Phase-2 adversarial review before
-   implementation).
+   across the pipeline — `segmenter_version`, `embedding_model_version`),
+   D026 (pre-Phase-2 adversarial review before implementation), D027
+   (denormalized vector index and `is_active` flag).
 4. [BUILD_PHASES.md](../BUILD_PHASES.md) — Phase 2 row, cross-cutting
    concerns (`consolidation_progress` checkpoints, raw immutability,
    privacy_tier carry, derivation versioning).
@@ -52,7 +52,11 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
    stale; read the running services.
 
 2. **Schema migration** (`migrations/004_segments_embeddings.sql`).
-   Two new tables; no changes to raw tables.
+   Two new tables; no changes to raw tables (except adding `error_count` and `last_error` to `consolidation_progress`).
+
+   `consolidation_progress` changes (D027):
+   - Add `error_count INT NOT NULL DEFAULT 0`
+   - Add `last_error TEXT NULL`
 
    `segments`:
    - `id UUID PK`
@@ -78,9 +82,9 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      label or short summary, if it produces one.
    - `segmenter_prompt_version TEXT NOT NULL`
    - `segmenter_model_version TEXT NOT NULL`
-   - `superseded_by UUID NULL REFERENCES segments(id)` — D021. NULL =
+   - `is_active BOOLEAN NOT NULL DEFAULT true` — D027. True =
      currently active. Re-segmentation under a new prompt/model
-     version inserts new rows and back-points the prior rows.
+     version inserts new rows and marks prior rows false.
    - `privacy_tier INT NOT NULL DEFAULT 1` — carry from the source
      conversation/message; max() across the message set if they
      diverge (D019).
@@ -88,11 +92,11 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
    - `raw_payload JSONB NOT NULL` — the segmenter's raw output for
      this segment, including any rationales or scores it emits.
    - Subject to the immutability trigger in the same shape as raw
-     tables: UPDATE allowed only on `superseded_by`; DELETE blocked.
-     Implement as a trigger that lets `superseded_by` transition from
-     NULL to a UUID and rejects every other column change.
+     tables: UPDATE allowed only on `is_active`; DELETE blocked.
+     Implement as a trigger that lets `is_active` transition from
+     true to false and rejects every other column change.
    - Indexes: `(conversation_id, sequence_index)` partial WHERE
-     `superseded_by IS NULL`; GIN on `message_ids`.
+     `is_active = true`; GIN on `message_ids`.
 
    `embedding_cache`:
    - `id UUID PK`
@@ -101,7 +105,7 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      in Phase 3 can share it).
    - `embedding_model_version TEXT NOT NULL`
    - `embedding_dimension INT NOT NULL`
-   - `embedding vector(?) NOT NULL` — dimension matches what the
+   - `embedding vector(768) NOT NULL` — dimension matches what the
      probed embedder returns (768 for nomic-embed-text; verify).
    - `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`
    - `UNIQUE (input_sha256, embedding_model_version)` — same input
@@ -112,15 +116,15 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
    `segment_embeddings`:
    - `segment_id UUID NOT NULL REFERENCES segments(id)`
    - `embedding_cache_id UUID NOT NULL REFERENCES embedding_cache(id)`
+   - `embedding vector(768) NOT NULL` — copied from cache (D027).
    - `embedding_model_version TEXT NOT NULL`
+   - `is_active BOOLEAN NOT NULL DEFAULT true`
+   - `privacy_tier INT NOT NULL`
    - `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`
    - `PRIMARY KEY (segment_id, embedding_model_version)` — multiple
      model versions can coexist on one segment (D021).
-   - HNSW index over the joined `embedding_cache.embedding` column —
-     concretely, `CREATE INDEX ... USING hnsw (embedding vector_cosine_ops)`
-     on `embedding_cache`, plus a covering join path. Verify the
-     pgvector version supports HNSW; if not, fall back to ivfflat
-     and document the choice. (D009.)
+   - HNSW index over the active segments — concretely,
+     `CREATE INDEX ... USING hnsw (embedding vector_cosine_ops) WHERE is_active = true`. Verify the pgvector version supports HNSW; if not, fall back to ivfflat. (D009, D027.)
 
 3. **Segmenter** (`src/engram/segmenter.py`).
    - `segment_conversation(conn, conversation_id) -> SegmentationResult`.
@@ -151,9 +155,10 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      the cache row, returns the new id.
    - `embed_pending_segments(conn, batch_size, model_version) ->
      BatchResult`. Drives embedding across active segments
-     (`superseded_by IS NULL`) lacking a `segment_embeddings` row
-     for the current model version. Resumable per
-     `consolidation_progress` (`stage='embedder'`).
+     (`is_active = true`) lacking a `segment_embeddings` row
+     for the current model version. Explicitly copies the vector payload
+     from `embedding_cache` into the new `segment_embeddings.embedding`
+     column (D027). Resumable per `consolidation_progress` (`stage='embedder'`).
    - Multiple `embedding_model_version` rows can coexist on one
      segment. Re-embedding with a new model version is additive,
      not destructive.
@@ -175,10 +180,10 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
    - Idempotent re-segmentation under the same versions: count
      before == count after.
    - Version bump produces new active rows, supersedes prior rows
-     via `superseded_by`, and prior rows are no longer
-     `superseded_by IS NULL`.
+     via `is_active=false`, and prior rows are no longer
+     `is_active=true`.
    - Immutability trigger blocks UPDATE on segment columns other
-     than `superseded_by`; DELETE blocked outright.
+     than `is_active`; DELETE blocked outright.
    - Embedder cache hit on identical input + model version (one
      model call, one cache row, two `segment_embeddings` rows).
    - Two distinct `embedding_model_version` rows coexist on the
@@ -202,7 +207,7 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
   127.0.0.1 (D020).
 - Postgres binds to 127.0.0.1 (already enforced in Phase 1).
 - Raw tables remain immutable. Segments are *also* immutable except
-  for the `superseded_by` transition.
+  for the `is_active` transition.
 - Re-derivation is non-destructive: new rows + supersession, never
   in-place UPDATE.
 - `privacy_tier` carries onto segments (D019).
@@ -252,5 +257,14 @@ Prefer the smallest change that satisfies the principles and the
 acceptance criteria. Reach for DECISION_LOG and V1_ARCHITECTURE_DRAFT
 before inventing. If a question isn't answered there, stop and ask
 rather than guessing — Phase 2 is where model-version variance
+enters the pipeline, and the wrong default propagates everywhere
+downstream.
+ is where model-version variance
+enters the pipeline, and the wrong default propagates everywhere
+downstream.
+essing — Phase 2 is where model-version variance
+enters the pipeline, and the wrong default propagates everywhere
+downstream.
+ is where model-version variance
 enters the pipeline, and the wrong default propagates everywhere
 downstream.

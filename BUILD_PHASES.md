@@ -106,16 +106,16 @@ project setup); local embedder via Ollama (`nomic-embed-text` or
 equivalent).
 
 **Key tables / migrations:** `segments` (with `segmenter_version` and
-`superseded_by` per D021); `embedding_cache` (SHA256-keyed input,
+`is_active` per D027); `embedding_cache` (SHA256-keyed input,
 `embedding_model_version`, `embedding_dimension`); pgvector HNSW
-index on segment embeddings per D009.
+index on `segment_embeddings` directly (with copied vector) per D027.
 
 **Acceptance criteria:**
 
 - Segmenter produces topic-coherent segments; short conversations may
   yield a single segment (D005).
 - Re-segmentation under a new `segmenter_version` is non-destructive;
-  prior rows close via `superseded_by`.
+  prior rows close via `is_active=false`.
 - Embedding cache hits on identical input + model version are free
   (no recomputation).
 - Multiple `embedding_model_version` rows can coexist on one segment.
