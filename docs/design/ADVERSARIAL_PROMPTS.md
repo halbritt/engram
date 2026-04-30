@@ -12,8 +12,13 @@ architecture review.
 
 ## Pre-Phase-2 Usage
 
-For D026, run these prompts against the current canonical docs and focus on
-decisions that affect Phase 2 or become expensive after Phase 2 lands:
+For D026, run **Round 0** against the current canonical docs before Phase 2
+implementation. Optionally run Round C (temporal/provenance) or Round F
+(evaluation) if Round 0 surfaces uncertainty that needs specialist pressure.
+Save the broader graph, context_for, and V1 scope rounds for the post-smoke
+gate unless a finding directly blocks segmentation + embeddings.
+
+Focus on decisions that affect Phase 2 or become expensive after Phase 2 lands:
 
 - segment schema and versioning;
 - topic-boundary safety;
@@ -26,6 +31,21 @@ Archive the raw review outputs under `docs/reviews/` or summarize them in a
 dated synthesis document. Accepted deltas should update DECISION_LOG,
 V1_ARCHITECTURE_DRAFT, BUILD_PHASES, or the Phase 2 prompt before coding
 begins.
+
+Every D026 finding must be classified as exactly one of:
+
+- **Blocking before Phase 2** — must change docs, schema, or prompt before
+  implementation starts.
+- **Non-blocking but document now** — should be captured before coding, but does
+  not block implementation.
+- **Defer** — useful later, but not a Phase 2 gate.
+
+For each finding, include:
+
+1. Decision or document touched.
+2. Proposed doc / schema / prompt delta.
+3. Minimal experiment or inspection that would disprove the concern.
+4. Cost of being wrong if Phase 2 ships unchanged.
 
 ## Shared Context For Every Round
 
@@ -69,6 +89,49 @@ Inputs:
 
 Be adversarial. Argue the assigned position strongly. Identify failure modes,
 irreversible choices, and experiments that would disprove your recommendation.
+```
+
+## Round 0: Phase 2 Segmentation + Embeddings Adversary
+
+```text
+Review only the pre-Phase-2 boundary: topic segmentation, segment schema,
+embedding cache/index policy, derivation versioning, privacy inheritance, and
+future compatibility with claims, beliefs, entities, context snapshots, and evals.
+
+Your job is to break the Phase 2 handoff before it becomes code.
+
+Attack:
+- topic segments as the first derived unit;
+- whether a message may belong to multiple segments, zero segments, or only one;
+- segment identity and ordering across re-segmentation;
+- message-span provenance and whether downstream claims can cite raw evidence
+  precisely enough;
+- segment schema fields, including source_kind, parent ids, sequence_index,
+  content_text, summary_text, raw_payload, privacy_tier, prompt/model versions,
+  and superseded_by;
+- privacy-tier inheritance across mixed-tier message spans;
+- exact text used for embeddings, SHA256 cache keying, duplicate text, and model
+  dimension migration;
+- pgvector index placement, HNSW/ivfflat fallback, and join shape from segments
+  to embedding_cache;
+- coexistence of segment embeddings now and belief embeddings later;
+- resumability, partial failures, and no-op behavior under the same
+  prompt/model versions;
+- source-specific edge cases from ChatGPT, Claude, Gemini, future Obsidian
+  notes, and live MCP captures;
+- eval hooks needed before full-corpus segmentation.
+
+Do not redesign V1 broadly. Do not argue for graph-first architecture unless
+the graph decision changes the Phase 2 schema before implementation.
+
+Output:
+1. Blocking before Phase 2
+2. Non-blocking but document now
+3. Defer
+4. Concrete schema deltas, if any
+5. Concrete prompt / implementation-contract deltas, if any
+6. Minimal experiments or inspections before coding
+7. Explicit proceed / do-not-proceed recommendation
 ```
 
 ## Round A: Graph Maximalist
