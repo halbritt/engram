@@ -336,4 +336,6 @@ Compared to the prior draft, the synthesis removed:
 - Auto wiki writeback as a v1 product surface.
 - Causal links, patterns, hypotheses, failures, goal progress inference
   from any v1 stage.
-- Claude export and Gemini Takeout from v1 sources.
+- Claude export and Gemini Takeout from the initial v1 source set. They were
+  later restored by D024 after Phase 1 ingestion proved the parser shape and
+  raw schema.

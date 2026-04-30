@@ -1,93 +1,56 @@
 # TODO
 
-## Infrastructure
+This file is a lightweight pointer to the active work queue. It is not the
+architecture source of truth.
 
-- [ ] Set up local PG with pgvector extension
-- [ ] Write `db/migrations/` — adapt Stash's 20 migrations, set vector dim to 768
-- [ ] Write `db/schema.py` — migration runner
-- [ ] Write `config.py` — DB URL, ollama endpoint, ik-llama endpoint, batch sizes
-- [ ] Write `llm/embedder.py` — nomic-embed-text via ollama, with SHA256 cache
-- [ ] Write `llm/reasoner.py` — qwen3.6-35b via ik-llama, JSON extraction helpers
-- [ ] Confirm nomic-embed-text returns 768-dim vectors with a test call
+Authoritative planning lives in:
 
-## Ingestion — ChatGPT (first, schema known)
+- [ROADMAP.md](ROADMAP.md) — owner sequencing and current step.
+- [BUILD_PHASES.md](BUILD_PHASES.md) — V1 implementation phases and acceptance
+  criteria.
+- [DECISION_LOG.md](DECISION_LOG.md) — accepted / deferred / rejected
+  architecture decisions.
+- [docs/design/V1_ARCHITECTURE_DRAFT.md](docs/design/V1_ARCHITECTURE_DRAFT.md)
+  — current V1 target architecture.
 
-- [ ] Write `sources/base.py` — Episode dataclass, shared turn-extraction logic
-- [ ] Write `sources/chatgpt.py` — walk `~/chatgpt-export/`, emit episodes
-- [ ] Write `pipeline/ingest.py` — embed + insert episodes
-- [ ] Write `main.py` CLI skeleton
-- [ ] Validate turn granularity with small batch (50 conversations)
-- [ ] Full ingest: 3,048 regular + 388 project conversations across 25 projects
+## Current Work
 
-## Ingestion — Claude
+Step 4 from the roadmap: build the V1 pipeline through the smoke pre-pass.
 
-- [ ] Download Claude export (Settings → Privacy → Export data on claude.ai)
-- [ ] Inspect export schema
-- [ ] Write `sources/claude.py`
+Active implementation target:
 
-## Ingestion — Gemini
+- Phase 2 — segmentation + embeddings.
+- Operational prompt:
+  [prompts/phase_2_segments_embeddings.md](prompts/phase_2_segments_embeddings.md).
 
-- [ ] Download Gemini history via Google Takeout
-- [ ] Inspect export schema
-- [ ] Write `sources/gemini.py`
+## Already Landed
 
-## Evernote → Obsidian Migration (prerequisite to note ingestion)
+- Phase 1 raw evidence layer.
+- ChatGPT export ingestion.
+- Claude.ai export ingestion.
+- Gemini Takeout ingestion.
+- Raw immutability triggers.
+- `privacy_tier` defaulting and reclassification vocabulary.
+- Phase 2 implementation prompt.
 
-- [ ] Evaluate yarle vs. enex2md for ENEX → Markdown quality
-- [ ] Decide on notebook → Obsidian folder structure
-- [ ] Export Evernote notebooks to ENEX
-- [ ] Convert ENEX → Markdown, land in Obsidian vault
-- [ ] Verify conversion quality (attachments, formatting, metadata)
+## Next Major Milestones
 
-## Ingestion — Obsidian / Notes
+- Phase 2: topic segmentation + segment embeddings.
+- Phase 3: claims + bitemporal beliefs.
+- Phase 4: entity canonicalization + belief review queue.
+- Phase 5: `context_for`, context snapshots / hot state, MCP serving, and
+  `context_feedback`.
+- Smoke gate on a small corpus slice.
+- Gold-set authoring and validation.
 
-- [ ] Locate/establish vault path
-- [ ] Inspect converted note structure post-migration
-- [ ] Decide: vault watcher vs. REST API plugin vs. both
-- [ ] Write `sources/obsidian.py` — walk vault, emit episodes (Evernote origin notes + ongoing)
-- [ ] Decide on bidirectional sync strategy (writing facts/patterns back as notes)
+## Explicit Non-TODOs For V1
 
-## Consolidation Pipeline
+Do not revive the old Stash-derived checklist unless a decision reopens it.
 
-- [ ] Write `pipeline/consolidate.py` — orchestrator, checkpoint management
-- [ ] Write `pipeline/stages/facts.py` — episodes → facts (with contradiction detection)
-- [ ] Write `pipeline/stages/relationships.py` — facts → entity relationships
-- [ ] Write `pipeline/stages/causal.py` — facts → causal links
-- [ ] Write `pipeline/stages/patterns.py` — facts + relationships → patterns
-- [ ] Write `pipeline/stages/decay.py` — confidence decay (SQL only)
-- [ ] Write `pipeline/stages/goals.py` — goal progress inference
-- [ ] Write `pipeline/stages/failures.py` — failure pattern detection
-- [ ] Write `pipeline/stages/hypotheses.py` — hypothesis evidence scanning
-- [ ] Tune all prompts for qwen3.6-35b (not GPT-4 defaults)
-- [ ] Test consolidation quality on small namespace before full run
-- [ ] Tune batch size (Stash default 100) for 3,400+ corpus
-
-## Wiki Output Layer
-
-- [ ] Design `wiki/SCHEMA.md` — page types, naming conventions, section templates
-- [ ] Write `pipeline/wiki.py` — reads facts/patterns/goals/relationships, groups by concept/entity
-- [ ] Implement entity page generation (person, project, tool, concept)
-- [ ] Implement pattern page generation
-- [ ] Implement goal page generation with evidence of progress
-- [ ] Implement topic index generation
-- [ ] Add `<!-- wiki-id: <uuid> -->` marker for idempotent re-runs
-- [ ] Add `## Notes` section preservation (human edits not overwritten)
-- [ ] Implement lint pass: contradictions, orphaned pages, stale claims
-- [ ] Wire wiki output path to Obsidian vault directory
-
-## MCP Server
-
-- [ ] Choose MCP framework: FastMCP vs. raw modelcontextprotocol SDK
-- [ ] Write `mcp/server.py` — entrypoint
-- [ ] Write `mcp/tools/capture.py` — submit episode with type tag
-- [ ] Write `mcp/tools/search.py` — semantic search across episodes/facts/patterns
-- [ ] Write `mcp/tools/recall.py` — structured recall by namespace
-- [ ] Write `mcp/tools/stats.py` — counts, top topics, recent activity
-- [ ] Add `wiki_refresh` tool — trigger wiki regeneration for a namespace or page
-- [ ] Wire up Obsidian MCP plugin to server
-- [ ] Wire up Claude to server
-
-## Publishing (export-chatgpt)
-
-- [ ] Post to r/ChatGPT: "Export your entire ChatGPT conversation history — including Projects and Teams accounts"
-- [ ] Post to HN: "Show HN: Export all your ChatGPT conversations including Projects (Teams accounts)"
+- No Stash 20-migration schema port.
+- No `episodes` / `facts` schema as the canonical V1 model.
+- No causal links, patterns, failure inference, hypotheses, or goal-progress
+  inference in V1.
+- No naive confidence decay / soft-delete stage.
+- No auto wiki writeback or `wiki_refresh` tool in V1.
+- No bidirectional Obsidian sync in V1.

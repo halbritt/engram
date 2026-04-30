@@ -10,9 +10,9 @@ moment, and forward into intentions and aspirations.
 
 Not a project log. Not a work memory. Not a chat history. A **life**.
 
-The current SPEC frames engram around AI conversation history, Obsidian
-notes, and live MCP captures. That is the *first ingestion path*, not the
-scope. The scope is the human.
+The current V1 framing centers on AI conversation history, Obsidian notes, and
+live MCP captures. That is the *first ingestion path*, not the scope. The scope
+is the human.
 
 ---
 
@@ -20,9 +20,9 @@ scope. The scope is the human.
 
 V1 is a **validation phase**, not an end state. V1 success is *not* full
 domain coverage; V1 success is demonstrating that the architecture survives
-expansion to the rest. The narrow ingestion set for V1 (ChatGPT export +
-Obsidian + MCP capture) is enough to prove the principles and the schema
-under real load.
+expansion to the rest. The narrow ingestion set for V1 (AI conversation
+exports, Obsidian, and MCP capture) is enough to prove the principles and the
+schema under real load.
 
 Most of the domain coverage below requires ingestion sources and pipelines
 that don't yet exist, and many will require **manual capture rather than
@@ -362,10 +362,10 @@ to them decays toward zero regardless of how good the retrieval is.
 ## Domain coverage
 
 The categories below are the long-term scope. V1 ingests a narrow slice
-(ChatGPT + Obsidian + capture); everything else accrues over time, much of
-it via manual capture. The list is breadth-over-depth on purpose — the
-schema must accommodate all of it, even where ingestion pipelines don't yet
-exist. Categories explicitly deferred past V1 are flagged inline.
+(AI conversation exports, Obsidian, and capture); everything else accrues over
+time, much of it via manual capture. The list is breadth-over-depth on purpose
+— the schema must accommodate all of it, even where ingestion pipelines don't
+yet exist. Categories explicitly deferred past V1 are flagged inline.
 
 ### Identity & vital records
 - Birth date, birthplace, time of birth
@@ -482,9 +482,9 @@ a reminder of how broad the schema's reach should go.
 - Decisions deferred / not yet made
 
 ### Mistakes, failures, lessons
-Already partially covered by `failures` table in the SPEC. Should extend to
-non-project mistakes: relationship failures, financial mistakes, things I
-said in haste.
+V1 defers failure-pattern inference, but the long-term model should cover
+non-project mistakes: relationship failures, financial mistakes, things I said
+in haste.
 
 ### Aspirations
 - Dreams (life dreams, not nighttime — see below for nighttime)
@@ -585,9 +585,8 @@ These are easy to forget, and breaking any of them breaks the whole.
 
 ### Temporal validity on every fact
 Every record has `valid_from` and `valid_to`. "User lives at 123 Main" is
-true *from* 2018-04 *until* 2022-09. The current SPEC's `facts` table needs
-this if it doesn't already. **A biography that only knows current state is
-not a biography.**
+true *from* 2018-04 *until* 2022-09. V1 beliefs carry temporal validity from
+the start. **A biography that only knows current state is not a biography.**
 
 ### Provenance on every fact
 Where did this come from? Email? Calendar? Self-report? Inferred? Which
@@ -600,9 +599,10 @@ dinner with X based on calendar + location + receipt). Engram has to
 represent both and not flatten one into the other.
 
 ### Contradictions are first-class
-The SPEC already has a `contradictions` table — good. Extend its scope: my
-own memory contradicts my journal contradicts my photos. The system should
-hold all three and flag, not silently pick a winner.
+V1 includes contradictions as a first-class schema primitive. Over time this
+must extend beyond AI-conversation evidence: my own memory contradicts my
+journal contradicts my photos. The system should hold all three and flag, not
+silently pick a winner.
 
 ### Privacy & access tiers
 Not everything in engram is for the same audience.
@@ -653,10 +653,10 @@ This matters for the "biography at every given time" promise — silence
 shouldn't be mistaken for nothingness.
 
 ### Forgetting (the right kind)
-Not everything should be retrievable forever in raw form. Some episodes
-should consolidate into summary and the raw fall away. The current SPEC's
-consolidation pipeline already does this for AI conversations — it needs
-to generalize.
+Not everything should be retrieval-visible forever in raw form. Some evidence
+should consolidate into summaries or beliefs for normal serving, while raw
+evidence remains protected as provenance unless a future retention/privacy
+policy explicitly says otherwise.
 
 ---
 
@@ -683,9 +683,9 @@ If the data model is right, all of these are queries:
 
 ## Ingestion sources implied by all of this
 
-The current SPEC lists ChatGPT, Claude, Gemini, Evernote, Obsidian, MCP
-capture. The full scope implies many more. Not all need V1; the schema
-needs to accommodate them.
+Current V1 sources cover AI conversation exports, Obsidian, and MCP capture.
+The full scope implies many more. Not all need V1; the schema needs to
+accommodate them.
 
 **Manual entry is a first-class ingestion path, not a fallback.** Many of
 the most valuable categories — oral history, in-person conversations,
