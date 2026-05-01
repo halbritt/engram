@@ -137,6 +137,7 @@ Per D027, segment-level `superseded_by` was removed in favor of `is_active` prec
 | Don't say | Say instead | Why |
 |-----------|-------------|-----|
 | "memory" (as the noun for a unit) | belief / claim / segment / capture (be specific) | Collapses three-tier separation |
+| "chunk" / "chunking" | segment / segmentation | Chunking implies fixed-size mechanical splits; segments are LLM-decided topic boundaries respecting message structure. The distinction is load-bearing for claim extraction grounding. D029's windowing is a fallback for over-budget *input*, not the shape of the *output*. |
 | "fact" | belief (with confidence + validity) | Hides uncertainty and time |
 | "user data" | raw evidence, or the specific table | Obscures the layer |
 | "extract a memory" | extract a *claim*, then consolidate to a *belief* | Skips adjudication |
