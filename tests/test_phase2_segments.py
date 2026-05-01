@@ -364,14 +364,14 @@ def test_segment_failure_marks_generation_failed(conn):
     assert result.processed == 0
 
 
-def test_segmenter_retries_compact_json_after_parse_failure(conn):
+def test_segmenter_retries_truncation_with_larger_output_budget(conn):
     class RetryClient:
         def __init__(self, message_ids):
-            self.calls: list[str] = []
+            self.calls: list[tuple[str, int]] = []
             self.message_ids = message_ids
 
         def segment(self, prompt: str, *, model_id: str, max_tokens: int) -> list[SegmentDraft]:
-            self.calls.append(prompt)
+            self.calls.append((prompt, max_tokens))
             if len(self.calls) == 1:
                 raise SegmentationError("segmenter returned invalid JSON: truncated")
             return [
@@ -391,17 +391,19 @@ def test_segmenter_retries_compact_json_after_parse_failure(conn):
         conversation_id,
         model_version="model-a",
         client=client,
+        max_tokens=128,
         retries=1,
     )
 
     assert result.segments_inserted == 1
     assert len(client.calls) == 2
-    assert "Retry with a more compact response" in client.calls[1]
+    assert client.calls[1][0] == client.calls[0][0]
+    assert client.calls[1][1] > client.calls[0][1]
     raw_payload = conn.execute("SELECT raw_payload FROM segments").fetchone()[0]
     assert raw_payload["retry_count"] == 1
 
 
-def test_service_unavailable_aborts_batch_without_poisoning_remaining_parents(conn):
+def test_service_unavailable_fails_parent_and_continues(conn):
     class DownClient:
         def segment(self, prompt: str, *, model_id: str, max_tokens: int) -> list[SegmentDraft]:
             raise SegmenterServiceUnavailable("local segmenter unavailable")
@@ -409,27 +411,26 @@ def test_service_unavailable_aborts_batch_without_poisoning_remaining_parents(co
     first_conversation_id, _ = insert_conversation(conn, [("user", "first", 1)])
     second_conversation_id, _ = insert_conversation(conn, [("user", "second", 1)])
 
-    with pytest.raises(SegmenterServiceUnavailable):
-        segmenter.segment_pending(
-            conn,
-            batch_size=10,
-            model_version="model-a",
-            client=DownClient(),
-        )
+    first = segmenter.segment_pending(
+        conn,
+        batch_size=10,
+        model_version="model-a",
+        client=DownClient(),
+    )
 
-    failed = conn.execute(
+    assert first.processed == 2
+    assert first.failed == 2
+    pending = conn.execute(
         """
         SELECT count(*)
         FROM consolidation_progress
         WHERE stage = 'segmenter'
-          AND status = 'failed'
+          AND status = 'pending'
+          AND error_count = 1
         """
     ).fetchone()[0]
-    assert failed == 0
-    assert (
-        conn.execute("SELECT status, raw_payload->>'failure_kind' FROM segment_generations").fetchone()
-        == ("failed", "service_unavailable")
-    )
+    assert pending == 2
+    assert conn.execute("SELECT count(*) FROM segment_generations").fetchone()[0] == 2
 
     result = segmenter.segment_pending(
         conn,
@@ -439,8 +440,45 @@ def test_service_unavailable_aborts_batch_without_poisoning_remaining_parents(co
     )
 
     assert result.processed == 2
-    assert conn.execute("SELECT count(*) FROM segment_generations").fetchone()[0] == 3
+    assert conn.execute("SELECT count(*) FROM segment_generations").fetchone()[0] == 4
     assert {first_conversation_id, second_conversation_id}
+
+
+def test_service_unavailable_poison_cap_skips_retry_queue(conn):
+    class DownClient:
+        def segment(self, prompt: str, *, model_id: str, max_tokens: int) -> list[SegmentDraft]:
+            raise SegmenterServiceUnavailable("local segmenter unavailable")
+
+    insert_conversation(conn, [("user", "first", 1)])
+
+    for _ in range(segmenter.MAX_SEGMENTER_ERROR_COUNT):
+        result = segmenter.segment_pending(
+            conn,
+            batch_size=1,
+            model_version="model-a",
+            client=DownClient(),
+        )
+        assert result.processed == 1
+        assert result.failed == 1
+
+    capped = segmenter.segment_pending(
+        conn,
+        batch_size=1,
+        model_version="model-a",
+        client=StaticSegmenter(),
+    )
+
+    assert capped.processed == 0
+    assert (
+        conn.execute(
+            """
+            SELECT error_count
+            FROM consolidation_progress
+            WHERE stage = 'segmenter'
+            """
+        ).fetchone()[0]
+        == segmenter.MAX_SEGMENTER_ERROR_COUNT
+    )
 
 
 def test_segmenter_request_timeout_fails_parent_and_continues(conn):
@@ -534,6 +572,73 @@ def test_http_json_wraps_socket_timeout(monkeypatch):
 
     with pytest.raises(SegmenterServiceUnavailable, match="timed out"):
         segmenter.http_json("GET", "http://127.0.0.1:8081/v1/models")
+
+
+def test_default_segmenter_model_id_caches_probe(monkeypatch):
+    calls: list[str] = []
+
+    def fake_http(method, url, *, payload=None, timeout=30):
+        calls.append(url)
+        if url.endswith("/v1/models"):
+            return {"data": [{"id": "model-a", "max_model_len": 4096}]}
+        if url.endswith("/props"):
+            return {"n_ctx": 4096}
+        raise AssertionError(url)
+
+    monkeypatch.delenv("ENGRAM_SEGMENTER_MODEL", raising=False)
+    monkeypatch.setattr(segmenter, "_SEGMENTER_MODEL_ID_CACHE", None)
+    monkeypatch.setattr(segmenter, "http_json", fake_http)
+
+    assert segmenter.default_segmenter_model_id() == "model-a"
+    assert segmenter.default_segmenter_model_id() == "model-a"
+    assert calls == [
+        "http://127.0.0.1:8081/v1/models",
+        "http://127.0.0.1:8081/props",
+    ]
+
+
+def test_probe_failure_records_batch_progress(conn, monkeypatch):
+    def fail_probe():
+        raise SegmenterServiceUnavailable("probe failed")
+
+    monkeypatch.setattr(segmenter, "default_segmenter_model_id", fail_probe)
+
+    result = segmenter.segment_pending(conn, batch_size=10)
+
+    assert result.processed == 0
+    assert result.failed == 1
+    assert (
+        conn.execute(
+            """
+            SELECT status, error_count, last_error
+            FROM consolidation_progress
+            WHERE stage = 'segmenter'
+              AND scope = 'probe'
+            """
+        ).fetchone()
+        == ("failed", 1, "probe failed")
+    )
+
+
+def test_default_windowing_does_not_overlap_messages():
+    messages = [
+        segmenter.ConversationMessage(
+            id=f"00000000-0000-0000-0000-00000000000{index}",
+            sequence_index=index,
+            role="user",
+            content_text="x" * 80,
+            privacy_tier=1,
+        )
+        for index in range(4)
+    ]
+
+    windows = segmenter.build_windows(messages, window_char_budget=170)
+
+    assert len(windows) > 1
+    for previous, current in zip(windows, windows[1:]):
+        previous_ids = {message.id for message in previous.messages}
+        current_ids = {message.id for message in current.messages}
+        assert previous_ids.isdisjoint(current_ids)
 
 
 def test_active_sequence_uniqueness_and_message_id_validation(conn):

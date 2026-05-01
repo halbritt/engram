@@ -293,3 +293,28 @@ Given observed VRAM use, a safer operational profile is:
 The most likely immediate cause of "service instability" is the combination of
 huge context (`262144`), full offload of a 35B model, q8 KV cache, and large
 segmentation requests on a nearly full 24GB GPU.
+
+---
+
+## Implemented Follow-Up (Codex, 2026-05-01)
+
+The operational fixes selected from these findings landed in the Phase 2 branch:
+
+- `service_unavailable` is now parent-scoped in `segment_pending`; it increments
+  failure counts and continues instead of aborting and rolling back the batch.
+- Pending retry rows are capped by `ENGRAM_SEGMENTER_MAX_ERROR_COUNT` (default
+  `3`) unless they were explicitly queued by reclassification.
+- `default_segmenter_model_id()` caches the first successful probe in-process,
+  and `segment_pending` records probe failures in `consolidation_progress`
+  rather than crashing without a trail.
+- Default segmenter settings were moved to `segmenter.v2.d034.robust`:
+  `ENGRAM_SEGMENTER_MAX_TOKENS=16384`,
+  `ENGRAM_SEGMENTER_RETRY_MAX_TOKENS=32768`,
+  `ENGRAM_SEGMENTER_WINDOW_CHAR_BUDGET=60000`, and
+  `ENGRAM_SEGMENTER_WINDOW_OVERLAP=0`.
+- Truncation-like parse failures retry the same prompt with a larger output
+  budget instead of prepending a larger retry prompt.
+- The Makefile accepts `SEGMENTER_MODEL=...` for `segment` and `pipeline` so
+  operators can pin the local model id and avoid repeated `/v1/models` probes.
+
+Verification after the fix: `make test` passed with `42 passed`.
