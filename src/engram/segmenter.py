@@ -542,6 +542,14 @@ def segment_pending(
                 )
             raise
         except Exception:
+            mark_parent_segmenting_generations_failed(
+                conn,
+                parent_kind="conversation",
+                parent_id=conversation_id,
+                prompt_version=prompt_version,
+                model_version=model_id,
+                failure_kind="segmenter_error",
+            )
             failed += 1
             if progress_callback:
                 progress_callback(
@@ -642,6 +650,36 @@ def mark_generation_failed(
         WHERE id = %s
         """,
         (Jsonb({"failure_kind": failure_kind}), generation_id),
+    )
+
+
+def mark_parent_segmenting_generations_failed(
+    conn: psycopg.Connection,
+    *,
+    parent_kind: str,
+    parent_id: str,
+    prompt_version: str,
+    model_version: str,
+    failure_kind: str,
+) -> None:
+    conn.execute(
+        """
+        UPDATE segment_generations
+        SET status = 'failed',
+            raw_payload = raw_payload || %s
+        WHERE parent_kind = %s
+          AND parent_id = %s
+          AND segmenter_prompt_version = %s
+          AND segmenter_model_version = %s
+          AND status = 'segmenting'
+        """,
+        (
+            Jsonb({"failure_kind": failure_kind}),
+            parent_kind,
+            parent_id,
+            prompt_version,
+            model_version,
+        ),
     )
 
 
