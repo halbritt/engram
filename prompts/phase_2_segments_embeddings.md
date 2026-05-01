@@ -71,22 +71,31 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      model/dimension before writing DDL (D033).
    - Simulate two concurrent cache inserts for identical text and
      verify the intended conflict path (see Embedder below).
-   - **P-FRAG fragmentation probe.** On a local-only
+   - **P-FRAG fragmentation probe** (runs *after* the step-2 schema
+     migration lands; depends on `min_token_count`, `merge_rule`, and
+     the extended `window_strategy` enum). On a local-only
      ~50-conversation slice spanning all three raw sources, compare:
      (A) D034-profile LLM topic segmentation (the current plan),
      (B) fixed N-token windows with overlap, and
      (C) message-group segmentation (one segment per contiguous
-     role-turn group up to N tokens). Record per strategy:
-     median / p10 / p90 segment token length; sub-floor segment count
-     at 50 / 100 / 200 tokens; and, on a 10-prompt micro gold set,
-     claim precision and claim recall when extraction runs over each
-     strategy's segments under an identical extraction prompt. External
-     RAG benchmarks (FloTorch 2026, Vectara NAACL 2025) report semantic
-     chunking degrading end-to-end QA accuracy via over-fragmentation.
-     Engram's pipeline (segments -> claims -> beliefs -> context_for)
-     does not share that failure shape, but the over-fragmentation risk
-     is real and falsifiable; P-FRAG lets eval adjudicate rather than
-     benchmark transfer.
+     role-turn group up to N tokens). Each strategy writes into its
+     own `segment_generations` row per parent (three generations per
+     parent in the slice), all remaining `status != 'active'` for the
+     duration of the probe; the active-sequence uniqueness index is
+     partial on `is_active = true`, so probe rows do not collide.
+     Activation of the winning generation, if any, follows the standard
+     cutover (D031); losing strategies' generations remain inactive for
+     audit, not deleted. Record per strategy: median / p10 / p90 segment
+     token length; sub-floor segment count at 50 / 100 / 200 tokens;
+     and, on a 10-prompt micro gold set, claim precision and claim
+     recall when extraction runs over each strategy's segments under
+     an identical extraction prompt. External RAG benchmarks (FloTorch
+     2026, Vectara NAACL 2025) report semantic chunking degrading
+     end-to-end QA accuracy via over-fragmentation. Engram's pipeline
+     (segments -> claims -> beliefs -> context_for) does not share that
+     failure shape, but the over-fragmentation risk is real and
+     falsifiable; P-FRAG lets eval adjudicate rather than benchmark
+     transfer.
 
 2. **Schema migration** (`migrations/004_segments_embeddings.sql`).
    Derived/control schema additions plus one raw-schema backfill:
@@ -148,9 +157,10 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      used by the producing strategy. Sub-floor candidates must be
      merged with predecessor or successor before insert.
    - `merge_rule TEXT NULL CHECK (merge_rule IS NULL OR merge_rule IN
-     ('none', 'merge_predecessor', 'merge_successor',
-     'single_parent_exception'))` — records how a sub-floor candidate
-     was handled.
+     ('merge_predecessor', 'merge_successor',
+     'single_parent_exception'))` — recorded only for sub-floor
+     candidates. NULL means the segment is at or above
+     `min_token_count` and required no merge.
    - `segmenter_prompt_version TEXT NOT NULL`
    - `segmenter_model_version TEXT NOT NULL`
    - `is_active BOOLEAN NOT NULL DEFAULT false` — retrieval-visible
@@ -237,10 +247,19 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
    - Topic segmentation rows use `window_strategy='topic'`. Baseline
      P-FRAG rows use `window_strategy='windowed_overlap'` for fixed
      N-token windows with overlap and `window_strategy='message_group'`
-     for contiguous role-turn grouping up to N tokens. These strategies
-     must be versioned through `segmenter_prompt_version` /
-     `segmenter_model_version` or equivalent local derivation metadata
-     so strategy comparisons never overwrite each other.
+     for contiguous role-turn grouping up to N tokens. Non-LLM baseline
+     strategies pin canonical literal values in the version columns so
+     re-runs and supersession semantics work uniformly:
+     - `windowed_overlap`: `segmenter_model_version='fixed_window_v1'`,
+       `segmenter_prompt_version='n/a'`.
+     - `message_group`: `segmenter_model_version='message_group_v1'`,
+       `segmenter_prompt_version='n/a'`.
+     Bump the `_v1` suffix only when the algorithm's semantics change
+     (window size, overlap fraction, role-grouping rule, etc.). The LLM
+     topic strategy continues to record the probed model id and the
+     actual prompt version. Distinct version pairs keep each strategy's
+     segments in their own `segment_generations` rows so comparisons
+     never overwrite each other.
    - Enforce a configured segment token floor (`min_token_count`) before
      insert. A segment candidate below the floor must merge with its
      predecessor or successor according to a deterministic recorded
