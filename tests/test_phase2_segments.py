@@ -469,6 +469,14 @@ def test_downstream_segment_error_marks_generation_failed(conn):
     )
 
 
+def test_segmenter_request_deadline_raises_service_unavailable():
+    with pytest.raises(SegmenterServiceUnavailable, match="exceeded 1s"):
+        with segmenter.segmenter_request_deadline(1):
+            import time
+
+            time.sleep(2)
+
+
 def test_active_sequence_uniqueness_and_message_id_validation(conn):
     conversation_id, message_ids = insert_conversation(
         conn,

@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -695,15 +697,40 @@ def segment_window_with_retries(
     for attempt in range(retries + 1):
         attempt_prompt = prompt if attempt == 0 else retry_segmenter_prompt(prompt, last_error)
         try:
-            return (
-                client.segment(attempt_prompt, model_id=model_id, max_tokens=max_tokens),
-                attempt,
-            )
+            with segmenter_request_deadline(SEGMENTER_REQUEST_TIMEOUT_SECONDS):
+                return (
+                    client.segment(attempt_prompt, model_id=model_id, max_tokens=max_tokens),
+                    attempt,
+                )
         except Exception as exc:
             last_error = exc
             if attempt >= retries:
                 raise
     raise SegmentationError("segmenter retry loop exhausted unexpectedly")
+
+
+@contextmanager
+def segmenter_request_deadline(seconds: int):
+    if seconds <= 0:
+        yield
+        return
+    old_handler = signal.getsignal(signal.SIGALRM)
+    old_timer = signal.setitimer(signal.ITIMER_REAL, 0)
+
+    def handle_timeout(signum, frame):
+        raise SegmenterServiceUnavailable(
+            f"local segmenter request exceeded {seconds}s deadline"
+        )
+
+    signal.signal(signal.SIGALRM, handle_timeout)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old_handler)
+        if old_timer[0] > 0:
+            signal.setitimer(signal.ITIMER_REAL, old_timer[0], old_timer[1])
 
 
 def retry_segmenter_prompt(prompt: str, last_error: Exception | None) -> str:
