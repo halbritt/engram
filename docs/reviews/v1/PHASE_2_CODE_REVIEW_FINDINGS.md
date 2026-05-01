@@ -430,3 +430,128 @@ Both responses returned `200 OK` with `truncated=false` and `n_decoded == max_to
 - Try a different segmentation prompt for these conversations (smaller windows, simpler schema). They may be ones that segmentation is structurally unsuited to.
 
 The conv 1 outlier is stage-2 information; it does not block phase-2 progress, but it should be tracked so re-derivation runs don't keep paying the 469s tax per affected conversation.
+
+## Phase 2 Bounded Soak (Opus 4.7 / coding agent, 2026-05-01 18:55–23:47 UTC)
+
+Bounded soak per `prompts/phase_2_soak_test.md`. Run was cut short by an ik-llama backend wedge unrelated to engram; surfaces below as Finding VII. The supervisor itself handled the wedge cleanly.
+
+### Run setup
+
+- Branch `phase-2-segments-embeddings` @ `c1494f5`, working tree clean.
+- Invocation: `python -m engram.cli pipeline --limit 150 --segment-batch-size 1 --embed-batch-size 100`. The `pipeline-isolated` Makefile target does **not** accept `PIPELINE_ARGS` pass-through (`grep -n PIPELINE_ARGS Makefile` is empty), so the spec's fallback applied: direct python invocation with `openclaw-gateway.service` and `ik-llama-watchdog.timer` stopped via a hand-rolled trap that mirrors the Makefile pattern.
+- Operational profile: `segmenter.v2.d034.robust` defaults from `segmenter.py:28-37` (`MAX_TOKENS=16384`, `RETRY_MAX_TOKENS=32768`, `WINDOW_OVERLAP=0`); `ENGRAM_SEGMENTER_MODEL` pinned to the `/v1/models` literal id.
+- Run window: 18:55:35Z → 23:47:28Z (4h 51m wall, far past spec's 2h budget — the wedge stretched it). Terminated via SIGTERM; trap cleanly restored both quiesced units.
+
+### Counts (run window only)
+
+| Phase | Count |
+|---|---|
+| Conversations started | 86 |
+| Segmenter passes (`segmented`, awaiting embed) | 52 |
+| Segmenter failures (`failed`) | 33 |
+| In-flight at SIGTERM | 1 |
+| Active activations from this run | 0 |
+| Embed-phase invocations | 0 (never reached) |
+
+### Failures by `failure_kind`
+
+| `failure_kind` | Count | Phase |
+|---|---|---|
+| `segmenter_error` | 7 | Pre-wedge — actual Phase 2 failure modes |
+| `segmenter_timeout` | 26 | Post-wedge — every request hit the 600s client deadline |
+
+### Elapsed per parent
+
+Successes (n=52, all pre-wedge): `mean=15.2s, min=1.6s, p50=7.0s, p90=32.4s, p99/max=144.7s`. p99 is one outlier (`0533c804`, 13 segments / 2 windows).
+
+Failures by elapsed bucket (heuristic — `last_error` is not in `raw_payload`; see Finding VIII):
+
+| Bucket | Count | Interpretation |
+|---|---|---|
+| `<146s` | 4 (9.0, 39.6, 89.7, 111.9) | Non-runaway — short parse / validation failures |
+| `~146–250s` | 1 (158.4) | Boundary — possible first-attempt-runaway just past decode budget |
+| `~300–400s` | 2 (334.4, 336.8) | Retry-runaway, tightly clustered (cf. Finding VI) |
+| `=600.0s` | 26 | Client timeout after the wedge (Finding VII) |
+
+**Pre-wedge non-runaway rate: 4 / 58 ≈ 6.9%** — above the 2% PASS threshold, but n=58 is undersized for a confident verdict (run intended n=150).
+
+### VRAM trend
+
+| Checkpoint | used | free | util |
+|---|---|---|---|
+| Pre-soak | 22365 MiB | 1767 MiB | 0% |
+| Mid-run (~47 min in) | 24131 MiB | 1 MiB | 0% |
+| At SIGTERM | 24131 MiB | 1 MiB | 0% |
+
+Saturated by mid-run; the dead CUDA context (Finding VII) never released its 23594 MiB allocation in `llama-server` PID 3716256.
+
+### Spec-mandated checks
+
+- Active-sequence uniqueness — **0 violations** ✓
+- `message_ids` integrity on the 97 segments produced this run — **0 NULL or empty** ✓
+- `expand_message_span` invocation rate (computed on `segmented`-status rows since `active` count is 0) — **97/97 = 100%** carry non-empty `expanded_message_ids`
+- Embed cache hit rate — **N/A** (embed never ran)
+- Idempotency re-run — **NOT TESTED** (ik-llama wedged; defer to next soak)
+
+### VII. ik-llama cuBLAS error wedges inference; supervisor handles it cleanly
+
+`journalctl --user -u ik-llama-server.service` at 19:27:16Z (31:41 into the soak):
+
+```text
+CUDA error: an unsupported value or parameter was passed to the function
+  current device: 0, in function ggml_cuda_op_mul_mat_cublas at ggml-cuda.cu:1647
+  cublasSgemm_v2(ctx.cublas_handle(id), CUBLAS_OP_T, CUBLAS_OP_N, ...)
+ggml-cuda.cu:132: CUDA error
+```
+
+The server **did not crash**. Process 3716256 stayed alive, kept holding 23594 MiB of GPU memory, kept serving `/v1/models` with 200. Inference was permanently broken — every subsequent `/v1/chat/completions` sat in a hung slot until the python client cut it off at 600s. Journal shows `srv stop: cancel task` on each cancelled request; no automatic recovery.
+
+**Phase 2 supervisor behaviour across this fault was clean**:
+- 26 consecutive `segmenter_timeout` failures committed cleanly with populated rows.
+- Zero supervisor crashes across ~4h 20m of consecutive failures.
+- No partial activations, no orphaned segments, no rolled-back parents.
+- Active-sequence and `message_ids` integrity preserved end-to-end.
+
+This is a **positive signal for Phase 2** — the supervisor is robust to a severe backend wedge. The fix belongs at the inference-runtime layer:
+
+- `ik-llama-server.service` needs `Restart=on-failure` plus a journal-based detector for `CUDA error` log lines (or equivalent), since the process did not exit on its own.
+- The existing watchdog probes `/v1/models`, which returned 200 throughout the wedge — so it would not have caught this case even if it had been running. A health probe that exercises actual inference (a tiny prompt) would.
+
+Quiescing the watchdog during `pipeline-isolated` runs (per the Makefile comment) is correct for normal generation, but it removes the recovery path entirely if ik-llama wedges. Consider a "soak-mode" watchdog that probes inference instead of `/v1/models`.
+
+### VIII. Failure payload diagnostics insufficient for the spec's runaway-classification rule
+
+Current `failure_kind=segmenter_error` payload:
+
+```json
+{
+  "max_tokens": 16384,
+  "failure_kind": "segmenter_error",
+  "window_count": 1,
+  "window_char_budget": 60000,
+  "request_profile_version": "ik-llama-json-schema.d034.v1"
+}
+```
+
+The spec's runaway-classification rule (Finding VI: *"last attempt's decode count == `max_tokens` AND `last_error` matches `Unterminated string`"*) cannot be applied — `last_error`, `attempts`, and decode counts are not persisted. Heuristic elapsed-time bucketing was used instead, but it disagrees on boundary cases (the 158.4s failure here is unclassifiable).
+
+**Recommended changes to `mark_generation_failed` in `segmenter.py`** — persist:
+
+- `last_error`: the last attempt's exception message or parse-error text.
+- `attempts`: count of attempts made.
+- `decode_counts`: per-attempt list of decoded-token counts (to evaluate `last decode == max_tokens` mechanically).
+- `attempt_max_tokens`: per-attempt list (since `retry_max_tokens` may grow per Finding VI).
+
+This is the minimum to apply the runaway rule without guessing from wall clock.
+
+### PASS / FAIL
+
+**Inconclusive.** The supervisor passed every supervisor-level criterion the spec defines (no aborts, zero integrity violations across two checks). The non-runaway failure rate trended toward FAIL at 4/58 ≈ 6.9% — directional read only, sample undersized. Embed-phase criteria are untested.
+
+### Recommended next steps
+
+1. **Restart `ik-llama-server.service`** (fresh CUDA context). Handed off.
+2. **Implement Finding VIII** before re-running, so the next soak can apply the runaway rule mechanically.
+3. **Investigate pre-wedge short failures** — 4 in 58 is meaningful even with the small sample. Specific parents to inspect: `053fc988` (9.0s — suspiciously fast), `040c3803` (39.6s), `02302711` (89.7s), `01c3f1c8` (111.9s).
+4. **Re-run the soak** post-restart, post-Finding-VIII, then immediately re-run `--limit 150` again to validate idempotency.
+5. **Consider a 10-conversation pre-flight smoke** before each soak (~5 min) to catch backend wedges before burning the 2-hour budget.
