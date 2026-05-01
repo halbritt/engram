@@ -53,6 +53,10 @@ class SegmenterServiceUnavailable(SegmentationError):
     """Raised when the local segmenter endpoint is unreachable."""
 
 
+class SegmenterRequestTimeout(SegmentationError):
+    """Raised when one parent/window exceeds the configured request deadline."""
+
+
 @dataclass(frozen=True)
 class SegmenterProbe:
     model_id: str
@@ -391,6 +395,18 @@ def segment_conversation(
                 last_error=str(exc),
             )
             raise
+        except SegmenterRequestTimeout as exc:
+            mark_generation_failed(conn, generation_id, failure_kind="segmenter_timeout")
+            upsert_progress(
+                conn,
+                stage="segmenter",
+                scope=f"conversation:{conversation_id}",
+                status="failed",
+                position={"conversation_id": conversation_id, "window_index": window.index},
+                last_error=str(exc),
+                increment_error=True,
+            )
+            raise
         except Exception as exc:
             mark_generation_failed(conn, generation_id, failure_kind="segmenter_error")
             upsert_progress(
@@ -718,7 +734,7 @@ def segmenter_request_deadline(seconds: int):
     old_timer = signal.setitimer(signal.ITIMER_REAL, 0)
 
     def handle_timeout(signum, frame):
-        raise SegmenterServiceUnavailable(
+        raise SegmenterRequestTimeout(
             f"local segmenter request exceeded {seconds}s deadline"
         )
 

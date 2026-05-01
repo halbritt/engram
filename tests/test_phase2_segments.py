@@ -10,6 +10,7 @@ from engram import segmenter
 from engram.segmenter import (
     SegmentDraft,
     SegmentationError,
+    SegmenterRequestTimeout,
     SegmenterServiceUnavailable,
     segment_conversation,
 )
@@ -442,6 +443,54 @@ def test_service_unavailable_aborts_batch_without_poisoning_remaining_parents(co
     assert {first_conversation_id, second_conversation_id}
 
 
+def test_segmenter_request_timeout_fails_parent_and_continues(conn):
+    class TimeoutThenStatic:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def segment(
+            self, prompt: str, *, model_id: str, max_tokens: int
+        ) -> list[SegmentDraft]:
+            self.calls += 1
+            if self.calls == 1:
+                raise SegmenterRequestTimeout("local segmenter request exceeded 180s deadline")
+            message_ids = re.findall(r'<message id="([^"]+)"', prompt)
+            return [
+                SegmentDraft(
+                    message_ids=message_ids,
+                    summary=None,
+                    content_text="second",
+                    raw={},
+                )
+            ]
+
+    insert_conversation(conn, [("user", "first", 1)])
+    insert_conversation(conn, [("user", "second", 1)])
+
+    result = segmenter.segment_pending(
+        conn,
+        batch_size=10,
+        model_version="model-a",
+        client=TimeoutThenStatic(),
+        retries=0,
+    )
+
+    assert result.processed == 2
+    assert result.failed == 1
+    assert result.created == 1
+    assert (
+        conn.execute(
+            """
+            SELECT count(*)
+            FROM segment_generations
+            WHERE status = 'failed'
+              AND raw_payload->>'failure_kind' = 'segmenter_timeout'
+            """
+        ).fetchone()[0]
+        == 1
+    )
+
+
 def test_downstream_segment_error_marks_generation_failed(conn):
     class BadMessageClient:
         def segment(self, prompt: str, *, model_id: str, max_tokens: int) -> list[SegmentDraft]:
@@ -469,8 +518,8 @@ def test_downstream_segment_error_marks_generation_failed(conn):
     )
 
 
-def test_segmenter_request_deadline_raises_service_unavailable():
-    with pytest.raises(SegmenterServiceUnavailable, match="exceeded 1s"):
+def test_segmenter_request_deadline_raises_timeout():
+    with pytest.raises(SegmenterRequestTimeout, match="exceeded 1s"):
         with segmenter.segmenter_request_deadline(1):
             import time
 
