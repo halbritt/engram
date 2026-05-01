@@ -7,7 +7,12 @@ from psycopg.errors import CheckViolation, RaiseException, UniqueViolation
 from psycopg.types.json import Jsonb
 
 from engram import segmenter
-from engram.segmenter import SegmentDraft, SegmentationError, segment_conversation
+from engram.segmenter import (
+    SegmentDraft,
+    SegmentationError,
+    SegmenterServiceUnavailable,
+    segment_conversation,
+)
 
 
 class StaticSegmenter:
@@ -393,6 +398,48 @@ def test_segmenter_retries_compact_json_after_parse_failure(conn):
     assert "Retry with a more compact response" in client.calls[1]
     raw_payload = conn.execute("SELECT raw_payload FROM segments").fetchone()[0]
     assert raw_payload["retry_count"] == 1
+
+
+def test_service_unavailable_aborts_batch_without_poisoning_remaining_parents(conn):
+    class DownClient:
+        def segment(self, prompt: str, *, model_id: str, max_tokens: int) -> list[SegmentDraft]:
+            raise SegmenterServiceUnavailable("local segmenter unavailable")
+
+    first_conversation_id, _ = insert_conversation(conn, [("user", "first", 1)])
+    second_conversation_id, _ = insert_conversation(conn, [("user", "second", 1)])
+
+    with pytest.raises(SegmenterServiceUnavailable):
+        segmenter.segment_pending(
+            conn,
+            batch_size=10,
+            model_version="model-a",
+            client=DownClient(),
+        )
+
+    failed = conn.execute(
+        """
+        SELECT count(*)
+        FROM consolidation_progress
+        WHERE stage = 'segmenter'
+          AND status = 'failed'
+        """
+    ).fetchone()[0]
+    assert failed == 0
+    assert (
+        conn.execute("SELECT status, raw_payload->>'failure_kind' FROM segment_generations").fetchone()
+        == ("failed", "service_unavailable")
+    )
+
+    result = segmenter.segment_pending(
+        conn,
+        batch_size=10,
+        model_version="model-a",
+        client=StaticSegmenter(),
+    )
+
+    assert result.processed == 2
+    assert conn.execute("SELECT count(*) FROM segment_generations").fetchone()[0] == 3
+    assert {first_conversation_id, second_conversation_id}
 
 
 def test_active_sequence_uniqueness_and_message_id_validation(conn):
