@@ -219,6 +219,7 @@ def run_segment_batches(
             retries=retries,
             progress_callback=print_segment_progress,
         )
+        conn.commit()
         totals["processed"] += result.processed
         totals["created"] += result.created
         totals["skipped"] += result.skipped
@@ -247,6 +248,7 @@ def run_embed_batches(
             limit=batch_limit,
             progress_callback=print_embed_progress if show_progress else None,
         )
+        conn.commit()
         totals["processed"] += result.processed
         totals["created"] += result.created
         totals["cache_hits"] += result.cache_hits
