@@ -387,3 +387,46 @@ The output exceeded the prior 4865-char truncation point cleanly, and the 23.2s 
 ### IV. The `expand_message_span` semantic gap is observable in the output
 
 Segment 0 of the rerun cites 69 message_ids; segment 1 cites 55; total = 124. If the conversation has exactly 124 messages, that means `expand_message_span` was a no-op (or the LLM cited contiguous spans naturally). If it has fewer, then `expand_message_span` filled in messages that the LLM did not produce content_text for. The current schema has no way to distinguish "LLM cited" vs "expanded" in `raw_payload` beyond `model_output.message_ids`. **Suggested:** add an explicit `expanded_message_ids` array to `raw_payload` so future evidence-tracing can tell which message_ids contributed to content_text vs which were swept in by span expansion.
+
+---
+
+## Empirical Findings from Post-Upgrade Validation Run (Opus 4.7, 2026-05-01 18:18–18:27 UTC)
+
+After upgrading `ik_llama.cpp` past the `aae9b8d2` revert of the "Faster prompt processing on CUDA" commit (#1687) and rebuilding `llama-server`, I ran `engram.cli segment --limit 5 --batch-size 5` with `openclaw-gateway` quiesced. The watchdog timer was left running to validate the prior `/v1/models` fix under load.
+
+### V. New ik-llama build is stable; watchdog fix held under a 311-second generation
+
+| # | Conversation | Result | Elapsed |
+|---|---|---|---|
+| 1 | `003a1e2c-3a8b-4550-b695-f88d0377c576` | failed | 469.2s |
+| 2 | `00454dfb-5861-4ad1-9158-5e33288edc95` | done, 1 segment | 20.7s |
+| 3 | `0045e546-9fd6-40ed-87ee-2bdf439c8b69` | done, 1 segment | 11.2s |
+| 4 | `0055ca11-e960-483d-9be1-991c50e3ae58` | done, 1 segment | 12.8s |
+| 5 | `0065ecb2-c786-4766-9126-1a1a3e1f347b` | done, 1 segment | 5.1s |
+
+`llama-server` PID held constant across the run — no SIGTERM cascades, no core dumps, no `Restart=on-failure` events in the journal — even though conv 1's retry attempt held the slot for **311 seconds of decode** (`eval time = 311342.85 ms / 32768 tokens`). The watchdog timer fired during that window and returned 200 against `/v1/models` without disturbing the in-flight slot. Finding I's fix is operationally validated.
+
+The 4× prefix-cache speedup from Finding II reproduces (20.7 → 11.2 → 12.8 → 5.1s) on a different five-conversation sample, confirming the pattern is not specific to the previous test set.
+
+### VI. `RETRY_MAX_TOKENS=32768` is not a universal escape hatch — some conversations exhaust both budgets
+
+Conv 1 (`003a1e2c`) hit the max-tokens ceiling on **both** attempts:
+
+| Attempt | `max_tokens` | Decoded tokens | Decode time | Outcome |
+|---|---|---|---|---|
+| First | 16384 | **16384/16384** | 146.6s | Truncated JSON → parse failure → retry |
+| Retry | 32768 | **32768/32768** | 311.3s | Truncated JSON → parse failure |
+| Total wall-clock | — | — | 469.2s | `failed`, segmenter request deadline exhausted |
+
+Both responses returned `200 OK` with `truncated=false` and `n_decoded == max_tokens` — the model burned the entire budget producing tokens that did not close the JSON object. This is a runaway-generation pattern (likely repetition trap), not a "needs more headroom" pattern. Doubling `RETRY_MAX_TOKENS` again would consume more wall clock without changing the outcome.
+
+**Implication for the parse-failure class:** the 15-conversation re-run proposed in Finding III's caveat will likely split into two populations:
+1. *Insufficient headroom* — fits in 16384 with sane content. Already fixed by D034.
+2. *Runaway generation* — exhausts any budget. Needs a different mitigation.
+
+**Mitigation candidates for the runaway class:**
+- Detect `n_decoded == max_tokens` server-side and treat the response as `service_unavailable`-equivalent rather than retrying with a larger budget. Saves 311s of decode on a foregone conclusion.
+- Add a soft repetition penalty (`repeat_penalty` ≈ 1.05–1.10, `repeat_last_n` ≈ 256) for the segmenter request profile only. D034 currently keeps sampling deterministic; this would need a documented exception.
+- Try a different segmentation prompt for these conversations (smaller windows, simpler schema). They may be ones that segmentation is structurally unsuited to.
+
+The conv 1 outlier is stage-2 information; it does not block phase-2 progress, but it should be tracked so re-derivation runs don't keep paying the 469s tax per affected conversation.
