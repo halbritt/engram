@@ -65,6 +65,15 @@ If something embeds a raw message directly, it's a bug — raw turns are out of 
 
 If a derivation cannot be reproduced from raw, it has become a second source of truth and the principle is broken.
 
+### Belief supersession vs segment generation cutover
+
+Two different non-destructive update mechanics. Don't conflate.
+
+- **Belief supersession** (close-and-insert) — contradicting evidence closes the prior belief's `valid_to` and inserts a new row referenced by `superseded_by`. Bitemporal. Per-belief.
+- **Segment generation cutover** (`is_active` flip) — re-segmenting under a new `segmenter_version` produces a *generation* of new rows; cutover flips `is_active` on segments and `segment_embeddings` only after required embeddings exist (D027 / D031). N-to-M, not 1:1.
+
+Per D027, segment-level `superseded_by` was removed in favor of `is_active` precisely because segments don't supersede 1:1 across generations. Reach for `superseded_by` only on beliefs.
+
 ---
 
 ## Glossary by context
@@ -79,10 +88,14 @@ If a derivation cannot be reproduced from raw, it has become a second source of 
 
 ### Corpus
 
-- **Embedding** — vector representation of a segment or accepted belief. Versioned by `embedding_model_version`. Stored in `segment_embeddings` (D027) so the HNSW index can push down on `is_active` and `privacy_tier`.
-- **Embedding cache** — SHA256-keyed table; re-running an unchanged model is free.
+- **Generation** — a versioned cohort of segments produced under one `segmenter_version`. Tracked in `segment_generations`. The unit of cutover; not the unit of retrieval.
+- **`segment_embeddings`** (D027) — the retrieval-visible vector table. HNSW index lives here so it can push down on `is_active` and `privacy_tier`. Distinct from `embedding_cache`.
+- **`embedding_cache`** — pure API cache; SHA256-keyed input + `embedding_model_version` + `embedding_dimension`. Re-running an unchanged model is free. No retrieval index lives here.
+- **Embedding** — vector representation of a segment or accepted belief. Versioned by `embedding_model_version`. Storage is dimension-flexible per D033; ANN indexes are scoped per active model/dimension.
+- **Bounded / windowed segmentation** (D029) — over-budget parents are split into deterministic overlapping windows. `window_strategy` records how, so re-derivation is reproducible. Resumable per intra-parent checkpoint.
+- **`is_active`** — flag on `segments` and `segment_embeddings`. Marks the row as part of the currently retrieval-visible generation. Flipped at generation cutover, never updated piecemeal.
+- **Active sequence uniqueness** (D030) — at most one active segment per `(parent, sequence_index)`. Enforced at the database boundary, not by LLM JSON discipline.
 - **Stability class** — one of `identity | preference | project_status | goal | task | mood | relationship`. Drives currentness decay in ranking. Identity decays slowly; mood decays fast.
-- **Supersession** — the close-and-insert mechanic. Contradicting evidence closes the prior belief's `valid_to` and inserts a new row referenced by `superseded_by`. Beliefs are never UPDATEd.
 - **Belief audit** — `belief_audit` table; one row per state transition (candidate → provisional → accepted → superseded → rejected).
 
 ### Retrieval
@@ -103,12 +116,18 @@ If a derivation cannot be reproduced from raw, it has become a second source of 
 - **Eval gate** — the policy that full-corpus consolidation cannot proceed until tier-2 passes. Not relaxed under schedule pressure.
 - **`context_feedback`** — table; one row per `useful` / `wrong` / `stale` / `irrelevant` annotation on a `context_for` output. References the belief and segment ids that produced the offending section. Treated as evolving ground truth.
 - **Adversarial sweep** / **falsification sweep** — periodic multi-model pass over high-confidence beliefs ("what raw evidence would contradict this — find it"). Substitutes for engagement signal in a single-user system.
+- **Preflight probe** — a small, phase-specific empirical check run *before* implementation, to validate assumptions the prompt is making (e.g., effective context window, structured-output behavior, cache conflict semantics). Cheaper than eval; runs once per phase. Distinct from a disproof probe.
+- **Disproof probe** — a falsification challenge attached to an adversarial review finding ("what would have to be true for this not to be a problem"). Lives in the review document, not in the implementation prompt.
 
 ### Lifecycle
 
 - **Privacy tier** — integer column on raw rows and derived units. Tier 1 (only-me, only-this-machine) is the default; tiers 2–5 per HUMAN_REQUIREMENTS.md. Reclassification is a new capture row, not a column update.
+- **As-recorded tier** vs **effective tier** — the as-recorded tier is what was written to the raw row at insert time. The effective tier is computed at read time as the as-recorded tier overridden by the most-recent reclassification capture targeting that row (D023). They are not the same value, and forms that surface tier should say which.
+- **Privacy inheritance** (D032) — a segment's privacy tier is `max(parent conversation/note/capture tier, all constituent raw-row tiers)`. Not just the parent, not just the rows.
+- **Parent scope** — the unit of reclassification invalidation per D032. Reclassifying one message invalidates derived rows for its parent conversation/note/capture only — not the whole source export.
 - **Posthumous handoff** — encrypted dead-man's-switch. After confirmed inactivity, keys release to designated successors per the privacy-tier model. Tier-5 categories are cryptographically destroyed pre-release.
 - **`prompt_version` / `model_version`** — required on every belief. Pin which extraction prompt and which model produced it; re-derivation must be auditable.
+- **Request profile** (D034) — the deterministic local-LLM call contract for derived stages: pinned endpoint and model id, streaming and thinking disabled, deterministic sampling, JSON schema response format, parse only `choices[0].message.content` (not `reasoning_content`). Recorded in derivation version metadata so re-runs are reproducible.
 - **Re-derivation trigger** — capability change, not calendar. Four canonical triggers: new embedding model, new extraction prompt/model, new segmentation heuristic, targeted slice upgrade.
 
 ---
@@ -123,6 +142,8 @@ If a derivation cannot be reproduced from raw, it has become a second source of 
 | "extract a memory" | extract a *claim*, then consolidate to a *belief* | Skips adjudication |
 | "delete the bad belief" | supersede via new raw evidence | Beliefs are never destructively updated |
 | "the model decides" | the extraction prompt at `prompt_version=X` produced | Pin which version did it |
+| "the model defaults" (for local-LLM call shape) | the request profile at D034 specifies | D034 forbids relying on model defaults for derivation calls |
+| segment "supersedes" prior segment | segment generation cutover via `is_active` | Segments don't supersede 1:1; D027 removed `superseded_by` from segments |
 | "send this to the cloud" | (rejected — local-first) | Refusal, not phrasing |
 | "engram queries the web" | (rejected — corpus/network separation) | Same |
 
@@ -136,4 +157,6 @@ Decisions still owed:
 2. **"Hot state" vs "snapshot"** — used interchangeably in the 2026-04-29 delta. If they're the same, pick one. If hot state is broader (KV-cache prefix + snapshot + memory_events), say so.
 3. **"Subject"** — the schema has `subject_entity_id` on beliefs. Is *the* subject (the person) the same concept as a *belief subject* (any entity), or are these distinct levels that happen to share a word?
 4. **"Pinned"** — appears in "pinned facts," "pinned profile facts," and "promote-to-pinned" (review queue). Define the table-level mechanic.
-5. **"Active"** — three current uses: `is_active` on `segment_embeddings` (D027), `status='active'` on captures, "active goals/projects." Pick distinct words for at least two.
+5. **"Active"** — partially resolved. `is_active` on `segments` and `segment_embeddings` is now the canonical flag for "part of the current generation" (D027 / D031). "Active goals/projects" remains a colloquial use in the `context_for` lane vocabulary. If a third use creeps in (e.g., on captures), pin distinct names then.
+6. **Generation** — used informally in the synthesis ("segment generation," "belief generation") but only `segment_generations` is a real table. Decide whether "belief generation" stays metaphorical or becomes a primitive.
+7. **`reasoning_content` vs `content`** — D034 says parse `content` only, but a glossary entry on the assistant-message shape (and *why* `reasoning_content` exists) would help future implementers not silently drift back to it.
