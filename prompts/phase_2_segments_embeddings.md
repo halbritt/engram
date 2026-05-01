@@ -71,6 +71,22 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      model/dimension before writing DDL (D033).
    - Simulate two concurrent cache inserts for identical text and
      verify the intended conflict path (see Embedder below).
+   - **P-FRAG fragmentation probe.** On a local-only
+     ~50-conversation slice spanning all three raw sources, compare:
+     (A) D034-profile LLM topic segmentation (the current plan),
+     (B) fixed N-token windows with overlap, and
+     (C) message-group segmentation (one segment per contiguous
+     role-turn group up to N tokens). Record per strategy:
+     median / p10 / p90 segment token length; sub-floor segment count
+     at 50 / 100 / 200 tokens; and, on a 10-prompt micro gold set,
+     claim precision and claim recall when extraction runs over each
+     strategy's segments under an identical extraction prompt. External
+     RAG benchmarks (FloTorch 2026, Vectara NAACL 2025) report semantic
+     chunking degrading end-to-end QA accuracy via over-fragmentation.
+     Engram's pipeline (segments -> claims -> beliefs -> context_for)
+     does not share that failure shape, but the over-fragmentation risk
+     is real and falsifiable; P-FRAG lets eval adjudicate rather than
+     benchmark transfer.
 
 2. **Schema migration** (`migrations/004_segments_embeddings.sql`).
    Derived/control schema additions plus one raw-schema backfill:
@@ -122,9 +138,19 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      embedder, with role/source markers as the segmenter chose.
    - `summary_text TEXT NULL` — optional segmenter-emitted topic
      label or short summary, if it produces one.
-   - `window_strategy TEXT NOT NULL DEFAULT 'whole' CHECK
-     (window_strategy IN ('whole', 'windowed'))` — D029.
+   - `window_strategy TEXT NOT NULL DEFAULT 'topic' CHECK
+     (window_strategy IN ('topic', 'windowed_overlap',
+     'message_group'))` — D029 extended by P-FRAG. Record the
+     segmentation strategy on every row so re-derivation is
+     non-destructive across strategies.
    - `window_index INT NULL` — set for windowed segmentation.
+   - `min_token_count INT NOT NULL DEFAULT 0` — the segment floor
+     used by the producing strategy. Sub-floor candidates must be
+     merged with predecessor or successor before insert.
+   - `merge_rule TEXT NULL CHECK (merge_rule IS NULL OR merge_rule IN
+     ('none', 'merge_predecessor', 'merge_successor',
+     'single_parent_exception'))` — records how a sub-floor candidate
+     was handled.
    - `segmenter_prompt_version TEXT NOT NULL`
    - `segmenter_model_version TEXT NOT NULL`
    - `is_active BOOLEAN NOT NULL DEFAULT false` — retrieval-visible
@@ -203,10 +229,24 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
    - Long-conversation handling (D029): probe the effective local
      model context window, reserve margin for instructions/output, and
      set a per-parent budget. If a parent exceeds budget, segment
-     overlapping message windows, record `window_strategy='windowed'`
+     overlapping message windows, record
+     `window_strategy='windowed_overlap'`
      and `window_index`, and merge adjacent boundary segments only
      when the overlap shows they cover the same topic. Window-boundary
      uncertainty belongs in `raw_payload`.
+   - Topic segmentation rows use `window_strategy='topic'`. Baseline
+     P-FRAG rows use `window_strategy='windowed_overlap'` for fixed
+     N-token windows with overlap and `window_strategy='message_group'`
+     for contiguous role-turn grouping up to N tokens. These strategies
+     must be versioned through `segmenter_prompt_version` /
+     `segmenter_model_version` or equivalent local derivation metadata
+     so strategy comparisons never overwrite each other.
+   - Enforce a configured segment token floor (`min_token_count`) before
+     insert. A segment candidate below the floor must merge with its
+     predecessor or successor according to a deterministic recorded
+     rule (`merge_rule`), except when the entire parent is shorter than
+     the floor; record that as `single_parent_exception`. The floor is
+     selected from the P-FRAG results, not guessed upfront.
    - Message canonicalization: include NULL-content messages in
      `message_ids` when they are within the segment span, but exclude
      non-text placeholders from the embedded text unless they carry
@@ -277,6 +317,13 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      `invalidated_at` / `invalidation_reason`, then queue only the
      affected parent conversation, note, or capture for
      re-segmentation and re-embedding (D032).
+   - P-FRAG is a slice probe, not a corpus path. It can land in
+     parallel with D034 deterministic-profile implementation; the
+     comparison is what the output gets judged against, not a competing
+     production pipeline. The message-group baseline is intentionally
+     cheap insurance for model portability because it requires no LLM
+     call and can serve as a fallback when the segmenter model is
+     unavailable.
 
 4. **Embedder** (`src/engram/embedder.py`).
    - `embed_text(text, model_version) -> EmbeddingResult` — hashes
@@ -339,8 +386,27 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      the new generation becomes active and the old generation becomes
      inactive.
    - Long conversation over the configured budget uses windowed
-     segmentation, records `window_strategy='windowed'`, and resumes
-     from a window checkpoint after interruption.
+     segmentation, records `window_strategy='windowed_overlap'`, and
+     resumes from a window checkpoint after interruption.
+   - P-FRAG compares `topic`, `windowed_overlap`, and `message_group`
+     segmentation on the ~50-conversation / all-source slice and records
+     median / p10 / p90 token lengths, sub-floor counts at 50 / 100 /
+     200 tokens, and micro gold-set claim precision/recall for all
+     three strategies under an identical extraction prompt.
+   - `segments.window_strategy` is one of `topic`,
+     `windowed_overlap`, or `message_group`, and re-derivation under a
+     different strategy creates new rows/generations rather than
+     overwriting old rows.
+   - `segments.min_token_count` is recorded and enforced. Sub-floor
+     candidates merge with predecessor or successor according to a
+     recorded `merge_rule`; no active segment below the floor is allowed
+     except the recorded `single_parent_exception`.
+   - Decision rule: if (A) D034-profile LLM topic segmentation fails to
+     beat (B) fixed N-token windows with overlap on claim precision and
+     produces more sub-floor fragments, falsify D005 ("topic
+     segmentation is the embedding unit") and revisit before Phase 2
+     ships. Otherwise pin the floor at the value where (A) stops
+     over-fragmenting.
    - Active sequence uniqueness rejects two active segments with the
      same `(parent, sequence_index)`.
    - `message_ids` validation rejects unknown message ids,
@@ -438,6 +504,8 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
 - Embedding raw turns or full conversations (D009 — segments only).
 - Embedding beliefs (Phase 3 — beliefs don't exist yet).
 - LLM cross-encoder reranker (F003 — deferred).
+- Full-corpus P-FRAG runs. P-FRAG is a preflight slice probe; do not
+  run all strategies across the full corpus in Phase 2.
 - Auto-re-embed inside `segment`. A standalone segment run may create
   inactive generations, but retrieval visibility requires the
   subsequent `embed` / `pipeline` activation step.
