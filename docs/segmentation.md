@@ -24,6 +24,16 @@ engram embed --model-version nomic-embed-text:latest --batch-size 100
 engram pipeline --segment-batch-size 10 --embed-batch-size 100
 ```
 
+For long unattended runs, pin the probed ik-llama model id so every batch does
+not need to call `/v1/models`:
+
+```bash
+export ENGRAM_SEGMENTER_MODEL=/home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf
+make pipeline
+```
+
+The Makefile also accepts `SEGMENTER_MODEL=...` for `segment` and `pipeline`.
+
 ## Local Preflight
 
 Observed on 2026-04-30:
@@ -68,7 +78,7 @@ Request profile:
   "stream": false,
   "temperature": 0,
   "top_p": 1,
-  "max_tokens": 4096,
+  "max_tokens": 16384,
   "chat_template_kwargs": {"enable_thinking": false},
   "response_format": {"type": "json_schema"}
 }
@@ -76,13 +86,15 @@ Request profile:
 
 Only `choices[0].message.content` is parsed. `reasoning_content` is diagnostic
 only. Empty content, Markdown-fenced JSON, invalid JSON, and schema-invalid
-payloads trigger one compact retry by default (`ENGRAM_SEGMENTER_RETRIES`,
-or `--retries` / `--segment-retries` in the CLI). If the retry budget is
+payloads trigger one adaptive retry by default (`ENGRAM_SEGMENTER_RETRIES`, or
+`--retries` / `--segment-retries` in the CLI). Truncation-like parse failures
+retry the same prompt with a larger output budget, bounded by
+`ENGRAM_SEGMENTER_RETRY_MAX_TOKENS` (default `32768`). If the retry budget is
 exhausted, the parent/window fails, `segment_generations.status` becomes
-`failed`, and `consolidation_progress.last_error` records the failure. Failed
-generations are poison pills for the same prompt/model version: later batches
-continue past them unless the parent is explicitly queued or the version
-changes.
+`failed`, and `consolidation_progress.last_error` records the failure.
+Non-service failed generations are poison pills for the same prompt/model
+version: later batches continue past them unless the parent is explicitly
+queued or the version changes.
 
 The HTTP request timeout is intentionally conservative and configurable with
 `ENGRAM_SEGMENTER_TIMEOUT_SECONDS` because large local windows can legitimately
@@ -110,8 +122,11 @@ span remain in `message_ids` for provenance.
 ## Windowing
 
 The default per-window budget is `ENGRAM_SEGMENTER_WINDOW_CHAR_BUDGET`, default
-`180000` characters. Over-budget parents are split into deterministic,
-overlapping message windows and segments record:
+`60000` characters. Over-budget parents are split into deterministic message
+windows. The default `ENGRAM_SEGMENTER_WINDOW_OVERLAP` is `0` until boundary
+merge/dedupe semantics are implemented; operators can raise it explicitly when
+they want overlap and accept possible duplicate boundary coverage. Windowed
+segments record:
 
 - `window_strategy='windowed'`
 - `window_index`
@@ -127,6 +142,13 @@ Progress is stored in `consolidation_progress` with scopes such as
 The CLI also prints per-parent segment progress and throttled embedding
 progress, including elapsed seconds. This is the normal way to monitor long
 full-corpus runs without querying the database.
+
+Service-unavailable failures are parent-scoped and retryable. They mark the
+conversation progress row `pending` and increment `error_count`; once
+`ENGRAM_SEGMENTER_MAX_ERROR_COUNT` is reached (default `3`), the pending retry
+queue stops selecting that parent until it is manually requeued or the relevant
+progress row is reset. This prevents one unstable local-model request from
+rolling back a whole batch.
 
 ## Versioning And Supersession
 

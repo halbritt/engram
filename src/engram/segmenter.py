@@ -22,18 +22,22 @@ from engram.progress import upsert_progress
 IK_LLAMA_BASE_URL = os.environ.get("ENGRAM_IK_LLAMA_BASE_URL", "http://127.0.0.1:8081")
 SEGMENTER_PROMPT_VERSION = os.environ.get(
     "ENGRAM_SEGMENTER_PROMPT_VERSION",
-    "segmenter.v1.d034",
+    "segmenter.v2.d034.robust",
 )
 SEGMENTER_REQUEST_PROFILE_VERSION = "ik-llama-json-schema.d034.v1"
-DEFAULT_MAX_TOKENS = int(os.environ.get("ENGRAM_SEGMENTER_MAX_TOKENS", "4096"))
+DEFAULT_MAX_TOKENS = int(os.environ.get("ENGRAM_SEGMENTER_MAX_TOKENS", "16384"))
+RETRY_MAX_TOKENS = int(os.environ.get("ENGRAM_SEGMENTER_RETRY_MAX_TOKENS", "32768"))
 DEFAULT_RETRIES = int(os.environ.get("ENGRAM_SEGMENTER_RETRIES", "1"))
 SEGMENTER_REQUEST_TIMEOUT_SECONDS = int(
     os.environ.get("ENGRAM_SEGMENTER_TIMEOUT_SECONDS", "600")
 )
 DEFAULT_WINDOW_CHAR_BUDGET = int(
-    os.environ.get("ENGRAM_SEGMENTER_WINDOW_CHAR_BUDGET", "180000")
+    os.environ.get("ENGRAM_SEGMENTER_WINDOW_CHAR_BUDGET", "60000")
 )
-WINDOW_OVERLAP_MESSAGES = int(os.environ.get("ENGRAM_SEGMENTER_WINDOW_OVERLAP", "1"))
+WINDOW_OVERLAP_MESSAGES = max(0, int(os.environ.get("ENGRAM_SEGMENTER_WINDOW_OVERLAP", "0")))
+MAX_SEGMENTER_ERROR_COUNT = int(os.environ.get("ENGRAM_SEGMENTER_MAX_ERROR_COUNT", "3"))
+
+_SEGMENTER_MODEL_ID_CACHE: str | None = None
 
 MARKER_ONLY_RE = re.compile(
     r"^\s*(?:"
@@ -143,10 +147,14 @@ def probe_segmenter(base_url: str = IK_LLAMA_BASE_URL) -> SegmenterProbe:
 
 
 def default_segmenter_model_id() -> str:
+    global _SEGMENTER_MODEL_ID_CACHE
     configured = os.environ.get("ENGRAM_SEGMENTER_MODEL")
     if configured:
         return configured
-    return probe_segmenter().model_id
+    if _SEGMENTER_MODEL_ID_CACHE:
+        return _SEGMENTER_MODEL_ID_CACHE
+    _SEGMENTER_MODEL_ID_CACHE = probe_segmenter().model_id
+    return _SEGMENTER_MODEL_ID_CACHE
 
 
 class IkLlamaSegmenterClient:
@@ -302,7 +310,19 @@ def segment_conversation(
     force: bool = False,
     retries: int = DEFAULT_RETRIES,
 ) -> SegmentationResult:
-    model_id = model_version or default_segmenter_model_id()
+    try:
+        model_id = model_version or default_segmenter_model_id()
+    except SegmenterServiceUnavailable as exc:
+        upsert_progress(
+            conn,
+            stage="segmenter",
+            scope=f"conversation:{conversation_id}",
+            status="pending",
+            position={"conversation_id": conversation_id, "failure_stage": "model_probe"},
+            last_error=str(exc),
+            increment_error=True,
+        )
+        raise
     conversation = fetch_conversation(conn, conversation_id)
     existing = find_existing_generation(
         conn,
@@ -391,8 +411,13 @@ def segment_conversation(
                 stage="segmenter",
                 scope=f"conversation:{conversation_id}",
                 status="pending",
-                position={"conversation_id": conversation_id, "window_index": window.index},
+                position={
+                    "conversation_id": conversation_id,
+                    "window_index": window.index,
+                    "retryable_failure_kind": "service_unavailable",
+                },
                 last_error=str(exc),
+                increment_error=True,
             )
             raise
         except SegmenterRequestTimeout as exc:
@@ -511,7 +536,33 @@ def segment_pending(
     retries: int = DEFAULT_RETRIES,
     progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> BatchResult:
-    model_id = model_version or default_segmenter_model_id()
+    try:
+        model_id = model_version or default_segmenter_model_id()
+    except SegmenterServiceUnavailable as exc:
+        upsert_progress(
+            conn,
+            stage="segmenter",
+            scope="probe",
+            status="failed",
+            position={"failure_stage": "model_probe"},
+            last_error=str(exc),
+            increment_error=True,
+        )
+        upsert_progress(
+            conn,
+            stage="segmenter",
+            scope="batch",
+            status="failed",
+            position={"processed": 0, "created": 0, "failed": 1},
+            last_error=str(exc),
+            increment_error=True,
+        )
+        if progress_callback:
+            progress_callback(
+                "segment_probe_failed",
+                {"elapsed_seconds": 0.0, "error": str(exc)},
+            )
+        return BatchResult(processed=0, created=0, skipped=0, failed=1)
     candidates = fetch_pending_conversations(
         conn,
         prompt_version=prompt_version,
@@ -548,6 +599,7 @@ def segment_pending(
                 retries=retries,
             )
         except SegmenterServiceUnavailable:
+            failed += 1
             if progress_callback:
                 progress_callback(
                     "segment_service_unavailable",
@@ -558,7 +610,7 @@ def segment_pending(
                         "elapsed_seconds": time.monotonic() - started_at,
                     },
                 )
-            raise
+            continue
         except Exception:
             mark_parent_segmenting_generations_failed(
                 conn,
@@ -626,8 +678,12 @@ def fetch_pending_conversations(
         LEFT JOIN consolidation_progress p
           ON p.stage = 'segmenter'
          AND p.scope = 'conversation:' || c.id::text
-         AND p.status = 'pending'
         WHERE (%s::uuid IS NULL OR c.source_id = %s::uuid)
+          AND (
+              p.status IS DISTINCT FROM 'pending'
+              OR p.position ? 'queued_by'
+              OR COALESCE(p.error_count, 0) < %s
+          )
           AND (
               p.status = 'pending'
               OR NOT EXISTS (
@@ -637,19 +693,20 @@ def fetch_pending_conversations(
                     AND sg.parent_id = c.id
                     AND sg.segmenter_prompt_version = %s
                     AND sg.segmenter_model_version = %s
-                    AND (
-                        sg.status IN ('segmenting', 'segmented', 'embedding', 'active')
-                        OR (
-                            sg.status = 'failed'
-                            AND sg.raw_payload->>'failure_kind' IS DISTINCT FROM 'service_unavailable'
-                        )
-                    )
+                    AND sg.status IN ('segmenting', 'segmented', 'embedding', 'active', 'failed')
               )
           )
         ORDER BY c.imported_at, c.id
         LIMIT %s
         """,
-        (source_id, source_id, prompt_version, model_version, limit),
+        (
+            source_id,
+            source_id,
+            MAX_SEGMENTER_ERROR_COUNT,
+            prompt_version,
+            model_version,
+            limit,
+        ),
     ).fetchall()
     return [(row[0], bool(row[1])) for row in rows]
 
@@ -709,20 +766,45 @@ def segment_window_with_retries(
     max_tokens: int,
     retries: int,
 ) -> tuple[list[SegmentDraft], int]:
-    last_error: Exception | None = None
+    attempt_prompt = prompt
+    attempt_max_tokens = max_tokens
     for attempt in range(retries + 1):
-        attempt_prompt = prompt if attempt == 0 else retry_segmenter_prompt(prompt, last_error)
         try:
             with segmenter_request_deadline(SEGMENTER_REQUEST_TIMEOUT_SECONDS):
                 return (
-                    client.segment(attempt_prompt, model_id=model_id, max_tokens=max_tokens),
+                    client.segment(
+                        attempt_prompt,
+                        model_id=model_id,
+                        max_tokens=attempt_max_tokens,
+                    ),
                     attempt,
                 )
-        except Exception as exc:
-            last_error = exc
+        except (SegmenterServiceUnavailable, SegmenterRequestTimeout):
+            raise
+        except SegmentationError as exc:
             if attempt >= retries:
                 raise
+            attempt_max_tokens = retry_max_tokens(max_tokens, attempt + 1)
+            if is_likely_truncation_error(exc):
+                attempt_prompt = prompt
+            else:
+                attempt_prompt = retry_segmenter_prompt(prompt, exc)
+        except Exception:
+            raise
     raise SegmentationError("segmenter retry loop exhausted unexpectedly")
+
+
+def retry_max_tokens(base_max_tokens: int, retry_number: int) -> int:
+    return max(base_max_tokens, min(RETRY_MAX_TOKENS, base_max_tokens * (2**retry_number)))
+
+
+def is_likely_truncation_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return (
+        "unterminated string" in message
+        or "truncated" in message
+        or "unexpected end" in message
+    )
 
 
 @contextmanager

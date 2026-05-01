@@ -299,6 +299,14 @@ def print_segment_progress(event: str, payload: dict[str, Any]) -> None:
             f"elapsed={elapsed:.1f}s",
             flush=True,
         )
+        return
+    if event == "segment_probe_failed":
+        print(
+            "segment probe failed "
+            f"elapsed={elapsed:.1f}s "
+            f"error={payload['error']}",
+            flush=True,
+        )
 
 
 def print_embed_progress(event: str, payload: dict[str, Any]) -> None:
