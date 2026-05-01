@@ -47,6 +47,10 @@ class SegmentationError(RuntimeError):
     """Raised when the local segmenter returns unusable output."""
 
 
+class SegmenterServiceUnavailable(SegmentationError):
+    """Raised when the local segmenter endpoint is unreachable."""
+
+
 @dataclass(frozen=True)
 class SegmenterProbe:
     model_id: str
@@ -374,11 +378,19 @@ def segment_conversation(
                 max_tokens=max_tokens,
                 retries=retries,
             )
-        except Exception as exc:
-            conn.execute(
-                "UPDATE segment_generations SET status = 'failed' WHERE id = %s",
-                (generation_id,),
+        except SegmenterServiceUnavailable as exc:
+            mark_generation_failed(conn, generation_id, failure_kind="service_unavailable")
+            upsert_progress(
+                conn,
+                stage="segmenter",
+                scope=f"conversation:{conversation_id}",
+                status="pending",
+                position={"conversation_id": conversation_id, "window_index": window.index},
+                last_error=str(exc),
             )
+            raise
+        except Exception as exc:
+            mark_generation_failed(conn, generation_id, failure_kind="segmenter_error")
             upsert_progress(
                 conn,
                 stage="segmenter",
@@ -517,6 +529,18 @@ def segment_pending(
                 force=force,
                 retries=retries,
             )
+        except SegmenterServiceUnavailable:
+            if progress_callback:
+                progress_callback(
+                    "segment_service_unavailable",
+                    {
+                        "index": processed,
+                        "batch_size": len(candidates),
+                        "conversation_id": conversation_id,
+                        "elapsed_seconds": time.monotonic() - started_at,
+                    },
+                )
+            raise
         except Exception:
             failed += 1
             if progress_callback:
@@ -587,7 +611,13 @@ def fetch_pending_conversations(
                     AND sg.parent_id = c.id
                     AND sg.segmenter_prompt_version = %s
                     AND sg.segmenter_model_version = %s
-                    AND sg.status IN ('segmenting', 'segmented', 'embedding', 'active', 'failed')
+                    AND (
+                        sg.status IN ('segmenting', 'segmented', 'embedding', 'active')
+                        OR (
+                            sg.status = 'failed'
+                            AND sg.raw_payload->>'failure_kind' IS DISTINCT FROM 'service_unavailable'
+                        )
+                    )
               )
           )
         ORDER BY c.imported_at, c.id
@@ -596,6 +626,23 @@ def fetch_pending_conversations(
         (source_id, source_id, prompt_version, model_version, limit),
     ).fetchall()
     return [(row[0], bool(row[1])) for row in rows]
+
+
+def mark_generation_failed(
+    conn: psycopg.Connection,
+    generation_id: str,
+    *,
+    failure_kind: str,
+) -> None:
+    conn.execute(
+        """
+        UPDATE segment_generations
+        SET status = 'failed',
+            raw_payload = raw_payload || %s
+        WHERE id = %s
+        """,
+        (Jsonb({"failure_kind": failure_kind}), generation_id),
+    )
 
 
 def segment_window_with_retries(
@@ -1140,7 +1187,16 @@ def http_json(
         with urllib.request.urlopen(request, timeout=timeout) as response:
             body = response.read().decode("utf-8")
     except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", None)
+        if isinstance(reason, OSError):
+            raise SegmenterServiceUnavailable(
+                f"local segmenter unavailable: {reason}"
+            ) from exc
         raise SegmentationError(f"local segmenter request failed: {exc}") from exc
+    except ConnectionResetError as exc:
+        raise SegmenterServiceUnavailable(
+            f"local segmenter unavailable: {exc}"
+        ) from exc
     try:
         parsed = json.loads(body)
     except json.JSONDecodeError as exc:
