@@ -442,6 +442,33 @@ def test_service_unavailable_aborts_batch_without_poisoning_remaining_parents(co
     assert {first_conversation_id, second_conversation_id}
 
 
+def test_downstream_segment_error_marks_generation_failed(conn):
+    class BadMessageClient:
+        def segment(self, prompt: str, *, model_id: str, max_tokens: int) -> list[SegmentDraft]:
+            return [
+                SegmentDraft(
+                    message_ids=["00000000-0000-0000-0000-000000000000"],
+                    summary=None,
+                    content_text="bad provenance",
+                    raw={},
+                )
+            ]
+
+    insert_conversation(conn, [("user", "hello", 1)])
+    result = segmenter.segment_pending(
+        conn,
+        batch_size=10,
+        model_version="model-a",
+        client=BadMessageClient(),
+    )
+
+    assert result.failed == 1
+    assert (
+        conn.execute("SELECT status, raw_payload->>'failure_kind' FROM segment_generations").fetchone()
+        == ("failed", "segmenter_error")
+    )
+
+
 def test_active_sequence_uniqueness_and_message_id_validation(conn):
     conversation_id, message_ids = insert_conversation(
         conn,
