@@ -1278,6 +1278,10 @@ def http_json(
         raise SegmenterServiceUnavailable(
             f"local segmenter unavailable: {exc}"
         ) from exc
+    except TimeoutError as exc:
+        raise SegmenterServiceUnavailable(
+            f"local segmenter unavailable: {exc}"
+        ) from exc
     try:
         parsed = json.loads(body)
     except json.JSONDecodeError as exc:
