@@ -318,3 +318,72 @@ The operational fixes selected from these findings landed in the Phase 2 branch:
   operators can pin the local model id and avoid repeated `/v1/models` probes.
 
 Verification after the fix: `make test` passed with `42 passed`.
+
+---
+
+## Empirical Findings from Targeted Re-Run (Opus 4.7, 2026-05-01 17:50–17:56 UTC)
+
+After observing that OpenClaw shares the same `ik-llama` endpoint, I ran two bounded experiments with `openclaw-gateway` stopped, `ENGRAM_SEGMENTER_MAX_TOKENS=16384`, and `ENGRAM_SEGMENTER_MODEL` pinned. Three new findings.
+
+### I. `ik-llama-watchdog.timer` is the actual restart-cascade root cause
+
+Discovered while diagnosing why `ik-llama` core-dumped during the test:
+
+```
+~/.config/systemd/user/ik-llama-watchdog.service:
+  ExecStart=/bin/bash -c '\
+    if ! curl -sf --max-time 15 http://127.0.0.1:8081/health > /dev/null 2>&1; then \
+      echo "ik-llama-server health check failed — restarting"; \
+      systemctl --user restart ik-llama-server.service; \
+    fi'
+~/.config/systemd/user/ik-llama-watchdog.timer:
+  OnUnitActiveSec=5min
+```
+
+The watchdog's own comment notes **`/health` blocks when a slot is occupied**. Combined with the 15s curl timeout and 5-minute cadence:
+- Any segmenter request whose generation (incl. queued ghost work) is in flight when the watchdog fires causes `curl` to time out.
+- The watchdog responds by calling `systemctl restart ik-llama-server`.
+- `restart` sends SIGTERM. The model is mid-generation under flash-attention + q8 KV cache; teardown often segfaults. Journal pattern: `Main process exited, code=dumped, status=6/ABRT` → `Failed with result 'core-dump'`.
+- engram's in-flight HTTP request gets `Connection reset by peer` (or `Remote end closed connection without response`).
+
+This explains the `stop-sigterm timed out, Killing.` event at 05:02:08 in the original failure log and the identical event observed at 17:55:34 during today's test. **Both failures are the watchdog, not OpenClaw and not engram.** OpenClaw makes it more likely (slot busier more often) but is not the trigger.
+
+**Recommended fixes (in order of preference):**
+1. Replace `/health` with a non-blocking probe in the watchdog: `curl -sf --max-time 5 http://127.0.0.1:8081/v1/models` returns instantly regardless of slot state.
+2. Raise the watchdog `--max-time` past the longest expected segmenter wall-clock (≥200s for current settings), and increase the timer cadence so the probe is rarer.
+3. Mask the watchdog timer for the duration of a segmenting batch: `systemctl --user stop ik-llama-watchdog.timer` before, `start` after.
+
+Without one of these, intermittent `service_unavailable` is a permanent floor on segmenter reliability — the new error-count cap will count it against conversations that are themselves blameless.
+
+### II. Prefix-cache reuse across consecutive engram batches is large and observable
+
+In the OpenClaw-stopped run with `--batch-size 1 --limit 5`, two conversations completed before the wall-clock cap:
+
+| Conversation | Elapsed |
+|---|---|
+| 1st (cold cache) | 15.4s |
+| 2nd (warm) | 3.4s |
+
+The 4× speedup on the 2nd conversation matches the engram system prompt + JSON schema being identical across requests. ik-llama's `cache_ram_similarity` was 0.50 in earlier journal samples — under engram-only load it should saturate near 1.0 for the prefix.
+
+**Implication for sizing:** the 5-conversation/200s estimate that fits the previous failure-log cadence is wrong. With the watchdog fixed and OpenClaw quiesced, throughput is closer to 5–10 conversations/minute — depending on conversation size, the V1 corpus (~2K conversations) finishes in 3–7 hours, not days. Segmenting overnight under a paused watchdog is realistic.
+
+### III. `ENGRAM_SEGMENTER_MAX_TOKENS=16384` validated against a known parse-failed conversation
+
+Targeted re-run of `01612456-5420-4199-a58a-ea2c575ab5bb` (previously failed with `Unterminated string starting at: line 1 column 4866 (char 4865)` — the classic 4096-output-token wall):
+
+| Metric | Previous | This run |
+|---|---|---|
+| Result | `segmenter returned invalid JSON` | `status=segmented` |
+| Elapsed | n/a (failed before parsing) | 23.2s |
+| Segments produced | 0 | 2 (seq_index 0 and 1) |
+| Combined `content_text` length | n/a | 6420 chars |
+| Combined `message_ids` cardinality | n/a | 124 |
+
+The output exceeded the prior 4865-char truncation point cleanly, and the 23.2s wall-clock leaves ample headroom under a 200s deadline. No retry was needed. The bump does not introduce new latency pressure.
+
+**Caveat:** this is one conversation. The full parse-failure class (15 conversations) should be re-run to confirm the rate goes to zero before raising it as a closed-out finding.
+
+### IV. The `expand_message_span` semantic gap is observable in the output
+
+Segment 0 of the rerun cites 69 message_ids; segment 1 cites 55; total = 124. If the conversation has exactly 124 messages, that means `expand_message_span` was a no-op (or the LLM cited contiguous spans naturally). If it has fewer, then `expand_message_span` filled in messages that the LLM did not produce content_text for. The current schema has no way to distinguish "LLM cited" vs "expanded" in `raw_payload` beyond `model_output.message_ids`. **Suggested:** add an explicit `expanded_message_ids` array to `raw_payload` so future evidence-tracing can tell which message_ids contributed to content_text vs which were swept in by span expansion.
