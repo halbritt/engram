@@ -488,6 +488,12 @@ def segment_conversation(
                         "summary": draft.summary,
                         "content_text": draft.content_text,
                     },
+                    "expanded_message_ids": expanded_message_ids,
+                    "span_expansion_added": [
+                        message_id
+                        for message_id in expanded_message_ids
+                        if message_id not in draft.message_ids
+                    ],
                     "window_index": window.index,
                     "retry_count": retry_count,
                     "truncated_message_ids": window.truncated_message_ids,
