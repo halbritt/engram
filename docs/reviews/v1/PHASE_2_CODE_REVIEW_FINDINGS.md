@@ -727,7 +727,7 @@ run:
 - Malformed UUIDs (wrong group lengths or extra hyphens):
   `14ff171a-0cbd-4d15-8560c497c342` (16-char group 4 instead of 4-12),
   `941e3a9b-e203-4615-91d9-41a3-bf69-fe41b8b6f720` (7 groups instead of 5),
-  `7e9af114-43b0-b3c7-775f217799a8` (4 groups), `ed0mat 2025 EOY assessment notes`
+  `7e9af114-43b0-b3c7-775f217799a8` (4 groups), `redacted`
   (free-form text in the id field).
 
 The supervisor handles each cleanly: the parent is marked `failed` with
