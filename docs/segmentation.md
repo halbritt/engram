@@ -150,6 +150,13 @@ queue stops selecting that parent until it is manually requeued or the relevant
 progress row is reset. This prevents one unstable local-model request from
 rolling back a whole batch.
 
+Failed `segment_generations.raw_payload` rows include `failure_kind`,
+`last_error`, `attempts`, `attempt_max_tokens`, `decode_counts` when exposed by
+the local endpoint, and `attempt_errors`. These fields are intentionally
+operator-facing: they let a soak distinguish insufficient output budget from
+runaway schema-constrained generation or a wedged inference process without
+guessing from elapsed time alone.
+
 ## Versioning And Supersession
 
 Segments are grouped by `segment_generations`.

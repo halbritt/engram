@@ -61,6 +61,15 @@ class SegmenterRequestTimeout(SegmentationError):
     """Raised when one parent/window exceeds the configured request deadline."""
 
 
+class SegmenterResponseError(SegmentationError):
+    """Raised when ik-llama returns a response object with unusable content."""
+
+    def __init__(self, message: str, *, response: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.response = response
+        self.decoded_tokens = decoded_token_count_from_response(response)
+
+
 @dataclass(frozen=True)
 class SegmenterProbe:
     model_id: str
@@ -236,27 +245,45 @@ def segmentation_json_schema() -> dict[str, Any]:
 def parse_segmentation_response(response: dict[str, Any]) -> list[SegmentDraft]:
     choices = response.get("choices")
     if not isinstance(choices, list) or not choices:
-        raise SegmentationError("segmenter response missing choices")
+        raise SegmenterResponseError("segmenter response missing choices", response=response)
     message = choices[0].get("message") if isinstance(choices[0], dict) else None
     if not isinstance(message, dict):
-        raise SegmentationError("segmenter response missing choices[0].message")
+        raise SegmenterResponseError(
+            "segmenter response missing choices[0].message",
+            response=response,
+        )
 
     content = message.get("content")
     if not isinstance(content, str) or not content.strip():
         if message.get("reasoning_content"):
-            raise SegmentationError("segmenter returned payload only in reasoning_content")
-        raise SegmentationError("segmenter returned empty message content")
+            raise SegmenterResponseError(
+                "segmenter returned payload only in reasoning_content",
+                response=response,
+            )
+        raise SegmenterResponseError(
+            "segmenter returned empty message content",
+            response=response,
+        )
 
     stripped = content.strip()
     if stripped.startswith("```"):
-        raise SegmentationError("segmenter returned Markdown-fenced JSON")
+        raise SegmenterResponseError(
+            "segmenter returned Markdown-fenced JSON",
+            response=response,
+        )
 
     try:
         payload = json.loads(stripped)
     except json.JSONDecodeError as exc:
-        raise SegmentationError(f"segmenter returned invalid JSON: {exc}") from exc
+        raise SegmenterResponseError(
+            f"segmenter returned invalid JSON: {exc}",
+            response=response,
+        ) from exc
 
-    return parse_segmentation_payload(payload)
+    try:
+        return parse_segmentation_payload(payload)
+    except SegmentationError as exc:
+        raise SegmenterResponseError(str(exc), response=response) from exc
 
 
 def parse_segmentation_payload(payload: Any) -> list[SegmentDraft]:
@@ -405,7 +432,12 @@ def segment_conversation(
                 retries=retries,
             )
         except SegmenterServiceUnavailable as exc:
-            mark_generation_failed(conn, generation_id, failure_kind="service_unavailable")
+            mark_generation_failed(
+                conn,
+                generation_id,
+                failure_kind="service_unavailable",
+                error=exc,
+            )
             upsert_progress(
                 conn,
                 stage="segmenter",
@@ -421,7 +453,12 @@ def segment_conversation(
             )
             raise
         except SegmenterRequestTimeout as exc:
-            mark_generation_failed(conn, generation_id, failure_kind="segmenter_timeout")
+            mark_generation_failed(
+                conn,
+                generation_id,
+                failure_kind="segmenter_timeout",
+                error=exc,
+            )
             upsert_progress(
                 conn,
                 stage="segmenter",
@@ -433,7 +470,12 @@ def segment_conversation(
             )
             raise
         except Exception as exc:
-            mark_generation_failed(conn, generation_id, failure_kind="segmenter_error")
+            mark_generation_failed(
+                conn,
+                generation_id,
+                failure_kind="segmenter_error",
+                error=exc,
+            )
             upsert_progress(
                 conn,
                 stage="segmenter",
@@ -722,6 +764,7 @@ def mark_generation_failed(
     generation_id: str,
     *,
     failure_kind: str,
+    error: BaseException | None = None,
 ) -> None:
     conn.execute(
         """
@@ -730,7 +773,7 @@ def mark_generation_failed(
             raw_payload = raw_payload || %s
         WHERE id = %s
         """,
-        (Jsonb({"failure_kind": failure_kind}), generation_id),
+        (Jsonb(segmenter_failure_payload(failure_kind, error)), generation_id),
     )
 
 
@@ -774,7 +817,11 @@ def segment_window_with_retries(
 ) -> tuple[list[SegmentDraft], int]:
     attempt_prompt = prompt
     attempt_max_tokens = max_tokens
+    attempt_max_tokens_used: list[int] = []
+    decode_counts: list[int | None] = []
+    attempt_errors: list[str] = []
     for attempt in range(retries + 1):
+        attempt_max_tokens_used.append(attempt_max_tokens)
         try:
             with segmenter_request_deadline(SEGMENTER_REQUEST_TIMEOUT_SECONDS):
                 return (
@@ -785,19 +832,121 @@ def segment_window_with_retries(
                     ),
                     attempt,
                 )
-        except (SegmenterServiceUnavailable, SegmenterRequestTimeout):
+        except (SegmenterServiceUnavailable, SegmenterRequestTimeout) as exc:
+            decode_counts.append(decoded_token_count_from_exception(exc))
+            attempt_errors.append(error_summary(exc))
+            attach_attempt_diagnostics(
+                exc,
+                attempt_max_tokens=attempt_max_tokens_used,
+                decode_counts=decode_counts,
+                attempt_errors=attempt_errors,
+            )
             raise
         except SegmentationError as exc:
+            decode_counts.append(decoded_token_count_from_exception(exc))
+            attempt_errors.append(error_summary(exc))
             if attempt >= retries:
+                attach_attempt_diagnostics(
+                    exc,
+                    attempt_max_tokens=attempt_max_tokens_used,
+                    decode_counts=decode_counts,
+                    attempt_errors=attempt_errors,
+                )
                 raise
             attempt_max_tokens = retry_max_tokens(max_tokens, attempt + 1)
             if is_likely_truncation_error(exc):
                 attempt_prompt = prompt
             else:
                 attempt_prompt = retry_segmenter_prompt(prompt, exc)
-        except Exception:
+        except Exception as exc:
+            decode_counts.append(decoded_token_count_from_exception(exc))
+            attempt_errors.append(error_summary(exc))
+            attach_attempt_diagnostics(
+                exc,
+                attempt_max_tokens=attempt_max_tokens_used,
+                decode_counts=decode_counts,
+                attempt_errors=attempt_errors,
+            )
             raise
     raise SegmentationError("segmenter retry loop exhausted unexpectedly")
+
+
+def attach_attempt_diagnostics(
+    exc: BaseException,
+    *,
+    attempt_max_tokens: list[int],
+    decode_counts: list[int | None],
+    attempt_errors: list[str],
+) -> None:
+    setattr(
+        exc,
+        "segmenter_attempt_diagnostics",
+        {
+            "attempts": len(attempt_max_tokens),
+            "attempt_max_tokens": list(attempt_max_tokens),
+            "decode_counts": list(decode_counts),
+            "attempt_errors": list(attempt_errors),
+        },
+    )
+
+
+def segmenter_failure_payload(
+    failure_kind: str,
+    error: BaseException | None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"failure_kind": failure_kind}
+    if error is not None:
+        payload["last_error"] = error_summary(error)
+    diagnostics = getattr(error, "segmenter_attempt_diagnostics", None)
+    if isinstance(diagnostics, dict):
+        payload.update(
+            {
+                "attempts": diagnostics.get("attempts"),
+                "attempt_max_tokens": diagnostics.get("attempt_max_tokens", []),
+                "decode_counts": diagnostics.get("decode_counts", []),
+                "attempt_errors": diagnostics.get("attempt_errors", []),
+            }
+        )
+    return payload
+
+
+def decoded_token_count_from_exception(exc: BaseException) -> int | None:
+    decoded = getattr(exc, "decoded_tokens", None)
+    return int(decoded) if isinstance(decoded, int) else None
+
+
+def decoded_token_count_from_response(response: dict[str, Any] | None) -> int | None:
+    if not isinstance(response, dict):
+        return None
+    usage = response.get("usage")
+    if isinstance(usage, dict):
+        for key in ("completion_tokens", "completion_tokens_details", "predicted_tokens"):
+            value = usage.get(key)
+            if isinstance(value, int):
+                return value
+            if isinstance(value, dict):
+                nested = value.get("accepted_prediction_tokens")
+                if isinstance(nested, int):
+                    return nested
+    for container_key in ("timings", "generation_settings"):
+        container = response.get(container_key)
+        if isinstance(container, dict):
+            for key in ("n_decoded", "predicted_n", "tokens_predicted"):
+                value = container.get(key)
+                if isinstance(value, int):
+                    return value
+    for key in ("n_decoded", "predicted_n", "tokens_predicted"):
+        value = response.get(key)
+        if isinstance(value, int):
+            return value
+    return None
+
+
+def error_summary(error: BaseException, *, limit: int = 2000) -> str:
+    text = str(error)
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
 
 
 def retry_max_tokens(base_max_tokens: int, retry_number: int) -> int:
