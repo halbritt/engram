@@ -659,7 +659,7 @@ def segment_pending(
                     },
                 )
             continue
-        except Exception:
+        except Exception as exc:
             mark_parent_segmenting_generations_failed(
                 conn,
                 parent_kind="conversation",
@@ -667,6 +667,7 @@ def segment_pending(
                 prompt_version=prompt_version,
                 model_version=model_id,
                 failure_kind="segmenter_error",
+                error=exc,
             )
             failed += 1
             if progress_callback:
@@ -785,6 +786,7 @@ def mark_parent_segmenting_generations_failed(
     prompt_version: str,
     model_version: str,
     failure_kind: str,
+    error: BaseException | None = None,
 ) -> None:
     conn.execute(
         """
@@ -798,7 +800,7 @@ def mark_parent_segmenting_generations_failed(
           AND status = 'segmenting'
         """,
         (
-            Jsonb({"failure_kind": failure_kind}),
+            Jsonb(segmenter_failure_payload(failure_kind, error)),
             parent_kind,
             parent_id,
             prompt_version,
