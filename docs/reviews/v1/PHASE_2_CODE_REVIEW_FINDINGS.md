@@ -823,3 +823,59 @@ Expected next validation:
 3. Re-run the bounded soak under `segmenter.v2.d034.enum-ids`.
 4. Confirm `unknown_message_id` drops below the 1% new-failure threshold,
    ideally to zero, before attempting the full corpus.
+
+## Phase 2 Embed Drain (Opus 4.7 / coding agent, 2026-05-02T07:53:45Z–07:53:56Z)
+
+Per `prompts/phase_2_embed_drain.md`. Single embed-only pass to drain the
+post-soak Round 2 backlog (211 `segmented` + 1 `embedding` generations
+left over because `pipeline --limit 300` capped the embed step at 300
+segments out of 477 created). Run while `openclaw-gateway.service` was
+trap-quiesced; ik-llama-watchdog was left running (watchdog manages
+ik-llama, not ollama, and embedding uses `nomic-embed-text` via ollama
+on `:11434`).
+
+### Run setup
+
+- Branch tip at start: `c226b57`.
+- Command: `.venv/bin/python -m engram.cli embed --batch-size 1000`,
+  wrapped in `timeout --foreground 15m` and a hand-rolled trap.
+- Wall clock: 11 s (one pass).
+
+### Counts (before → after)
+
+| metric                       | before | after |
+|------------------------------|-------:|------:|
+| `segmented` generations      | 211    | **0** |
+| `embedding` generations      | 1      | **0** |
+| `active` generations         | 307    | 441   |
+| `superseded` generations     | 188    | 266   |
+| Active segments              | 535    | 765   |
+| Active embeddings            | 535    | 765   |
+| Pending segment generations  | 212    | **0** |
+| Active-sequence dupes        | 0      | **0** ✓ |
+
+Embed step output: `366 embeddings created / 366 segments processed
+(31 cache hits, 212 generations activated, 0 failed)`. Activation
+accounting balances: `307 + 212 new − 78 prior-superseded = 441` active.
+The 78 supersessions are older same-parent generations that were
+displaced when re-segmentations from earlier prompt versions reached
+final activation in this run.
+
+### Acceptance
+
+- ✅ No segmentation commands run; only `engram embed`.
+- ✅ `openclaw-gateway.service` stopped during the pass, restored on
+  exit; watchdog and ik-llama-server unaffected.
+- ✅ Pending `segmented`/`embedding` generations drained to zero in one
+  pass (`--batch-size 1000` covered the 366 unprocessed segments).
+- ✅ Active-sequence uniqueness invariant preserved.
+
+### Notes
+
+- All 95 `failed` generations remain `failed`. They are not eligible
+  for embedding by design (segments only exist for successfully-segmented
+  parents). The 19 `unknown_message_id` failures from soak round 2 are
+  among them and are the target of Codex's `segmenter.v2.d034.enum-ids`
+  schema tightening; the next validation step is a re-run of the bounded
+  soak under that profile.
+- Log: `logs/phase2_embed_drain_20260502T075345Z.log`.
