@@ -17,6 +17,7 @@ engram splits into five contexts. Keep terminology pinned within each.
 | **Corpus** | Raw evidence (immutable), segments, claims, beliefs, embeddings, entities |
 | **Retrieval** | `context_for` compiler, candidate lanes, ranking, snapshots, MCP serving |
 | **Eval** | Gold set, smoke / tier-2 / full-corpus tiers, `context_feedback`, adversarial sweeps |
+| **Supervisor** | Pipeline orchestration, resumability, progress/error accounting, generation activation gates |
 | **Lifecycle** | Privacy tiers, posthumous handoff, prompt/model versioning, re-derivation triggers |
 
 The corpus-reading process has no network egress; the network-using
@@ -88,6 +89,16 @@ Per D027, segment-level `superseded_by` was removed in favor of `is_active` prec
 
 ### Corpus
 
+- **Supervisor** — Engram's pipeline coordinator for derived stages. In Phase 2
+  this is the CLI/batcher path around `segment_pending`, `embed_pending_segments`,
+  progress rows, and generation activation. It selects parents, invokes stage
+  workers, records failures, keeps work resumable, and prevents partial
+  retrieval visibility. Do not confuse this with systemd supervision of local
+  services such as `ik-llama-server.service`.
+- **Stage worker** — the implementation of one derivation step, such as the
+  segmenter or embedder. A worker transforms selected inputs; the supervisor
+  decides ordering, retry/progress accounting, and when downstream visibility is
+  allowed.
 - **Generation** — a versioned cohort of segments produced under one `segmenter_version`. Tracked in `segment_generations`. The unit of cutover; not the unit of retrieval.
 - **`segment_embeddings`** (D027) — the retrieval-visible vector table. HNSW index lives here so it can push down on `is_active` and `privacy_tier`. Distinct from `embedding_cache`.
 - **`embedding_cache`** — pure API cache; SHA256-keyed input + `embedding_model_version` + `embedding_dimension`. Re-running an unchanged model is free. No retrieval index lives here.
