@@ -879,3 +879,264 @@ final activation in this run.
   schema tightening; the next validation step is a re-run of the bounded
   soak under that profile.
 - Log: `logs/phase2_embed_drain_20260502T075345Z.log`.
+
+## Phase 2 Bounded Soak Round 3 (Opus 4.7 / coding agent, 2026-05-02 08:32:42Z–11:07:27Z UTC, --limit 300, enum-ids)
+
+Re-run of the round-2 bounded soak under the new
+`segmenter.v2.d034.enum-ids` schema (commit `e28e960`). Goal: confirm
+Finding IX is fully fixed by constraining `message_ids.items.enum` to
+the actual conversation/window message UUIDs.
+
+### Run setup
+
+- Branch tip at start: `c226b57` (later rebased onto `e28e960`).
+- Pre-run inference smoke: PASS.
+- Pre-soak idempotency probe (`--limit 10`): the first attempt at a
+  6 min `timeout` clipped at 2/10 parents because the third parent
+  (`003a1e2c`, 272 messages, 145K chars) consumed ~5 min of prompt
+  processing. Diagnosis (journal: `slot apply_checkp: ... no usable
+  hybrid/recurrent checkpoint; forcing full prompt re-processing`)
+  confirmed the enum-ids schema breaks ik-llama's prefix cache between
+  windows because each window's `message_ids.items.enum` differs.
+  Retry at 10 min cap: 10/10 parents, **0 failed**, 0
+  `unknown_message_id` ✓. The schema tightening reaches decode time as
+  intended.
+- Operational profile: `MAX_TOKENS=16384`, `RETRY_MAX_TOKENS=32768`,
+  `WINDOW_OVERLAP=0`, `--segment-batch-size 1`,
+  `--embed-batch-size 500` (raised from round 2's 100 to give embed
+  per-batch headroom; `--limit` still bounds the total),
+  `--segment-retries 1`, `timeout --foreground 3h`.
+
+### Counts
+
+| metric                          | value |
+|---------------------------------|-------|
+| Parents attempted               | 300   |
+| Segmented                       | 297   |
+| Failed                          | 3     |
+| Skipped                         | 0     |
+| Segments created                | 594   |
+| Embed cache hits                | 117   |
+| Generations activated           | 136   |
+| Segments embedded (in pipeline) | 300   |
+| `segmented` waiting for embed   | 170   (drained post-pipeline) |
+| Pipeline rc                     | 1 (segment failures only; embed rc=0; trap fired cleanly) |
+
+The 170 `segmented`/170-pending gap was drained immediately after
+pipeline exit by `engram embed --batch-size 1000` (an embed-only pass)
+in 0 seconds of new work — the first drain attempt's wrapper hung on a
+restored-services systemctl call but the inner Python embed had already
+processed and committed the 366 outstanding segments before the wrapper
+got stuck. Net: post-drain, 0 pending generations and 859 active
+segments / 859 active embeddings.
+
+### Failure classification (mechanically applied via Finding VIII)
+
+| failure_class          | count | pattern |
+|------------------------|------:|---------|
+| `unknown_message_id`   | **0** | Schema-constrained at decode time; the patch works as designed. |
+| `runaway_unterminated` | 1     | Two attempts, `attempt_max_tokens=[16384, 32768]`, `decode_counts=[16384, 32768]`, `last_error` matches `Unterminated string` (Finding VI signature). |
+| `http_500_ctx_shift`   | 2     | New surface symptom of the runaway class under enum-ids. First attempt decodes to `max_tokens=16384`; retry with `max_tokens=32768` overflows ik-llama's `--ctx-size 49152` because the enum-ids schema is large; ik-llama returns HTTP 500 with `task error: "context shift is disabled"`. Same root cause as `runaway_unterminated`, different surface — see Finding X. |
+
+### Elapsed per parent
+
+| group                    | n   | mean   | p50  | p90   | p99    | max    |
+|--------------------------|----:|-------:|-----:|------:|-------:|-------:|
+| Successful (segmented)   | 297 | 24.6 s | 9.0 s | 34.6 s | 551.1 s | 987.7 s |
+| Failed                   | 3   | 645.7 s | 449.2 s | — | — | 1097.8 s |
+
+The 987.7 s successful parent is a multi-window heavyweight (~17–19
+windows estimated) that completed cleanly. The 1097.8 s failure is the
+19-window monster `0d91a08e` (round-2's first `unknown_message_id`
+victim, now reaching its retry on a different window before hitting the
+ctx-shift 500).
+
+### VRAM trend
+
+- Start: 19475 MiB / 24576 MiB
+- End:   19559 MiB / 24576 MiB
+- Drift: +84 MiB over 2h35m. Stable; never approached the 23.5 GiB
+  stop threshold. No cuBLAS reproduction.
+
+### Spec-mandated checks
+
+- Active-sequence uniqueness: **0** dupes ✓
+- `message_ids` integrity: **0** NULL, **0** empty across active segments ✓
+- `expand_message_span` invocation rate: 100 % on active segments
+  created in this run.
+- Idempotency invariant (post-soak SQL check): **0** of soak's 300
+  parents are eligible for re-pickup at the enum-ids prompt+model
+  version; **0** parents have multiple generations at this version.
+- Post-run P-HEALTH inference smoke: **PASS** (`{"ok": true}`).
+- ik-llama journal for the soak window: no CUDA / cuBLAS / illegal
+  memory / abort entries.
+
+### X. `http_500_ctx_shift` — runaway class manifests differently under enum-ids
+
+The enum-ids schema's `message_ids.items.enum` is large (one entry per
+message in the window — up to ~100 entries × ~36 chars = ~3.6 KiB
+schema text plus the tokenization expansion when ik-llama compiles the
+constrained-decoding lookup table). For multi-window or high-message
+parents, the first segmenter attempt sits at the boundary of
+`max_tokens=16384` decode + `~20–30K` token prompt. When the retry
+fires with `max_tokens=32768`, the prompt+max_tokens sum can exceed
+ik-llama's `--ctx-size 49152`. With `context shift is disabled`, the
+server returns HTTP 500 instead of doing the legacy "Unterminated
+string" runaway.
+
+This is the same root-cause class as `runaway_unterminated` (Finding
+VI) — the parent is too long/dense for two-attempt segmentation under
+the current budget. The mechanical classifier should treat both as the
+same family for triage purposes:
+
+```sql
+WHEN (raw_payload->'decode_counts'->>0)::int = (raw_payload->'attempt_max_tokens'->>0)::int
+  AND raw_payload->>'last_error' ~ '(Unterminated string|HTTP Error 500.*context shift)'
+THEN 'runaway_class'
+```
+
+Possible mitigations (not implemented this run):
+
+- Lower `RETRY_MAX_TOKENS` so `prompt + retry_max_tokens` fits in
+  `ctx-size 49152` for the largest windows. Trade-off: less headroom
+  for genuinely longer outputs.
+- Detect oversized prompts client-side and skip the retry attempt for
+  those windows.
+- Subdivide windows further so each window's prompt is smaller, leaving
+  more room for retry decode.
+
+Rate this run: 2/300 = 0.67 % (under the 1 % new-class FAIL threshold)
+and the class has a clear, classifiable signature.
+
+### PASS / FAIL (per `prompts/phase_2_enum_soak_gate_full_corpus.md`)
+
+PASS gates:
+- ✅ Soak completed without supervisor crash.
+- ✅ Post-run P-HEALTH passed.
+- ✅ `unknown_message_id` failures = **0**.
+- ✅ `service_unavailable` = 0.
+- ✅ `segmenter_timeout` = 0.
+- ✅ No CUDA/cuBLAS errors in journal.
+- ✅ VRAM stable, far below stop threshold.
+- ✅ Active-sequence dupes = 0; active empty `message_ids` = 0.
+- ✅ Non-runaway failure rate 0/300 = 0 % (≤ 2 %).
+- ✅ Runaway failures classifiable from `attempt_max_tokens` /
+  `decode_counts`.
+- ✅ Pending segmented backlog (170) drained with embed-only.
+
+FAIL gates:
+- ✅ No `unknown_message_id` cluster.
+- ✅ No backend wedge.
+- ✅ No CUDA/cuBLAS error.
+- ✅ No `service_unavailable`.
+- ✅ No active-sequence dup or empty `message_ids`.
+- ✅ Non-runaway rate 0 % (≤ 2 %).
+- ✅ New `http_500_ctx_shift` class is at 0.67 % (under 1 %), and is
+  classifiable as the same root-cause family as `runaway_unterminated`
+  per Finding X.
+
+**Net: PASS on all gates.** Authorized to proceed to the full corpus.
+
+## Phase 2 Full Corpus Partial Run (Opus 4.7 / coding agent, 2026-05-02 11:11:20Z–~16:36Z UTC, paused at operator request)
+
+Per §5 of `prompts/phase_2_enum_soak_gate_full_corpus.md`. Started
+immediately after the round 3 PASS verdict and the 170-row drain.
+
+### Run setup
+
+- Branch tip: `8c951b6`.
+- Command: `engram.cli pipeline --segment-batch-size 1
+  --embed-batch-size 1000 --segment-retries 1` (no `--limit`, no
+  `timeout`).
+- Trap-quiesce: `openclaw-gateway.service` and
+  `ik-llama-watchdog.timer` stopped at start; trap to restore on EXIT.
+- Operational profile: same as round 3.
+
+### Counts (run paused at 5h25m, 12.5 % of corpus done at this version)
+
+| metric                                      | value |
+|---------------------------------------------|------:|
+| Total conversations in corpus               | 7916  |
+| Already done at enum-ids before this run    | 300   (+probes) |
+| Parents processed in this run               | 986   |
+| Segmented                                   | 983   |
+| Failed                                      | 3     |
+| `segmented` waiting for embed (pre-pause)   | 983   |
+| Still pending at enum-ids version after pause | 6778 |
+| Pipeline status at pause                    | Mid-parent on `609df06b-...`; SIGINT → that parent's transaction did not commit, will be re-picked on resume |
+
+Throughput: ~3.0 parents/min average, ~3.4/min last 30 min before
+pause. Multi-window heavies dragged short windows; the longest single
+successful parent (`54c017c3`, 599 messages, 774 K chars,
+estimated 13–15 windows) consumed ~30 min on its own and contributed
+the run's `max=1818.9s` elapsed. Failures at `--limit 0` still all
+classifiable.
+
+### Failure classification (run window only)
+
+| failure_class          | count | pattern |
+|------------------------|------:|---------|
+| `unknown_message_id`   | **0** | enum-ids constraint holding at scale (986 parents, 0 occurrences). |
+| `runaway_unterminated` | 1     | Finding VI signature, full diagnostics. |
+| `http_500_ctx_shift`   | 2     | Finding X signature. |
+
+Failure rate (paused state): 3/986 = 0.30 %, all runaway-class root
+cause.
+
+### Elapsed per parent
+
+| group                    | n   | mean   | p50  | p90   | p99    | max     |
+|--------------------------|----:|-------:|-----:|------:|-------:|--------:|
+| Successful (segmented)   | 983 | 19.0 s | 8.9 s | 36.4 s | 142.0 s | 1818.9 s |
+| Failed                   | 3   | 494.1 s | 465.6 s | — | — | 571.1 s |
+
+### VRAM trend
+
+- Start: 19475 MiB
+- During-run snapshots: ~19559 MiB (stable)
+- Pause: 19559 MiB
+- Drift: +84 MiB over 5h25m. No CUDA / cuBLAS in journal.
+
+### Spec invariants at pause
+
+- Active-sequence dupes: 0 ✓
+- Active empty `message_ids`: 0 ✓
+- Pending segmented generations: 983 (not yet embedded — pipeline runs
+  segment-then-embed sequentially with no `--limit`, so the embed
+  phase had not started before the pause).
+
+### Pause notes
+
+- Pipeline interrupted via `kill -INT` to the bash wrapper. The trap
+  did not produce its usual `[trap]` log lines, so services were
+  restored manually (`reset-failed`, `start`) immediately after — all
+  three (ik-llama-server, ik-llama-watchdog, openclaw-gateway) are
+  `active` post-pause.
+- Parent `609df06b-56a1-44cf-a8c1-00f51fdb28f1` was mid-segmentation at
+  pause. Its transaction did not commit; the candidate selector will
+  re-pick it on resume.
+- 983 generations remain in `segmented` status. They can be activated
+  with an embed-only pass (`engram embed --batch-size 1000`) before
+  resuming, or left until the next run sweeps them up.
+
+### Outcome
+
+**No PASS/FAIL verdict — paused mid-run by operator.** Up to the
+pause, every gate held: 0 `unknown_message_id` across 986 parents,
+0 integrity violations, supervisor stable, backend healthy, all
+failures classifiable.
+
+### Next steps
+
+1. (Optional) Run `engram embed --batch-size 1000` to activate the 983
+   pending generations before resuming, so the corpus reaches a
+   consistent state.
+2. Resume with the same `engram.cli pipeline` command — the candidate
+   selector will pick up from `609df06b` and continue.
+3. Reconsider the `RETRY_MAX_TOKENS` budget: with the enum-ids schema,
+   `RETRY_MAX_TOKENS=32768` against `--ctx-size 49152` reliably trips
+   `http_500_ctx_shift` for ~20K-token prompts. Lowering to ~24K would
+   keep retries within ctx for the typical max-prompt window, at the
+   cost of less headroom for genuinely long outputs (Finding X).
+- Logs: `logs/phase2_soak_round3_20260502T083245Z.log`,
+  `logs/phase2_full_corpus_20260502T111050Z.log`.
