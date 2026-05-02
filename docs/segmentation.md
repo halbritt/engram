@@ -36,7 +36,9 @@ The Makefile also accepts `SEGMENTER_MODEL=...` for `segment` and `pipeline`.
 
 ## Local Preflight
 
-Observed on 2026-04-30:
+Historical probe observed on 2026-04-30. Treat these values as the last known
+baseline, not as a substitute for probing the running local services before a
+long run:
 
 - ik-llama `GET /v1/models` exposed model id
   `/home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf` with
@@ -60,6 +62,31 @@ Observed on 2026-04-30:
 - Concurrent cache insert probe: two workers embedding identical text under
   `preflight-race-probe-v1` produced one `embedding_cache` row; the losing
   worker followed the SELECT fallback path after `ON CONFLICT DO NOTHING`.
+
+Before any long segmentation or soak run, run P-HEALTH:
+
+1. Pin the current ik-llama model id:
+
+   ```bash
+   export ENGRAM_SEGMENTER_MODEL=/home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf
+   ```
+
+2. Send a tiny D034-profile `POST /v1/chat/completions` that requires a
+   schema-valid JSON object in `choices[0].message.content`. `GET /v1/models`
+   and `GET /props` are not enough; they can return 200 while generation is
+   wedged.
+3. Run a 10-conversation local preflight with OpenClaw quiesced if it shares the
+   same GPU/endpoint, and with any blocking `/health` watchdog disabled or
+   replaced:
+
+   ```bash
+   make pipeline-isolated SEGMENTER_MODEL="$ENGRAM_SEGMENTER_MODEL"
+   ```
+
+   For a bounded preflight, call the CLI directly with `--limit 10`.
+4. Run the same tiny completion smoke again. If either smoke fails or times out,
+   stop the soak and inspect `journalctl --user -u ik-llama-server.service`
+   plus the run log before continuing.
 
 ## Segmenter Contract
 
@@ -131,6 +158,11 @@ segments record:
 - `window_strategy='windowed'`
 - `window_index`
 - window-boundary/truncation details in `raw_payload`
+
+The current migration and code use `whole` / `windowed`. The Phase 2 handoff
+prompt has a follow-up P-FRAG schema extension to `topic`,
+`windowed_overlap`, and `message_group`; update this doc when that migration
+lands so operator-facing values continue to match the deployed schema.
 
 Progress is stored in `consolidation_progress` with scopes such as
 `conversation:<uuid>` and positions like:
