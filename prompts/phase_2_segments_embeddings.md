@@ -71,6 +71,21 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      model/dimension before writing DDL (D033).
    - Simulate two concurrent cache inserts for identical text and
      verify the intended conflict path (see Embedder below).
+   - **P-HEALTH completion smoke.** Before any long segmentation or
+     soak run, confirm ik-llama health with an actual tiny
+     `POST /v1/chat/completions` using the D034 request profile and a
+     small schema-valid JSON response. Do not rely on `GET /v1/models`
+     or `GET /props` alone: those endpoints can remain healthy while
+     inference is wedged after a CUDA/runtime fault. Record the exact
+     request, elapsed time, response shape, and whether
+     `choices[0].message.content` parses. Then run a 10-conversation
+     local-only preflight (`segment` or `pipeline` with `--limit 10`,
+     pinned `ENGRAM_SEGMENTER_MODEL`, OpenClaw quiesced if it shares
+     the same GPU/endpoint, and the blocking watchdog disabled or
+     replaced). Run the same tiny completion smoke immediately after.
+     If either smoke fails or times out, stop the soak and record the
+     backend state/log pointers; do not burn the full run budget on a
+     poisoned inference process.
    - **P-FRAG fragmentation probe** (runs *after* the step-2 schema
      migration lands; depends on `min_token_count`, `merge_rule`, and
      the extended `window_strategy` enum). On a local-only
@@ -281,8 +296,9 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      hardcode that path without checking the running service. Set
      `stream=false`, `temperature=0`, `top_p=1`, and
      `chat_template_kwargs={"enable_thinking": false}`. Set bounded
-     `max_tokens` from configuration; the starting default is 4096 per
-     parent/window unless the largest-conversation probe justifies a
+     `max_tokens` from configuration; the current robust starting
+     default is 16384 per parent/window with one truncation-oriented
+     retry capped at 32768, unless the preflight evidence justifies a
      different cap. Parse only `choices[0].message.content`; treat
      `reasoning_content` as
      diagnostic output, never as the segment payload. Record the exact
@@ -316,6 +332,13 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      Markdown fences or explanatory text as the normal path. Invalid JSON
      or schema violations fail the parent/window and are recorded in
      `consolidation_progress.last_error`.
+   - Failed segment generations must persist enough diagnostics in
+     `segment_generations.raw_payload` to classify failures after an
+     unattended run: `failure_kind`, `last_error`, attempt count,
+     per-attempt `max_tokens`, and per-attempt decoded-token counts
+     when the local endpoint exposes them. This is required to
+     distinguish insufficient output budget from runaway generation and
+     backend wedges without guessing from wall-clock time.
    - `segment_pending(conn, batch_size, model_version) ->
      BatchResult`. Drives segmentation across all conversations
      with no active or pending generation under the current
@@ -491,6 +514,14 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
 - The segmenter ik-llama client uses the D034 request profile and
   fails clearly on non-JSON, fenced JSON, `reasoning_content`-only, or
   schema-invalid responses.
+- Before long runs, P-HEALTH completion smoke passes before and after a
+  10-conversation preflight; if it fails, the run stops with backend
+  logs recorded rather than continuing into a known-bad inference
+  process.
+- Failed `segment_generations.raw_payload` records `failure_kind`,
+  `last_error`, attempt count, per-attempt `max_tokens`, and decoded
+  counts when available, so truncation/runaway/backend failures can be
+  classified mechanically after a soak.
 - `make embed` embeds all pending-generation segments end-to-end and
   activates completed generations. Re-running with the same model
   version is a no-op.

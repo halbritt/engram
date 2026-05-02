@@ -556,6 +556,81 @@ def test_downstream_segment_error_marks_generation_failed(conn):
     )
 
 
+def test_failed_generation_records_attempt_diagnostics(conn, monkeypatch):
+    conversation_id, _ = insert_conversation(conn, [("user", "hello", 1)])
+    seen_max_tokens: list[int] = []
+
+    def fake_http(method, url, *, payload=None, timeout=30):
+        assert payload is not None
+        seen_max_tokens.append(payload["max_tokens"])
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"segments":[{"message_ids":["00000000-0000-0000-0000-000000000000"],'
+                            '"summary":null,"content_text":"unterminated'
+                        )
+                    }
+                }
+            ],
+            "usage": {"completion_tokens": payload["max_tokens"]},
+        }
+
+    monkeypatch.setattr(segmenter, "http_json", fake_http)
+
+    result = segmenter.segment_pending(
+        conn,
+        batch_size=10,
+        model_version="model-a",
+        client=segmenter.IkLlamaSegmenterClient(),
+        max_tokens=100,
+        retries=1,
+    )
+
+    assert result.processed == 1
+    assert result.failed == 1
+    assert seen_max_tokens == [100, 200]
+    row = conn.execute(
+        """
+        SELECT raw_payload
+        FROM segment_generations
+        WHERE parent_id = %s
+        """,
+        (conversation_id,),
+    ).fetchone()[0]
+    assert row["failure_kind"] == "segmenter_error"
+    assert row["attempts"] == 2
+    assert row["attempt_max_tokens"] == [100, 200]
+    assert row["decode_counts"] == [100, 200]
+    assert "Unterminated string" in row["last_error"]
+    assert len(row["attempt_errors"]) == 2
+
+
+def test_segment_window_attempt_diagnostics_without_db():
+    class TruncatingClient:
+        def segment(self, prompt: str, *, model_id: str, max_tokens: int):
+            raise segmenter.SegmenterResponseError(
+                "segmenter returned invalid JSON: Unterminated string",
+                response={"usage": {"completion_tokens": max_tokens}},
+            )
+
+    with pytest.raises(SegmentationError) as raised:
+        segmenter.segment_window_with_retries(
+            TruncatingClient(),
+            "prompt",
+            model_id="model-a",
+            max_tokens=100,
+            retries=1,
+        )
+
+    diagnostics = getattr(raised.value, "segmenter_attempt_diagnostics")
+    assert diagnostics["attempts"] == 2
+    assert diagnostics["attempt_max_tokens"] == [100, 200]
+    assert diagnostics["decode_counts"] == [100, 200]
+    assert len(diagnostics["attempt_errors"]) == 2
+
+
 def test_segmenter_request_deadline_raises_timeout():
     with pytest.raises(SegmenterRequestTimeout, match="exceeded 1s"):
         with segmenter.segmenter_request_deadline(1):
