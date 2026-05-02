@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import signal
@@ -34,10 +35,24 @@ SEGMENTER_REQUEST_TIMEOUT_SECONDS = int(
 DEFAULT_WINDOW_CHAR_BUDGET = int(
     os.environ.get("ENGRAM_SEGMENTER_WINDOW_CHAR_BUDGET", "60000")
 )
+CONTEXT_GUARD_MARGIN_TOKENS = int(
+    os.environ.get("ENGRAM_SEGMENTER_CONTEXT_GUARD_MARGIN_TOKENS", "1024")
+)
+CONTEXT_GUARD_CHARS_PER_TOKEN = float(
+    os.environ.get("ENGRAM_SEGMENTER_CONTEXT_GUARD_CHARS_PER_TOKEN", "2.5")
+)
+MIN_CONTEXT_SAFE_WINDOW_CHAR_BUDGET = int(
+    os.environ.get("ENGRAM_SEGMENTER_MIN_WINDOW_CHAR_BUDGET", "4000")
+)
 WINDOW_OVERLAP_MESSAGES = max(0, int(os.environ.get("ENGRAM_SEGMENTER_WINDOW_OVERLAP", "0")))
 MAX_SEGMENTER_ERROR_COUNT = int(os.environ.get("ENGRAM_SEGMENTER_MAX_ERROR_COUNT", "3"))
 
 _SEGMENTER_MODEL_ID_CACHE: str | None = None
+_SEGMENTER_PROBE_CACHE: SegmenterProbe | None = None
+SEGMENTER_SYSTEM_PROMPT = (
+    "You are a deterministic topic segmenter for a local-first "
+    "personal memory pipeline. Return only schema-valid JSON."
+)
 
 MARKER_ONLY_RE = re.compile(
     r"^\s*(?:"
@@ -68,6 +83,10 @@ class SegmenterResponseError(SegmentationError):
         super().__init__(message)
         self.response = response
         self.decoded_tokens = decoded_token_count_from_response(response)
+
+
+class SegmenterContextBudgetError(SegmentationError):
+    """Raised before a structured request can reach ik-llama context shift."""
 
 
 @dataclass(frozen=True)
@@ -156,20 +175,52 @@ def probe_segmenter(base_url: str = IK_LLAMA_BASE_URL) -> SegmenterProbe:
 
 
 def default_segmenter_model_id() -> str:
-    global _SEGMENTER_MODEL_ID_CACHE
     configured = os.environ.get("ENGRAM_SEGMENTER_MODEL")
     if configured:
         return configured
+    return default_segmenter_probe().model_id
+
+
+def default_segmenter_probe() -> SegmenterProbe:
+    global _SEGMENTER_MODEL_ID_CACHE, _SEGMENTER_PROBE_CACHE
+    if _SEGMENTER_PROBE_CACHE:
+        return _SEGMENTER_PROBE_CACHE
     if _SEGMENTER_MODEL_ID_CACHE:
-        return _SEGMENTER_MODEL_ID_CACHE
-    _SEGMENTER_MODEL_ID_CACHE = probe_segmenter().model_id
-    return _SEGMENTER_MODEL_ID_CACHE
+        probe = probe_segmenter()
+        _SEGMENTER_PROBE_CACHE = probe
+        return probe
+    _SEGMENTER_PROBE_CACHE = probe_segmenter()
+    _SEGMENTER_MODEL_ID_CACHE = _SEGMENTER_PROBE_CACHE.model_id
+    return _SEGMENTER_PROBE_CACHE
+
+
+def configured_segmenter_context_window() -> int | None:
+    raw = os.environ.get("ENGRAM_SEGMENTER_CONTEXT_WINDOW")
+    if not raw:
+        return None
+    value = int(raw)
+    if value <= 0:
+        raise SegmentationError("ENGRAM_SEGMENTER_CONTEXT_WINDOW must be positive")
+    return value
 
 
 class IkLlamaSegmenterClient:
-    def __init__(self, base_url: str = IK_LLAMA_BASE_URL) -> None:
+    def __init__(
+        self,
+        base_url: str = IK_LLAMA_BASE_URL,
+        *,
+        context_window: int | None = None,
+    ) -> None:
         ensure_local_base_url(base_url)
         self.base_url = base_url.rstrip("/")
+        self._context_window = context_window or configured_segmenter_context_window()
+
+    def context_window(self) -> int | None:
+        if self._context_window is not None:
+            return self._context_window
+        probe = probe_segmenter(self.base_url)
+        self._context_window = probe.context_window
+        return self._context_window
 
     def segment(
         self,
@@ -184,10 +235,7 @@ class IkLlamaSegmenterClient:
             "messages": [
                 {
                     "role": "system",
-                    "content": (
-                        "You are a deterministic topic segmenter for a local-first "
-                        "personal memory pipeline. Return only schema-valid JSON."
-                    ),
+                    "content": SEGMENTER_SYSTEM_PROMPT,
                 },
                 {"role": "user", "content": prompt},
             ],
@@ -205,6 +253,11 @@ class IkLlamaSegmenterClient:
                 },
             },
         }
+        assert_context_budget(
+            prompt,
+            max_tokens=max_tokens,
+            context_window=self.context_window(),
+        )
         response = http_json(
             "POST",
             f"{self.base_url}/v1/chat/completions",
@@ -248,6 +301,54 @@ def segmentation_json_schema(
             }
         },
     }
+
+
+def assert_context_budget(
+    prompt: str,
+    *,
+    max_tokens: int,
+    context_window: int | None,
+) -> None:
+    if context_window is None:
+        return
+    estimated_prompt_tokens = estimate_segmenter_prompt_tokens(prompt)
+    requested_tokens = estimated_prompt_tokens + max_tokens + CONTEXT_GUARD_MARGIN_TOKENS
+    if requested_tokens >= context_window:
+        raise SegmenterContextBudgetError(
+            "segmenter request would reach context shift: "
+            f"estimated_prompt_tokens={estimated_prompt_tokens}, "
+            f"max_tokens={max_tokens}, "
+            f"margin_tokens={CONTEXT_GUARD_MARGIN_TOKENS}, "
+            f"context_window={context_window}"
+        )
+
+
+def estimate_segmenter_prompt_tokens(prompt: str) -> int:
+    chars_per_token = max(CONTEXT_GUARD_CHARS_PER_TOKEN, 1.0)
+    # The schema is enforced as a grammar, not prompt text. Count the rendered
+    # chat messages plus a small template overhead so the guard fails closed.
+    rendered_chars = len(SEGMENTER_SYSTEM_PROMPT) + len(prompt) + 512
+    return math.ceil(rendered_chars / chars_per_token)
+
+
+def context_safe_window_char_budget(
+    configured_budget: int,
+    *,
+    context_window: int | None,
+    max_tokens: int,
+) -> int:
+    if context_window is None:
+        return configured_budget
+    prompt_token_budget = context_window - max_tokens - CONTEXT_GUARD_MARGIN_TOKENS
+    if prompt_token_budget <= 0:
+        return MIN_CONTEXT_SAFE_WINDOW_CHAR_BUDGET
+    prompt_scaffold_tokens = estimate_segmenter_prompt_tokens(
+        build_segmenter_prompt(MessageWindow(index=0, messages=[]), "windowed")
+    )
+    content_token_budget = max(0, prompt_token_budget - prompt_scaffold_tokens)
+    safe_budget = int(content_token_budget * max(CONTEXT_GUARD_CHARS_PER_TOKEN, 1.0))
+    safe_budget = max(MIN_CONTEXT_SAFE_WINDOW_CHAR_BUDGET, safe_budget)
+    return min(configured_budget, safe_budget)
 
 
 def parse_segmentation_response(response: dict[str, Any]) -> list[SegmentDraft]:
@@ -377,8 +478,34 @@ def segment_conversation(
             noop=True,
         )
 
+    segmenter = client or IkLlamaSegmenterClient()
+    try:
+        context_window = (
+            segmenter.context_window()
+            if isinstance(segmenter, IkLlamaSegmenterClient)
+            else None
+        )
+    except SegmenterServiceUnavailable as exc:
+        upsert_progress(
+            conn,
+            stage="segmenter",
+            scope=f"conversation:{conversation_id}",
+            status="pending",
+            position={
+                "conversation_id": conversation_id,
+                "failure_stage": "context_probe",
+            },
+            last_error=str(exc),
+            increment_error=True,
+        )
+        raise
+    effective_window_char_budget = context_safe_window_char_budget(
+        window_char_budget,
+        context_window=context_window,
+        max_tokens=max_tokens,
+    )
     messages = fetch_messages(conn, conversation_id)
-    windows = build_windows(messages, window_char_budget)
+    windows = build_windows(messages, effective_window_char_budget)
     window_strategy = "windowed" if len(windows) > 1 else "whole"
     generation_id = (
         str(existing["id"])
@@ -392,12 +519,13 @@ def segment_conversation(
             raw_payload={
                 "request_profile_version": SEGMENTER_REQUEST_PROFILE_VERSION,
                 "max_tokens": max_tokens,
+                "context_window": context_window,
                 "window_char_budget": window_char_budget,
+                "effective_window_char_budget": effective_window_char_budget,
                 "window_count": len(windows),
             },
         )
     )
-    segmenter = client or IkLlamaSegmenterClient()
     message_by_id = {message.id: message for message in messages}
     sequence_by_id = {message.id: message.sequence_index for message in messages}
     next_sequence_index = next_segment_sequence_index(conn, generation_id)

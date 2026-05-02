@@ -213,7 +213,10 @@ def test_ik_llama_request_shape_and_response_rejections(monkeypatch):
         }
 
     monkeypatch.setattr(segmenter, "http_json", fake_http)
-    client = segmenter.IkLlamaSegmenterClient("http://127.0.0.1:8081")
+    client = segmenter.IkLlamaSegmenterClient(
+        "http://127.0.0.1:8081",
+        context_window=4096,
+    )
     drafts = client.segment("prompt", model_id="model-a", max_tokens=123)
 
     assert drafts[0].content_text == "hello"
@@ -263,7 +266,10 @@ def test_ik_llama_schema_can_constrain_message_ids_to_window(monkeypatch):
         }
 
     monkeypatch.setattr(segmenter, "http_json", fake_http)
-    client = segmenter.IkLlamaSegmenterClient("http://127.0.0.1:8081")
+    client = segmenter.IkLlamaSegmenterClient(
+        "http://127.0.0.1:8081",
+        context_window=4096,
+    )
 
     drafts = client.segment(
         "prompt",
@@ -313,7 +319,7 @@ def test_segment_conversation_constrains_ik_llama_schema_to_window_ids(conn, mon
         conn,
         conversation_id,
         model_version="model-a",
-        client=segmenter.IkLlamaSegmenterClient(),
+        client=segmenter.IkLlamaSegmenterClient(context_window=65536),
     )
 
     assert result.segments_inserted == 1
@@ -663,7 +669,7 @@ def test_failed_generation_records_attempt_diagnostics(conn, monkeypatch):
         conn,
         batch_size=10,
         model_version="model-a",
-        client=segmenter.IkLlamaSegmenterClient(),
+        client=segmenter.IkLlamaSegmenterClient(context_window=4096),
         max_tokens=100,
         retries=1,
     )
@@ -709,6 +715,64 @@ def test_segment_window_attempt_diagnostics_without_db():
     assert diagnostics["attempt_max_tokens"] == [100, 200]
     assert diagnostics["decode_counts"] == [100, 200]
     assert len(diagnostics["attempt_errors"]) == 2
+
+
+def test_ik_llama_context_guard_rejects_requests_near_context_shift():
+    client = segmenter.IkLlamaSegmenterClient(context_window=4096)
+
+    with pytest.raises(segmenter.SegmenterContextBudgetError, match="context shift"):
+        client.segment("x" * 9000, model_id="model-a", max_tokens=100)
+
+
+def test_segment_conversation_shrinks_windows_to_context_budget(conn, monkeypatch):
+    conversation_id, _ = insert_conversation(
+        conn,
+        [
+            ("user", "a" * 3500, 1),
+            ("assistant", "b" * 3500, 1),
+        ],
+    )
+    captured_prompts: list[str] = []
+
+    def fake_http(method, url, *, payload=None, timeout=30):
+        captured_prompts.append(payload["messages"][1]["content"])
+        match = re.search(r'<message id="([^"]+)"', captured_prompts[-1])
+        assert match is not None
+        message_id = match.group(1)
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            f'{{"segments":[{{"message_ids":["{message_id}"],'
+                            '"summary":null,"content_text":"hello","raw":{}}}]}'
+                        )
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr(segmenter, "http_json", fake_http)
+
+    result = segment_conversation(
+        conn,
+        conversation_id,
+        model_version="model-a",
+        client=segmenter.IkLlamaSegmenterClient(context_window=3000),
+        max_tokens=100,
+        window_char_budget=20000,
+    )
+
+    assert result.windows_processed == 2
+    assert result.segments_inserted == 2
+    assert len(captured_prompts) == 2
+    row = conn.execute(
+        "SELECT raw_payload FROM segment_generations WHERE id = %s",
+        (result.generation_id,),
+    ).fetchone()[0]
+    assert row["window_char_budget"] == 20000
+    assert row["effective_window_char_budget"] < 20000
+    assert row["context_window"] == 3000
 
 
 def test_segmenter_request_deadline_raises_timeout():

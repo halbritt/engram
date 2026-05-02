@@ -132,6 +132,17 @@ The HTTP request timeout is intentionally conservative and configurable with
 `ENGRAM_SEGMENTER_TIMEOUT_SECONDS` because large local windows can legitimately
 take minutes. The default is 600 seconds.
 
+Structured requests also fail closed before they can reach the model's context
+boundary. The segmenter probes the ik-llama context window and estimates
+`prompt_tokens + max_tokens + ENGRAM_SEGMENTER_CONTEXT_GUARD_MARGIN_TOKENS`
+before each D034 `json_schema` call. If the request would reach context shift,
+the parent/window fails locally instead of letting ik-llama shift context while
+grammar-constrained. The default margin is `1024` tokens; the heuristic token
+estimate uses `ENGRAM_SEGMENTER_CONTEXT_GUARD_CHARS_PER_TOKEN`, default `2.5`.
+If the probed context is smaller than the configured window budget assumes, the
+conversation is split into smaller windows up front and the generation metadata
+records both `window_char_budget` and `effective_window_char_budget`.
+
 The required response object is:
 
 ```json
