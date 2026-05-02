@@ -604,3 +604,193 @@ Still open after this follow-up:
 - Re-run the 150-conversation soak with P-HEALTH and the new diagnostics.
 - Investigate the four pre-wedge short failures if they reproduce with the new
   diagnostic payload.
+
+## Phase 2 Bounded Soak Round 2 (Opus 4.7 / coding agent, 2026-05-02 04:44:55Z–06:26:48Z UTC, --limit 300)
+
+Post-CUDA-upgrade re-run on a freshly rebuilt `ik_llama.cpp` (sm_86, CUDA
+12.8.93, driver 595.71.05, kernel 6.8.0-111-generic). Increased from runbook
+default `--limit 150` to `--limit 300` per operator request to amortize
+warm-up and broaden the failure-class sample.
+
+### Run setup
+
+- Branch tip at start: `8a0cb98` (Finding VIII outer-handler fix; see below).
+- Pre-run inference smoke: PASS (`{"ok": true}`, ~70 ms decode).
+- Pre-soak idempotency probe (`--limit 10` × 2): PASS — 20 distinct parents
+  across both runs, zero overlap, zero duplicate generations at this version.
+- Operational profile: `MAX_TOKENS=16384`, `RETRY_MAX_TOKENS=32768`,
+  `WINDOW_OVERLAP=0`, `--segment-batch-size 1`, `--embed-batch-size 100`,
+  `--segment-retries 1`, `timeout --foreground 3h`.
+- Isolation: `openclaw-gateway.service` and `ik-llama-watchdog.timer` stopped
+  via hand-rolled trap (Makefile `pipeline-isolated` does not pass through
+  `PIPELINE_ARGS`); both restored on EXIT.
+
+### Counts
+
+| metric                          | value |
+|---------------------------------|-------|
+| Parents attempted               | 300   |
+| Segmented                       | 280   |
+| Failed                          | 20    |
+| Skipped                         | 0     |
+| Segments created                | 477   |
+| Segments embedded (this run)    | 300   |
+| Embed cache hits                | 28    |
+| Generations activated           | 166   |
+| `segmented` waiting for embed   | 211   |
+| Pipeline rc                     | 1 (clean — non-zero only because segment step had failures; embed step rc=0) |
+
+The 211-`segmented`/166-`active` gap is mechanical: with `--limit 300` and
+`--embed-batch-size 100`, the embed step processes the first 300 segments
+across all 280 successful parents, then exits at `--limit`. The remaining
+177 segments (and the 114 generations that own them) wait for the next run.
+Not a bug; an interaction between `--limit` and `--embed-batch-size` worth
+keeping in mind.
+
+### Failure classification (mechanically applied via Finding VIII)
+
+| failure_class        | count | pattern |
+|----------------------|------:|---------|
+| `unknown_message_id` | 19    | Single attempt; `last_error` matches `segmenter returned unknown message id: <X>`; no retry |
+| `runaway_unterminated` | 1   | Two attempts, `attempt_max_tokens=[16384, 32768]`, `decode_counts` hit each ceiling, `last_error` matches `Unterminated string` (Finding VI signature) |
+
+Runaway count (1/300 = 0.33%) is consistent with Finding VI base rate
+(15/3437 ≈ 0.4%).
+
+### Elapsed per parent
+
+| group                    | n   | mean   | p50  | p90   | p99    | max    |
+|--------------------------|----:|-------:|-----:|------:|-------:|-------:|
+| Successful (segmented)   | 280 | 15.6 s | 8.7 s | 32.4 s | 62.5 s | 583.7 s |
+| Failed (`unknown_message_id`) | 19 | 69.3 s | 35.5 s | 299.5 s | 318.5 s | 318.5 s |
+| Failed (`runaway`)       |   1 | 394.6 s | — | — | — | — |
+
+The single 583.7 s success is a long multi-window or multi-segment parent
+that completed cleanly — not a runaway. `unknown_message_id` failures span
+9.7 s to 318.5 s; the long tail represents parents where the model took
+many tokens to produce JSON that then failed validation, distinct from
+runaways which decode to `attempt_max_tokens` and timeout/abort.
+
+### VRAM trend
+
+- Start (model loaded, idle): 19475 MiB / 24576 MiB
+- End (model loaded, idle):   19513 MiB / 24576 MiB
+- Drift over 1h42m soak:       +38 MiB
+- Mid-run snapshots:            ~19500 MiB (stable, GPU util 86–90 %)
+
+Never approached the 23.5 GiB stop-condition threshold. The cuBLAS wedge
+class (Finding VII) did not reproduce.
+
+### Spec-mandated checks
+
+- Active-sequence uniqueness: **0** duplicates ✓
+- `message_ids` integrity: **0** NULL, **0** empty across 535 active segments ✓
+- `expand_message_span` invocation rate: 110/110 (100 %) on segments created
+  in this run — Finding IV pattern preserved.
+- Idempotency invariant: **0** of soak's 300 parents are eligible for
+  re-pickup by `fetch_pending_conversations` at the same prompt+model
+  version; **0** parents have multiple generations at this version. The
+  candidate selector correctly enforces "process once per
+  (parent, prompt+model version)."
+
+### Code change made during this run
+
+`8a0cb98 Thread error diagnostics through outer segmenter failure handler` —
+shipped between the first short validation and the soak. The original
+Finding VIII patch (`4ef1000`) instrumented the per-window inner handler
+(`segmenter.py:472`) but missed the outer per-conversation handler
+(`segmenter.py:662`) which calls `mark_parent_segmenting_generations_failed`
+without an `error` argument. The first short validation produced a failure
+with empty diagnostics (`last_error`/`attempts`/`attempt_max_tokens` all
+NULL), exposing the gap. Fix: thread `error: BaseException | None = None`
+through `mark_parent_segmenting_generations_failed`, route through
+`segmenter_failure_payload(failure_kind, error)` instead of the bare
+`{"failure_kind": ...}` literal, and pass `error=exc` from the caller.
+
+This soak's failures all carry `last_error` correctly. The runaway carries
+full retry diagnostics (`attempts`, `attempt_max_tokens`, `decode_counts`).
+The `unknown_message_id` class lacks `attempt_max_tokens`/`decode_counts`
+because the exception fires after the segmenter call returned valid JSON
+(no retries to record); only `last_error` is meaningful for that class,
+which is sufficient for mechanical classification.
+
+### IX. Model output produces non-existent `message_id` references at >1 % rate
+
+Across 300 parents, 19 (6.3 %) failed validation in
+`segment_conversation`'s draft-processing loop with `last_error` matching
+`segmenter returned unknown message id: <X>`. Sample `<X>` values from this
+run:
+
+- Plain integers outside the window: `10`, `12`, `24`, `100`
+- Hallucinated full UUIDs that don't appear in the conversation:
+  `7fc0499c-5f08-4ee-9496-ce9a8708acbc`, `e61a2888-85b9-4a76-861b-cdf3d8926b11`
+- Malformed UUIDs (wrong group lengths or extra hyphens):
+  `14ff171a-0cbd-4d15-8560c497c342` (16-char group 4 instead of 4-12),
+  `941e3a9b-e203-4615-91d9-41a3-bf69-fe41b8b6f720` (7 groups instead of 5),
+  `7e9af114-43b0-b3c7-775f217799a8` (4 groups), `ed0mat 2025 EOY assessment notes`
+  (free-form text in the id field).
+
+The supervisor handles each cleanly: the parent is marked `failed` with
+diagnostics, no integrity violation, no impact on subsequent parents. This
+is **not** a Phase 2 supervisor bug — it is a model output quality issue
+under the current prompt + JSON-schema constraints. The JSON schema does
+not pin `message_id` to a regex matching the conversation's actual ids,
+so the strict-mode constraint accepts any string and we catch the
+inconsistency only at draft-processing time.
+
+The 6.3 % rate trips two runbook FAIL conditions:
+
+- "Non-runaway failure rate ≤ 2 %" — actual 6.3 %.
+- "A new failure mode not explainable by findings A–VI appears at > 1 %
+  rate" — `unknown_message_id` is not in A–VI.
+
+Possible mitigations (not implemented this run):
+
+- Tighten the JSON schema: enumerate `message_id` candidates per window so
+  the model is constrained at decode time. Highest signal-to-noise option;
+  may run into schema-size limits on `--parallel 1` ik-llama.
+- Soft-recover: if the returned `message_id` doesn't match exactly, attempt
+  a fuzzy match (Levenshtein ≤ 1, prefix match, etc.) before failing.
+  Lower-priority; trades validation strictness for recovery.
+- Sampling: bump temperature slightly to see if it changes the rate
+  (current is `temperature=0`).
+
+### PASS / FAIL
+
+PASS criteria:
+
+- ✅ Supervisor never aborts; every batch iteration commits or rolls back ≤ 1
+  parent.
+- ❌ Non-runaway failure rate 6.3 % (>2 %).
+- ✅ Zero active-sequence violations.
+- ✅ Zero `message_ids` integrity violations.
+- ✅ Idempotency invariant holds (zero re-pickup eligibility, zero
+  duplicate generations).
+
+FAIL conditions:
+
+- ✅ No supervisor crash that drops committed work.
+- ✅ No active-sequence or `message_ids` integrity violation.
+- ✅ `service_unavailable` rate 0 % (≤ 5 %).
+- ✅ Idempotency: re-run would not produce new active segments for soak's
+  300 parents.
+- ❌ A new failure mode (`unknown_message_id`) appears at > 1 % rate.
+
+**Net: FAIL on PASS criteria due to Finding IX, but the supervisor itself
+is healthy.** All five integrity/stability invariants hold; the failure
+mode is upstream of Phase 2 (model output quality) rather than in the
+supervisor's contract.
+
+### Recommended next steps
+
+1. Decide on Finding IX mitigation strategy (schema tightening vs. soft
+   match vs. retry-on-validation-failure). Open a P-FRAG-style probe to
+   estimate likely effectiveness before changing the prompt path.
+2. Drain the 211 `segmented` rows by running an embed-only pass (e.g.
+   re-run with a higher `--embed-batch-size` or a separate `embed`
+   subcommand if available) so the corpus reaches a consistent state.
+3. Investigate the 19 failed parents under a larger `WINDOW_OVERLAP` or
+   higher `MAX_TOKENS` profile — operator's noted post-soak idea — to see
+   if those parents segment cleanly with more context budget. Their
+   `parent_id`s are recorded in `segment_generations.status='failed'` for
+   easy slicing.
