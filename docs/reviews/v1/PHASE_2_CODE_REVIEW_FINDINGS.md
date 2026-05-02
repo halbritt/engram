@@ -1,21 +1,31 @@
 # Phase 2 Code Review Findings
 
 Date: 2026-05-01
+Consistency pass: 2026-05-02T00:20:16Z
 
-This document consolidates findings from reviewing the Phase 2 implementation (`src/engram/segmenter.py`) and the pipeline test logs. The implementation currently fails to meet several criteria established during the pre-Phase-2 adversarial review (D027).
+This document consolidates findings from reviewing the Phase 2 implementation
+(`src/engram/segmenter.py`) and pipeline test logs. The initial review stated
+that the implementation failed several D027 criteria; later sections verify,
+narrow, or supersede those claims.
+
+Reading guide: the opening review and log review are retained as historical
+input. Later verification sections adjudicate those claims. Claims that were
+later not reproduced are struck through in place; narrowed claims remain
+visible with an inline note rather than being deleted. New review entries should
+use UTC ISO-8601 timestamps, not date-only headings.
 
 ## Code Review (`src/engram/segmenter.py`)
 
-### 1. Missing Schema for `segment_generations`
+### 1. ~~Missing Schema for `segment_generations`~~ — not reproduced later
 The `segmenter.py` script heavily utilizes a `segment_generations` table (e.g., in `create_generation`, `find_existing_generation`, `mark_generation_failed`) to track the batch status of segmentation runs. It also inserts `generation_id` into the `segments` table. However, neither the `segment_generations` table nor the `generation_id` column on `segments` are defined in the `prompts/phase_2_segments_embeddings.md` schema. This discrepancy will cause immediate `UndefinedTable` and `UndefinedColumn` errors upon execution against a strict schema.
 
-### 2. Missing D027 Poison-Pill Avoidance Filter
-While `segment_conversation` correctly calls `upsert_progress(..., increment_error=True)` when encountering a `SegmenterRequestTimeout` or general `Exception`, the `fetch_pending_conversations` query does **not** filter out rows where `p.error_count >= 3`. As a result, the `segment_pending` batcher will enter an infinite loop of retrying and failing on poison-pill conversations, entirely defeating the D027 fix.
+### 2. Missing D027 Poison-Pill Avoidance Filter — narrowed later
+While `segment_conversation` correctly calls `upsert_progress(..., increment_error=True)` when encountering a `SegmenterRequestTimeout` or general `Exception`, the `fetch_pending_conversations` query does **not** filter out rows where `p.error_count >= 3`. As a result, ~~the `segment_pending` batcher will enter an infinite loop of retrying and failing on poison-pill conversations, entirely defeating the D027 fix~~ later verification narrowed the loop risk to `service_unavailable` and explicit `pending` requeue paths.
 
-### 3. D027 Reclassification Invalidation is Dead Code
+### 3. ~~D027 Reclassification Invalidation is Dead Code~~ — not reproduced later
 The script includes `apply_reclassification_invalidations(...)` which correctly maps `reclassification` captures to their parent conversations/notes and invalidates the related segments. However, this function is **never called** in the main execution path. It needs to be invoked at the start of `segment_pending` (or explicitly scheduled) so that affected sources are re-queued before the pending fetch runs.
 
-### 4. Non-Existent Columns in Privacy Invalidation
+### 4. ~~Non-Existent Columns in Privacy Invalidation~~ — not reproduced later
 In the `invalidate_parent_segments` function, the query attempts to record metadata about the privacy invalidation:
 ```sql
 UPDATE segments
@@ -26,7 +36,7 @@ WHERE id = ANY(%s::uuid[])
 ```
 The columns `invalidated_at` and `invalidation_reason` are not defined in the `segments` schema and will crash the privacy tier recalculation. The schema either needs these columns added, or the update should be simplified to `SET is_active = false`.
 
-### 5. Incomplete `is_active` Deprecation Logic
+### 5. ~~Incomplete `is_active` Deprecation Logic~~ — not reproduced later
 When re-segmenting a conversation (e.g., forced via a new prompt or model version), the script successfully inserts the newly generated segments. However, it entirely fails to deprecate the older generation. There is no query equivalent to `UPDATE segments SET is_active = false WHERE conversation_id = X AND segmenter_prompt_version != Y`. Without this deprecation, multiple overlapping active segments will exist for the same conversation, leading to catastrophic duplicate retrieval.
 
 ---
@@ -50,8 +60,8 @@ engram.segmenter.SegmenterServiceUnavailable: local segmenter unavailable: [Errn
 ```
 There are also socket-level timeouts occurring during the `probe_segmenter` health check. This indicates the local LLM server is becoming completely unresponsive or crashing/restarting under the load of the timed-out generation requests.
 
-### 3. The Poison-Pill Loop is Active
-Because the D027 poison-pill skip logic (`error_count >= 3`) is missing from the query implementation, the batch script is continually hitting these failing conversations. It waits 3 minutes for them to time out, fails, and then restarts the loop, preventing the ingestion pipeline from making progress on the rest of the corpus.
+### 3. ~~The Poison-Pill Loop is Active~~ — narrowed later
+Because the D027 poison-pill skip logic (`error_count >= 3`) is missing from the query implementation, ~~the batch script is continually hitting these failing conversations. It waits 3 minutes for them to time out, fails, and then restarts the loop, preventing the ingestion pipeline from making progress on the rest of the corpus~~ later verification found most non-service failures were self-limiting; the actionable loop risk was retryable service-unavailable and explicit pending requeue paths.
 
 ### 4. Successful Generations
 The pipeline is fundamentally sound when the LLM server remains responsive and the payload is tractable:
@@ -66,14 +76,14 @@ embed 1/1 done cache_hit=False elapsed=0.1s
 
 ## Summary Action Items
 To stabilize the Phase 2 ingestion pipeline, the following fixes are critical:
-1. Update `fetch_pending_conversations` in `segmenter.py` to filter out `error_count >= 3`.
-2. Reconcile the undocumented `segment_generations` table dependency.
-3. Hook up the `apply_reclassification_invalidations` call into the batcher loop.
-4. Implement the `is_active = false` deprecation logic for re-segmentation runs.
+1. Update `fetch_pending_conversations` in `segmenter.py` to filter out `error_count >= 3` where retryable paths can loop. Scope later narrowed and implemented.
+2. ~~Reconcile the undocumented `segment_generations` table dependency.~~ Not reproduced.
+3. ~~Hook up the `apply_reclassification_invalidations` call into the batcher loop.~~ Not reproduced.
+4. ~~Implement the `is_active = false` deprecation logic for re-segmentation runs.~~ Not reproduced; activation cutover handles this.
 
 ---
 
-## Verification (Opus 4.7, 2026-04-30)
+## Verification (Opus 4.7, 2026-04-30, timestamp not recorded)
 
 I cross-checked each finding against `migrations/004_segments_embeddings.sql`, `src/engram/segmenter.py`, `src/engram/embedder.py`, and `src/engram/cli.py`.
 
@@ -167,7 +177,7 @@ Items 2 and 4 are not in the doc above this section but are the immediate ops fi
 
 ---
 
-## Verification (Codex, 2026-05-01)
+## Verification (Codex, 2026-05-01T17:20:31Z)
 
 Checked against current branch `phase-2-segments-embeddings` after commits
 `01d77c3` and `02292d2`.
@@ -296,7 +306,7 @@ segmentation requests on a nearly full 24GB GPU.
 
 ---
 
-## Implemented Follow-Up (Codex, 2026-05-01)
+## Implemented Follow-Up (Codex, 2026-05-01T18:08:52Z)
 
 The operational fixes selected from these findings landed in the Phase 2 branch:
 
@@ -551,7 +561,46 @@ This is the minimum to apply the runaway rule without guessing from wall clock.
 ### Recommended next steps
 
 1. **Restart `ik-llama-server.service`** (fresh CUDA context). Handed off.
-2. **Implement Finding VIII** before re-running, so the next soak can apply the runaway rule mechanically.
+2. ~~**Implement Finding VIII** before re-running, so the next soak can apply the runaway rule mechanically.~~ Implemented in the follow-up below.
 3. **Investigate pre-wedge short failures** — 4 in 58 is meaningful even with the small sample. Specific parents to inspect: `053fc988` (9.0s — suspiciously fast), `040c3803` (39.6s), `02302711` (89.7s), `01c3f1c8` (111.9s).
 4. **Re-run the soak** post-restart, post-Finding-VIII, then immediately re-run `--limit 150` again to validate idempotency.
-5. **Consider a 10-conversation pre-flight smoke** before each soak (~5 min) to catch backend wedges before burning the 2-hour budget.
+5. ~~**Consider a 10-conversation pre-flight smoke** before each soak (~5 min) to catch backend wedges before burning the 2-hour budget.~~ Promoted into P-HEALTH / D035 in the follow-up below.
+
+---
+
+## Implemented Follow-Up (Codex, 2026-05-02T00:14:48Z–00:17:00Z)
+
+The bounded-soak findings produced two Phase 2 branch commits:
+
+- `4ef1000 Add Phase 2 health preflight diagnostics`
+- `9c2da6d Document Phase 2 health preflight`
+
+Implemented changes:
+
+- Finding VIII is implemented in `src/engram/segmenter.py`: failed
+  `segment_generations.raw_payload` now records `failure_kind`, `last_error`,
+  `attempts`, `attempt_max_tokens`, `decode_counts` when the endpoint exposes
+  them, and `attempt_errors`.
+- P-HEALTH is added to `prompts/phase_2_segments_embeddings.md`: a tiny
+  D034-profile completion smoke before and after a 10-conversation preflight,
+  with the instruction to stop the soak if either smoke fails.
+- D035 is added to `DECISION_LOG.md` to make inference-level health checks and
+  per-attempt diagnostics an accepted operational invariant for long local-LLM
+  runs.
+- `docs/segmentation.md` now documents the P-HEALTH operator flow and the
+  failure-diagnostic payload fields.
+
+Verification:
+
+- `.venv/bin/python -m compileall -q src`
+- `.venv/bin/python -m pytest tests/test_phase2_segments.py -q` → `6 passed,
+  16 skipped`
+- `.venv/bin/python -m pytest -q` → `12 passed, 32 skipped`
+- `git diff --check` clean
+
+Still open after this follow-up:
+
+- Restart or otherwise recover `ik-llama-server.service` before the next soak.
+- Re-run the 150-conversation soak with P-HEALTH and the new diagnostics.
+- Investigate the four pre-wedge short failures if they reproduce with the new
+  diagnostic payload.
