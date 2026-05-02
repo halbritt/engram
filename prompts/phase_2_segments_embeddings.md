@@ -326,12 +326,14 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      The schema must require `segments`, `message_ids`, `content_text`,
      and `raw`; allow `summary` to be `null`; set
      `additionalProperties=false` at the response and segment levels;
-     and allow `raw` to carry model-specific diagnostic fields. Reject
-     empty `segments` unless the whole parent/window is explicitly
-     recorded as skipped in generation/progress metadata. Do not accept
-     Markdown fences or explanatory text as the normal path. Invalid JSON
-     or schema violations fail the parent/window and are recorded in
-     `consolidation_progress.last_error`.
+     constrain `message_ids.items` to an enum of the exact message UUIDs
+     present in the current parent/window; and allow `raw` to carry
+     model-specific diagnostic fields. Reject empty `segments` unless
+     the whole parent/window is explicitly recorded as skipped in
+     generation/progress metadata. Do not accept Markdown fences or
+     explanatory text as the normal path. Invalid JSON, schema
+     violations, or evidence-invalid message ids fail the parent/window
+     and are recorded in `consolidation_progress.last_error`.
    - Failed segment generations must persist enough diagnostics in
      `segment_generations.raw_payload` to classify failures after an
      unattended run: `failure_kind`, `last_error`, attempt count,

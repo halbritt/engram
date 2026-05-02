@@ -240,6 +240,86 @@ def test_ik_llama_request_shape_and_response_rejections(monkeypatch):
         )
 
 
+def test_ik_llama_schema_can_constrain_message_ids_to_window(monkeypatch):
+    allowed_ids = [
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+    ]
+    captured = {}
+
+    def fake_http(method, url, *, payload=None, timeout=30):
+        captured["payload"] = payload
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"segments":[{"message_ids":["11111111-1111-4111-8111-111111111111"],'
+                            '"summary":null,"content_text":"hello","raw":{}}]}'
+                        )
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr(segmenter, "http_json", fake_http)
+    client = segmenter.IkLlamaSegmenterClient("http://127.0.0.1:8081")
+
+    drafts = client.segment(
+        "prompt",
+        model_id="model-a",
+        max_tokens=123,
+        allowed_message_ids=allowed_ids,
+    )
+
+    assert drafts[0].message_ids == [allowed_ids[0]]
+    schema = captured["payload"]["response_format"]["json_schema"]["schema"]
+    message_id_items = schema["properties"]["segments"]["items"]["properties"]["message_ids"][
+        "items"
+    ]
+    assert message_id_items == {"type": "string", "enum": allowed_ids}
+
+
+def test_segment_conversation_constrains_ik_llama_schema_to_window_ids(conn, monkeypatch):
+    conversation_id, message_ids = insert_conversation(
+        conn,
+        [("user", "hello", 1), ("assistant", "hi", 1)],
+    )
+    captured_enums: list[list[str]] = []
+
+    def fake_http(method, url, *, payload=None, timeout=30):
+        schema = payload["response_format"]["json_schema"]["schema"]
+        captured_enums.append(
+            schema["properties"]["segments"]["items"]["properties"]["message_ids"]["items"][
+                "enum"
+            ]
+        )
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            f'{{"segments":[{{"message_ids":["{message_ids[0]}"],'
+                            '"summary":null,"content_text":"hello","raw":{}}}]}'
+                        )
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr(segmenter, "http_json", fake_http)
+
+    result = segment_conversation(
+        conn,
+        conversation_id,
+        model_version="model-a",
+        client=segmenter.IkLlamaSegmenterClient(),
+    )
+
+    assert result.segments_inserted == 1
+    assert captured_enums == [message_ids]
+
+
 def test_version_bump_cutover_keeps_old_active_until_embedding(conn):
     from engram.embedder import embed_pending_segments
 

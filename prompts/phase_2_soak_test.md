@@ -21,7 +21,7 @@
    - `psql "$ENGRAM_DATABASE_URL" -c '\dt'` works.
 2. `make migrate` (idempotent).
 3. **Pin** `ENGRAM_SEGMENTER_MODEL` to the literal id from `/v1/models` so the per-batch probe is skipped (finding J).
-4. Confirm operational profile from `segmenter.v2.d034.robust`:
+4. Confirm operational profile from `segmenter.v2.d034.enum-ids`:
    `ENGRAM_SEGMENTER_MAX_TOKENS=16384`,
    `ENGRAM_SEGMENTER_RETRY_MAX_TOKENS=32768`,
    `ENGRAM_SEGMENTER_WINDOW_OVERLAP=0`.

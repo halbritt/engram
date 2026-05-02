@@ -111,6 +111,11 @@ Request profile:
 }
 ```
 
+Runtime version defaults:
+
+- `segmenter_prompt_version`: `segmenter.v2.d034.enum-ids`
+- `request_profile_version`: `ik-llama-json-schema.d034.v2`
+
 Only `choices[0].message.content` is parsed. `reasoning_content` is diagnostic
 only. Empty content, Markdown-fenced JSON, invalid JSON, and schema-invalid
 payloads trigger one adaptive retry by default (`ENGRAM_SEGMENTER_RETRIES`, or
@@ -141,6 +146,12 @@ The required response object is:
   ]
 }
 ```
+
+For each conversation/window, the JSON schema constrains
+`message_ids.items.enum` to the exact message UUIDs shown in that window. This
+prevents schema-valid but evidence-invalid outputs such as integer IDs,
+malformed UUIDs, or UUIDs from another conversation. The database trigger still
+validates the final expanded span at insert time.
 
 `content_text` is the text fed to the embedder. Marker-only image/tool lines are
 stripped before insertion and hashing. Null-content messages inside a covered

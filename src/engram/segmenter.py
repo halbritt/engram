@@ -22,9 +22,9 @@ from engram.progress import upsert_progress
 IK_LLAMA_BASE_URL = os.environ.get("ENGRAM_IK_LLAMA_BASE_URL", "http://127.0.0.1:8081")
 SEGMENTER_PROMPT_VERSION = os.environ.get(
     "ENGRAM_SEGMENTER_PROMPT_VERSION",
-    "segmenter.v2.d034.robust",
+    "segmenter.v2.d034.enum-ids",
 )
-SEGMENTER_REQUEST_PROFILE_VERSION = "ik-llama-json-schema.d034.v1"
+SEGMENTER_REQUEST_PROFILE_VERSION = "ik-llama-json-schema.d034.v2"
 DEFAULT_MAX_TOKENS = int(os.environ.get("ENGRAM_SEGMENTER_MAX_TOKENS", "16384"))
 RETRY_MAX_TOKENS = int(os.environ.get("ENGRAM_SEGMENTER_RETRY_MAX_TOKENS", "32768"))
 DEFAULT_RETRIES = int(os.environ.get("ENGRAM_SEGMENTER_RETRIES", "1"))
@@ -177,6 +177,7 @@ class IkLlamaSegmenterClient:
         *,
         model_id: str,
         max_tokens: int,
+        allowed_message_ids: list[str] | None = None,
     ) -> list[SegmentDraft]:
         payload = {
             "model": model_id,
@@ -200,7 +201,7 @@ class IkLlamaSegmenterClient:
                 "json_schema": {
                     "name": "SegmentationResult",
                     "strict": True,
-                    "schema": segmentation_json_schema(),
+                    "schema": segmentation_json_schema(allowed_message_ids),
                 },
             },
         }
@@ -213,7 +214,14 @@ class IkLlamaSegmenterClient:
         return parse_segmentation_response(response)
 
 
-def segmentation_json_schema() -> dict[str, Any]:
+def segmentation_json_schema(
+    allowed_message_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    message_id_items: dict[str, Any] = {"type": "string"}
+    if allowed_message_ids is not None:
+        if not allowed_message_ids:
+            raise SegmentationError("cannot constrain segmenter schema to zero message ids")
+        message_id_items["enum"] = list(dict.fromkeys(allowed_message_ids))
     return {
         "type": "object",
         "additionalProperties": False,
@@ -230,7 +238,7 @@ def segmentation_json_schema() -> dict[str, Any]:
                         "message_ids": {
                             "type": "array",
                             "minItems": 1,
-                            "items": {"type": "string"},
+                            "items": message_id_items,
                         },
                         "summary": {"type": ["string", "null"]},
                         "content_text": {"type": "string", "minLength": 1},
@@ -430,6 +438,7 @@ def segment_conversation(
                 model_id=model_id,
                 max_tokens=max_tokens,
                 retries=retries,
+                allowed_message_ids=[message.id for message in window.messages],
             )
         except SegmenterServiceUnavailable as exc:
             mark_generation_failed(
@@ -816,6 +825,7 @@ def segment_window_with_retries(
     model_id: str,
     max_tokens: int,
     retries: int,
+    allowed_message_ids: list[str] | None = None,
 ) -> tuple[list[SegmentDraft], int]:
     attempt_prompt = prompt
     attempt_max_tokens = max_tokens
@@ -827,10 +837,12 @@ def segment_window_with_retries(
         try:
             with segmenter_request_deadline(SEGMENTER_REQUEST_TIMEOUT_SECONDS):
                 return (
-                    client.segment(
+                    call_segmenter_client(
+                        client,
                         attempt_prompt,
                         model_id=model_id,
                         max_tokens=attempt_max_tokens,
+                        allowed_message_ids=allowed_message_ids,
                     ),
                     attempt,
                 )
@@ -871,6 +883,24 @@ def segment_window_with_retries(
             )
             raise
     raise SegmentationError("segmenter retry loop exhausted unexpectedly")
+
+
+def call_segmenter_client(
+    client: SegmenterClient,
+    prompt: str,
+    *,
+    model_id: str,
+    max_tokens: int,
+    allowed_message_ids: list[str] | None,
+) -> list[SegmentDraft]:
+    if isinstance(client, IkLlamaSegmenterClient):
+        return client.segment(
+            prompt,
+            model_id=model_id,
+            max_tokens=max_tokens,
+            allowed_message_ids=allowed_message_ids,
+        )
+    return client.segment(prompt, model_id=model_id, max_tokens=max_tokens)
 
 
 def attach_attempt_diagnostics(

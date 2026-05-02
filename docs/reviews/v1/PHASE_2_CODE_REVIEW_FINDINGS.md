@@ -794,3 +794,32 @@ supervisor's contract.
    if those parents segment cleanly with more context budget. Their
    `parent_id`s are recorded in `segment_generations.status='failed'` for
    easy slicing.
+
+## Implemented Follow-Up (Codex, 2026-05-02T07:54:56Z)
+
+Finding IX's selected mitigation is schema tightening, not fuzzy matching.
+The Phase 2 branch now constrains `message_ids.items.enum` to the exact message
+UUIDs present in the current conversation/window for the real ik-llama client.
+This moves integer IDs, malformed UUIDs, and hallucinated UUIDs from
+post-decode validation failures into constrained decoding.
+
+Implemented changes:
+
+- `src/engram/segmenter.py` bumps the default `segmenter_prompt_version` to
+  `segmenter.v2.d034.enum-ids` and the request profile to
+  `ik-llama-json-schema.d034.v2`.
+- `segmentation_json_schema()` now accepts an optional per-window
+  `allowed_message_ids` list and emits an enum for `message_ids.items`.
+- `segment_conversation()` passes the current window's message IDs to
+  `IkLlamaSegmenterClient` while keeping test/stub `SegmenterClient`
+  implementations source-compatible.
+- `prompts/phase_2_segments_embeddings.md` and `docs/segmentation.md` now
+  document the enum-constrained provenance contract.
+
+Expected next validation:
+
+1. Drain the current embed backlog with `prompts/phase_2_embed_drain.md`.
+2. Run P-HEALTH.
+3. Re-run the bounded soak under `segmenter.v2.d034.enum-ids`.
+4. Confirm `unknown_message_id` drops below the 1% new-failure threshold,
+   ideally to zero, before attempting the full corpus.
