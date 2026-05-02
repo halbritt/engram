@@ -22,6 +22,23 @@ not become retrieval-visible.
 The broader idea is to make that supervisor a first-class, long-running Engram
 process rather than a set of manually invoked batch commands.
 
+## Why Memory Is Not Quite Pods
+
+The Kubernetes analogy is useful but incomplete. A Pod's actual state only
+changes when the controller or the world acts on it. Engram's actual state
+changes for a third reason: the operator learns something new, a claim from
+last year is now wrong, or two beliefs that were independent yesterday are now
+in tension. Truth-value drifts independently of the system's actions.
+
+This suggests a class of work that has no clean Kubernetes analogue: detecting
+that desired state has shifted under the controller. It may be worth naming
+**observers** as a concept distinct from workers — components whose job is to
+notice that the target moved, not to move the system toward the target.
+
+This section is descriptive, not prescriptive. It is here to mark that the
+design space is not "ops automation with LLMs" but something with its own
+shape.
+
 ## Shape
 
 Run Engram's supervisor as a local service, likely a `systemd` unit on the
@@ -53,6 +70,27 @@ The reconciliation loop should be explicit:
 
 All durable state lives in Postgres. The supervisor must be restartable without
 hidden conversational state.
+
+## What A Controller Unlocks That Batchers Can't
+
+The case for a long-running supervisor is not just convenience over cron. It
+is the ability to make decisions that span stages and react to events in
+windows shorter than a batch interval.
+
+Examples of decisions a batcher cannot make:
+
+- A new conversation has been ingested. It contradicts a high-confidence
+  belief. A context snapshot consuming that belief was served twenty minutes
+  ago. Refresh the snapshot now, not at 3am.
+- The segmenter started failing five minutes ago. Pause embedding work that
+  depends on its output rather than burning GPU on a queue that will be
+  re-derived.
+- A prompt version was bumped at 2pm. The supervisor can begin re-derivation
+  on active-project segments immediately and defer archival re-derivation
+  until idle hours, without an operator scheduling either.
+
+None of these examples is a commitment. They are the shape of the value the
+supervisor exists to capture.
 
 ## Desired State
 
@@ -318,6 +356,15 @@ The supervisor can use these signals to decide what to revisit during idle
 compute windows. It should still express the selected work as explicit,
 versioned, replayable actions.
 
+## A Note On Position
+
+The supervisor sits in an unusual position. Its job is to maintain a model of
+its operator's beliefs while the operator is also editing the system. It is
+partially constitutive of the thing it reconciles. This RFC does not try to
+resolve what that means. It only marks that the design space is not strictly
+operational and that "what should the supervisor be allowed to notice on its
+own" is a real question, not a deployment detail.
+
 ## Implementation Bias
 
 Build the deterministic controller first. Add the LLM only after there are
@@ -346,6 +393,18 @@ After failure triage, the next candidate is shadow-mode scheduling:
 4. Operator review compares usefulness, wasted work, and surprise.
 5. Only after the LLM earns trust does the controller execute approved action
    types from the LLM plan.
+
+### Dry-Run Mode
+
+One primitive worth specifying early: a dry-run mode for the entire reconcile
+loop. The supervisor produces the plan it would execute, including chosen
+worker classes, batch sizes, and reasons, without committing any side effects.
+
+This is cheap to add at design time and dramatically changes how trustworthy
+the system feels later. It is hard to retrofit because workers have to be
+written to support a no-op execution path. If workers are designed around the
+contract `(input_id, version) -> idempotent commit`, dry-run is approximately
+free; if they are not, it becomes a rewrite.
 
 ## Controller Resources
 
@@ -413,6 +472,28 @@ boundaries should be stricter than ordinary CLI commands:
 The supervisor should be able to stop cleanly at any time without corrupting
 the corpus or hiding partially completed work.
 
+## Failure Modes Worth Naming
+
+A useful design exercise is to list bad supervisor behaviors the system should
+either prevent or surface. Examples:
+
+- Re-embedding archival material for a week after a model bump because there
+  is no priority signal saying recent-and-active matters more.
+- Refreshing a snapshot, serving the snapshot, then learning that an
+  underlying belief was contradicted, with no signal back to the consumer.
+- Quietly running claim extraction at a slightly different prompt version than
+  what the desired-state target specifies, because a worker was already in
+  flight when the target moved.
+- Holding a worker lease past process death and blocking reconciliation until
+  manual intervention.
+- Rerunning a failed segment indefinitely because the failure is deterministic
+  but the retry policy is not aware of that.
+- Recommending dream work that touches the same rows the operator is actively
+  reviewing.
+
+These are not predictions. They are the failures whose absence would be
+evidence the design is working.
+
 ## Possible V1.5 / V2 Path
 
 Near-term, keep using CLI batchers until the core pipeline and smoke gate are
@@ -452,6 +533,37 @@ Before promoting this RFC into decisions, test:
 - Can every LLM-mediated supervisor action be replayed or audited from stored
   inputs, prompt version, model version, and chosen action?
 
+## What Would Change My Mind
+
+Disproof probes are for promoting this RFC into decisions. This section is
+softer: signals from ongoing use of Engram that would shift confidence in the
+direction this RFC points.
+
+Signals that would strengthen the case:
+
+- Manually triggering reconciliation more than twice a week becomes routine.
+- Snapshot staleness becomes a recurring source of bad answers.
+- Operator time spent classifying Phase 2/3 failures exceeds the time spent
+  acting on them.
+- Cross-stage decisions (refresh because of contradiction, pause because of
+  upstream failure) start showing up as written notes the operator has to
+  carry between sessions.
+- A model or prompt bump produces visibly worse retrieval quality before
+  re-derivation finishes, with no clean way to prioritize.
+
+Signals that would weaken the case:
+
+- Cron plus existing CLI batchers covers the workload without operator pain.
+- The eval gate catches regressions cleanly enough that failure triage is not
+  a bottleneck.
+- Snapshot freshness is a non-issue in practice.
+- The deterministic priority signals (active project, recency, salience) turn
+  out to be sufficient on their own, with no qualitative judgment left over
+  for an LLM to add.
+
+These signals do not require rewriting the RFC. They are checkpoints against
+lived experience.
+
 ## Open Questions
 
 - What is the smallest table set needed for a controller loop?
@@ -463,3 +575,21 @@ Before promoting this RFC into decisions, test:
 - What is the operator UX for pause, drain, force requeue, and version bump?
 - Which actions are automatic, which require approval, and which only produce a
   recommendation?
+
+## Adjacent Ideas
+
+Ideas adjacent to this RFC, recorded so they are not lost:
+
+- Explicit split between observers (detect drift in desired state) and workers
+  (move actual state toward desired state).
+- Event-sourced `memory_events` as the canonical substrate, with derived
+  tables as projections.
+- A query interface on the supervisor itself, so the operator can ask "why
+  haven't you done X?" and get a reasoned answer from controller state.
+- Failure-triage outputs becoming first-class beliefs — the system having
+  meta-memory about its own operational history.
+- Per-bounded-context supervisors with a thin top-level coordinator, rather
+  than one supervisor per host.
+- A "supervisor diary" surface: a human-readable log of decisions, not just
+  attempt rows.
+- Treating eval failures as memory events the controller can react to.
