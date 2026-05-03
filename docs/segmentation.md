@@ -186,10 +186,11 @@ segments record:
 - `window_index`
 - window-boundary/truncation details in `raw_payload`
 
-The current migration and code use `whole` / `windowed`. The Phase 2 handoff
-prompt has a follow-up P-FRAG schema extension to `topic`,
-`windowed_overlap`, and `message_group`; update this doc when that migration
-lands so operator-facing values continue to match the deployed schema.
+The current migration, code, and Phase 2 handoff use `whole` / `windowed`.
+P-FRAG's possible schema extension to `topic`, `windowed_overlap`, and
+`message_group` is deferred by D039; update this doc only if that later
+migration lands so operator-facing values continue to match the deployed
+schema.
 
 Progress is stored in `consolidation_progress` with scopes such as
 `conversation:<uuid>` and positions like:

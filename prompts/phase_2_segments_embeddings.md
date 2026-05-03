@@ -86,21 +86,21 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      If either smoke fails or times out, stop the soak and record the
      backend state/log pointers; do not burn the full run budget on a
      poisoned inference process.
-   - **P-FRAG fragmentation probe** (runs *after* the step-2 schema
-     migration lands; depends on `min_token_count`, `merge_rule`, and
-     the extended `window_strategy` enum). On a local-only
-     ~50-conversation slice spanning all three raw sources, compare:
+   - **P-FRAG fragmentation probe** (follow-up benchmark, not the
+     Phase 2 deployed schema; see D039). The current Phase 2 migration
+     and runtime contract remain `window_strategy IN ('whole',
+     'windowed')`, with no `min_token_count` or `merge_rule` columns.
+     Do not make the canonical handoff depend on the P-FRAG schema
+     extension until that follow-up migration/harness lands. On a
+     local-only ~50-conversation slice spanning all three raw sources,
+     compare:
      (A) D034-profile LLM topic segmentation (the current plan),
      (B) fixed N-token windows with overlap, and
      (C) message-group segmentation (one segment per contiguous
-     role-turn group up to N tokens). Each strategy writes into its
-     own `segment_generations` row per parent (three generations per
-     parent in the slice), all remaining `status != 'active'` for the
-     duration of the probe; the active-sequence uniqueness index is
-     partial on `is_active = true`, so probe rows do not collide.
-     Activation of the winning generation, if any, follows the standard
-     cutover (D031); losing strategies' generations remain inactive for
-     audit, not deleted. Record per strategy: median / p10 / p90 segment
+     role-turn group up to N tokens). Implement this as a separate
+     benchmark harness or later additive migration, not by silently
+     changing `migrations/004_segments_embeddings.sql`. Record per
+     strategy: median / p10 / p90 segment
      token length; sub-floor segment count at 50 / 100 / 200 tokens;
      and, on a 10-prompt micro gold set, claim precision and claim
      recall when extraction runs over each strategy's segments under
@@ -162,20 +162,16 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      embedder, with role/source markers as the segmenter chose.
    - `summary_text TEXT NULL` — optional segmenter-emitted topic
      label or short summary, if it produces one.
-   - `window_strategy TEXT NOT NULL DEFAULT 'topic' CHECK
-     (window_strategy IN ('topic', 'windowed_overlap',
-     'message_group'))` — D029 extended by P-FRAG. Record the
-     segmentation strategy on every row so re-derivation is
-     non-destructive across strategies.
+   - `window_strategy TEXT NOT NULL DEFAULT 'whole' CHECK
+     (window_strategy IN ('whole', 'windowed'))` — D029. `whole`
+     means the parent fit inside a single segmenter request; `windowed`
+     means the parent was split into bounded windows.
    - `window_index INT NULL` — set for windowed segmentation.
-   - `min_token_count INT NOT NULL DEFAULT 0` — the segment floor
-     used by the producing strategy. Sub-floor candidates must be
-     merged with predecessor or successor before insert.
-   - `merge_rule TEXT NULL CHECK (merge_rule IS NULL OR merge_rule IN
-     ('merge_predecessor', 'merge_successor',
-     'single_parent_exception'))` — recorded only for sub-floor
-     candidates. NULL means the segment is at or above
-     `min_token_count` and required no merge.
+   - P-FRAG's proposed `topic` / `windowed_overlap` /
+     `message_group` enum, `min_token_count`, and `merge_rule` are
+     deferred by D039. Add them only in a later explicit migration if
+     the fragmentation benchmark justifies changing the deployed
+     segmentation strategy contract.
    - `segmenter_prompt_version TEXT NOT NULL`
    - `segmenter_model_version TEXT NOT NULL`
    - `is_active BOOLEAN NOT NULL DEFAULT false` — retrieval-visible
@@ -254,33 +250,15 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
    - Long-conversation handling (D029): probe the effective local
      model context window, reserve margin for instructions/output, and
      set a per-parent budget. If a parent exceeds budget, segment
-     overlapping message windows, record
-     `window_strategy='windowed_overlap'`
+     bounded message windows, record `window_strategy='windowed'`
      and `window_index`, and merge adjacent boundary segments only
      when the overlap shows they cover the same topic. Window-boundary
      uncertainty belongs in `raw_payload`.
-   - Topic segmentation rows use `window_strategy='topic'`. Baseline
-     P-FRAG rows use `window_strategy='windowed_overlap'` for fixed
-     N-token windows with overlap and `window_strategy='message_group'`
-     for contiguous role-turn grouping up to N tokens. Non-LLM baseline
-     strategies pin canonical literal values in the version columns so
-     re-runs and supersession semantics work uniformly:
-     - `windowed_overlap`: `segmenter_model_version='fixed_window_v1'`,
-       `segmenter_prompt_version='n/a'`.
-     - `message_group`: `segmenter_model_version='message_group_v1'`,
-       `segmenter_prompt_version='n/a'`.
-     Bump the `_v1` suffix only when the algorithm's semantics change
-     (window size, overlap fraction, role-grouping rule, etc.). The LLM
-     topic strategy continues to record the probed model id and the
-     actual prompt version. Distinct version pairs keep each strategy's
-     segments in their own `segment_generations` rows so comparisons
-     never overwrite each other.
-   - Enforce a configured segment token floor (`min_token_count`) before
-     insert. A segment candidate below the floor must merge with its
-     predecessor or successor according to a deterministic recorded
-     rule (`merge_rule`), except when the entire parent is shorter than
-     the floor; record that as `single_parent_exception`. The floor is
-     selected from the P-FRAG results, not guessed upfront.
+   - P-FRAG baselines are deferred from this implementation handoff.
+     When that follow-up lands, baseline strategies should pin
+     canonical literal values in version metadata and write to separate
+     generations or scratch benchmark tables so comparisons never
+     overwrite production topic/windowed rows.
    - Message canonicalization: include NULL-content messages in
      `message_ids` when they are within the segment span, but exclude
      non-text placeholders from the embedded text unless they carry
@@ -430,27 +408,16 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      the new generation becomes active and the old generation becomes
      inactive.
    - Long conversation over the configured budget uses windowed
-     segmentation, records `window_strategy='windowed_overlap'`, and
-     resumes from a window checkpoint after interruption.
-   - P-FRAG compares `topic`, `windowed_overlap`, and `message_group`
-     segmentation on the ~50-conversation / all-source slice and records
-     median / p10 / p90 token lengths, sub-floor counts at 50 / 100 /
-     200 tokens, and micro gold-set claim precision/recall for all
-     three strategies under an identical extraction prompt.
-   - `segments.window_strategy` is one of `topic`,
-     `windowed_overlap`, or `message_group`, and re-derivation under a
-     different strategy creates new rows/generations rather than
-     overwriting old rows.
-   - `segments.min_token_count` is recorded and enforced. Sub-floor
-     candidates merge with predecessor or successor according to a
-     recorded `merge_rule`; no active segment below the floor is allowed
-     except the recorded `single_parent_exception`.
-   - Decision rule: if (A) D034-profile LLM topic segmentation fails to
-     beat (B) fixed N-token windows with overlap on claim precision and
-     produces more sub-floor fragments, falsify D005 ("topic
-     segmentation is the embedding unit") and revisit before Phase 2
-     ships. Otherwise pin the floor at the value where (A) stops
-     over-fragmenting.
+     segmentation, records `window_strategy='windowed'`, and resumes
+     from a window checkpoint after interruption.
+   - `segments.window_strategy` is one of `whole` or `windowed`.
+   - P-FRAG is tracked as a deferred follow-up by D039. Its future
+     decision rule remains: if (A) D034-profile LLM topic segmentation
+     fails to beat (B) fixed N-token windows with overlap on claim
+     precision and produces more sub-floor fragments, falsify D005
+     ("topic segmentation is the embedding unit") and revisit before
+     replacing the deployed Phase 2 segmentation contract. Otherwise
+     pin the floor at the value where (A) stops over-fragmenting.
    - Active sequence uniqueness rejects two active segments with the
      same `(parent, sequence_index)`.
    - `message_ids` validation rejects unknown message ids,
