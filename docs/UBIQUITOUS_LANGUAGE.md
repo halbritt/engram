@@ -122,9 +122,14 @@ Per D027, segment-level `superseded_by` was removed in favor of `is_active` prec
 
 - **Gold set** — the subject-authored prompts that define what good looks like. The *actual* specification per the eval-as-oracle principle. Authoring cannot be delegated.
 - **Smoke tier** — eval over ~100 conversations. Catches catastrophic pipeline failures.
-- **Tier-2 / Gold-set validation** — eval over a 1,000–2,000 stratified, target-closed corpus slice. The true eval gate.
-- **Full corpus** — 3,400+ conversations. Runs only after tier-2 passes without regression.
-- **Eval gate** — the policy that full-corpus consolidation cannot proceed until tier-2 passes. Not relaxed under schedule pressure.
+- **Gold-set validation** — eval authored after claims and beliefs exist, using
+  reviewable claims/beliefs plus raw evidence as the memory aid. Expected facts
+  come from the human's real-life answer, not from extracted outputs.
+- **Full AI-conversation Phase 2 run** — segmentation + embedding over all
+  ChatGPT, Claude, and Gemini conversations. Excludes Obsidian notes, live
+  captures, and other non-conversation sources.
+- **Eval gate** — the policy that unbounded re-extraction / re-consolidation
+  cycles should be driven by gold-set results once claims and beliefs exist.
 - **`context_feedback`** — table; one row per `useful` / `wrong` / `stale` / `irrelevant` annotation on a `context_for` output. References the belief and segment ids that produced the offending section. Treated as evolving ground truth.
 - **Adversarial sweep** / **falsification sweep** — periodic multi-model pass over high-confidence beliefs ("what raw evidence would contradict this — find it"). Substitutes for engagement signal in a single-user system.
 - **Preflight probe** — a small, phase-specific empirical check run *before* implementation, to validate assumptions the prompt is making (e.g., effective context window, structured-output behavior, cache conflict semantics). Cheaper than eval; runs once per phase. Distinct from a disproof probe.

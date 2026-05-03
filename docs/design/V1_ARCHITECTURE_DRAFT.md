@@ -3,7 +3,8 @@
 Status: revised after D026 pre-Phase-2 synthesis (2026-04-30)
 
 This is the working target for the first useful version. It will be revised
-again after the Phase 2 smoke path and later adversarial rounds.
+again after the Phase 2 full AI-conversation segmentation run and later
+adversarial rounds.
 
 ## V1 Goal
 
@@ -256,7 +257,11 @@ Constraint: Engram makes no outbound network requests under any code path. Fresh
 
 ## First Eval Harness
 
-Land 25–50 hand-written prompts covering:
+Land 25–50 hand-written prompts after claims and beliefs exist. Segmentation
+alone does not provide the right substrate for the gold set; the authoring pass
+needs extracted claims/beliefs plus their raw evidence links so the expected
+facts can be written against real-life truth, not against segment boundaries.
+Prompts cover:
 
 ```text
 current project continuation
@@ -281,10 +286,14 @@ token waste
 human usefulness rating
 ```
 
-The eval uses a Tiered Structure:
-1.  **Smoke Test:** Runs on ~100 conversations to catch catastrophic pipeline failures.
-2.  **Gold-Set Validation:** Runs on a 1,000-2,000 stratified, target-closed subset containing the actual entities, projects, and years referenced by the gold prompts. This is the true eval gate.
-3.  **Full Corpus:** (3,400+ conversations) Proceeds only after Tier 2 passes without regressions.
+The eval uses a tiered structure:
+1.  **Phase smoke tests:** Run on small slices to catch catastrophic pipeline failures.
+2.  **Full AI-conversation Phase 2 run:** Segment and embed all ChatGPT,
+    Claude, and Gemini conversations. This is intentionally not gated by the
+    gold set because claims and beliefs do not exist yet.
+3.  **Gold-set validation:** Runs after claim extraction and belief
+    consolidation create reviewable claims/beliefs. It drives prompt/model
+    re-extraction cycles through the non-destructive pipeline.
 
 ## Build Order
 
@@ -292,10 +301,14 @@ The eval uses a Tiered Structure:
 0.  Configure network-disconnected runtime (OS namespace/sandbox) for the engram-reading process. MCP server binds to 127.0.0.1.
 1.  PostgreSQL + pgvector baseline.
 2.  ChatGPT ingestion into immutable raw conversations / messages.
+2.1 Claude and Gemini ingestion into the same immutable raw conversation /
+    message schema.
 2.5 Run D026 pre-Phase-2 adversarial review and synthesize accepted deltas before
     segmentation + embeddings implementation.
-3.  Topic segmentation (LLM-driven, bounded/windowed, batch, non-destructive).
-4.  Segment embeddings.
+3.  Topic segmentation over the full AI-conversation corpus: ChatGPT, Claude,
+    and Gemini conversations only. Obsidian notes and live captures are
+    excluded from this run.
+4.  Segment embeddings for conversation-derived segments.
 5.  Claim extraction with evidence_ids.
 6.  Belief consolidation: bitemporal validity + stability_class + status.
 7.  Entity canonicalization + entity_edges.
@@ -307,9 +320,10 @@ The eval uses a Tiered Structure:
 13. MCP exposure of context_for (warm read, cold compile fallback).
 14. context_feedback capture (useful / wrong / stale / irrelevant).
 15. Smoke eval harness on ~100 conversations.
-16. Gold-set eval harness on target-closed stratified corpus slice (~1000-2000 conversations).
-17. Gate: full-corpus consolidation only after tier-2 pass.
-18. Add Obsidian as a source after evals stabilize.
+16. Gold-set eval harness against claims/beliefs and their raw evidence.
+17. Non-destructive re-extraction / re-consolidation cycles until gold-set
+    pass-rate stabilizes.
+18. Add Obsidian/capture segmentation after AI-conversation evals stabilize.
 ```
 
 Stages 3–8 are non-destructive: segment generations activate only after
@@ -324,7 +338,7 @@ for long conversations (D029).
 Compared to the prior draft, the synthesis added:
 
 - Belief review queue as a v1 build-order item (steps 9, 13).
-- Explicit eval gate before full-corpus consolidation (step 15).
+- Explicit eval gate before unbounded re-extraction cycles.
 - `stability_class` and `prompt_version` / `model_version` as required
   belief fields.
 - Vector index policy (segments + beliefs only; no raw turns).

@@ -59,7 +59,7 @@ Closes Phase 1 cleanup and brings the other two AI-conversation sources
 (Claude and Gemini) under the same schema before LLM-driven phases
 start. Per D024, having all three sources in raw before Phase 2
 (segmentation + embeddings) gives the segmenter a uniform corpus and
-Step 5 (gold-set authoring) richer evidence to ground against.
+later claim / belief extraction richer evidence to ground against.
 
 - **Cleanup** — completed in commit `58a5a4a`. See
   [prompts/phase_1_5_cleanup.md](prompts/phase_1_5_cleanup.md).
@@ -93,8 +93,8 @@ Acceptance criteria:
 - Material deltas land in DECISION_LOG / V1_ARCHITECTURE_DRAFT / BUILD_PHASES.
 - If no deltas are accepted, the decision to proceed to Phase 2 is recorded.
 
-This is narrower than the later post-smoke adversarial round over V1 +
-principles + gold set + smoke inventory.
+This is narrower than the later adversarial round over V1 + principles + the
+gold set + the claim/belief inventory.
 
 D026 synthesis landed in
 [docs/reviews/v1/PRE_PHASE_2_ADVERSARIAL_SYNTHESIS_2026_04_30.md](docs/reviews/v1/PRE_PHASE_2_ADVERSARIAL_SYNTHESIS_2026_04_30.md)
@@ -102,8 +102,12 @@ and produced D027-D033.
 
 ## Phase 2 — Segmentation + embeddings
 
-**Scope:** topic segmentation of raw messages/notes; embedding generation
-for segments; pgvector index over segments.
+**Scope:** topic segmentation of the full AI-conversation corpus — ChatGPT,
+Claude, and Gemini conversation history — plus embedding generation for those
+conversation-derived segments and a pgvector index over them. This Phase 2 run
+excludes Obsidian notes, live captures, and other non-conversation sources.
+The schema keeps note/capture columns so the same pipeline shape can be reused
+later, but they are not populated here.
 
 **LLM dependencies:** local segmenter via ik-llama (Qwen3.6:35B-MOE per
 project setup); local embedder via Ollama (`nomic-embed-text` or
@@ -132,16 +136,17 @@ directly (with copied vector) per D027 / D033.
   (no recomputation).
 - Multiple `embedding_model_version` rows can coexist on one segment.
 - Privacy reclassification captures deactivate affected segments and
-  `segment_embeddings` rows for the affected parent conversation /
-  note / capture before retrieval can serve stale low-tier vectors
-  (D028 / D032).
+  `segment_embeddings` rows for the affected parent conversation before
+  retrieval can serve stale low-tier vectors (D028 / D032). Note/capture
+  invalidation follows the same parent-scoped rule when those source types
+  enter the segmentation path later.
 - Embedding storage supports multiple dimensions via per-model /
   per-dimension indexes rather than hardcoding one vector dimension
   into the schema (D033).
 - `consolidation_progress` checkpoints make segmentation and embedding
   resumable per stage.
 
-**Leaves for next phase:** segments embedded and retrievable by
+**Leaves for next phase:** AI-conversation segments embedded and retrievable by
 similarity; ready for claim extraction.
 
 See [prompts/phase_2_segments_embeddings.md](prompts/phase_2_segments_embeddings.md)
@@ -247,9 +252,10 @@ The integrated test. On a ~200 random-conversation subset:
 - Build resumes after interruption (per `consolidation_progress`
   checkpoints across all phases).
 
-Pass/fail is schema-level, not retrieval-quality-level. Gold-set
-authoring (Step 5) starts after smoke passes; the smoke pipeline's
-output is the corpus inventory the gold set uses as a memory aid.
+Pass/fail is schema-level, not retrieval-quality-level. Gold-set authoring does
+not start from segmentation alone. It starts only after claim extraction and
+belief consolidation have produced reviewable claims/beliefs; those outputs,
+plus their raw evidence, are the substrate the gold set uses as a memory aid.
 
 ## Cross-cutting concerns
 
@@ -281,4 +287,4 @@ them as acceptance criteria.
 - [HUMAN_REQUIREMENTS.md](HUMAN_REQUIREMENTS.md) — load-bearing
   principles.
 - [ROADMAP.md](ROADMAP.md) — Step 4 sits in the broader sequence;
-  Step 5 (gold set) follows once smoke passes.
+  Step 5 (gold set) follows once claims and beliefs exist.

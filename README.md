@@ -24,8 +24,12 @@ No cloud. No data leaving the machine.
 
 Phase 1 / 1.5 is complete: raw ingestion exists for ChatGPT, Claude, and Gemini.
 
-The D026 pre-Phase-2 adversarial review is synthesized. Current work is Phase
-2 preflight probes, then topic segmentation + embeddings. See
+The D026 pre-Phase-2 adversarial review is synthesized. Current work is the
+full Phase 2 segmentation + embedding run over the AI-conversation corpus:
+ChatGPT, Claude, and Gemini conversation history only. Obsidian notes, live
+captures, and other source types are excluded from this run even though the
+schema reserves room for them. Gold-set authoring waits until claims and
+beliefs exist; segmentation output alone is not the gold-set substrate. See
 [BUILD_PHASES.md](BUILD_PHASES.md),
 [docs/reviews/v1/PRE_PHASE_2_ADVERSARIAL_SYNTHESIS_2026_04_30.md](docs/reviews/v1/PRE_PHASE_2_ADVERSARIAL_SYNTHESIS_2026_04_30.md),
 and [prompts/phase_2_segments_embeddings.md](prompts/phase_2_segments_embeddings.md).
@@ -57,6 +61,7 @@ Read these before older brainstorm/review material:
 | [BUILD_PHASES.md](BUILD_PHASES.md) | Current V1 build phases and acceptance criteria. |
 | [ROADMAP.md](ROADMAP.md) | Owner sequencing and current step. |
 | [SPEC.md](SPEC.md) | Current V1 architecture summary. |
+| [docs/README.md](docs/README.md) | Map of design docs, RFCs, reviews, and historical material. |
 | [docs/design/V1_ARCHITECTURE_DRAFT.md](docs/design/V1_ARCHITECTURE_DRAFT.md) | Working target architecture for V1. |
 | [docs/design/ARCHITECTURE_EVOLUTION_DELTA_2026_04_29.md](docs/design/ARCHITECTURE_EVOLUTION_DELTA_2026_04_29.md) | Hot state / context snapshot delta. |
 | [docs/schema/README.md](docs/schema/README.md) | Generated schema diagram and table reference. |

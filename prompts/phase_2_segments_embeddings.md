@@ -43,9 +43,12 @@
 
 ## Scope
 
-Phase 2 only — topic segmentation of raw messages/notes and embedding
-of the resulting segments. No claim extraction, no beliefs, no entity
-canonicalization, no `context_for`. Each is a separate phase prompt.
+Phase 2 only — topic segmentation of the full AI-conversation corpus
+(ChatGPT, Claude, and Gemini conversation history) and embedding of the
+resulting conversation-derived segments. No Obsidian notes, live captures, or
+other non-conversation source types are segmented in this run. No claim
+extraction, no beliefs, no entity canonicalization, no `context_for`. Each is a
+separate phase prompt.
 
 ## Build
 
@@ -102,7 +105,7 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      changing `migrations/004_segments_embeddings.sql`. Record per
      strategy: median / p10 / p90 segment
      token length; sub-floor segment count at 50 / 100 / 200 tokens;
-     and, on a 10-prompt micro gold set, claim precision and claim
+     and, on a 10-prompt segmentation probe set, claim precision and claim
      recall when extraction runs over each strategy's segments under
      an identical extraction prompt. External RAG benchmarks (FloTorch
      2026, Vectara NAACL 2025) report semantic chunking degrading
@@ -325,8 +328,7 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      (`segmenter_prompt_version`, `segmenter_model_version`), plus
      parents explicitly queued by invalidation.
      Resumable per `consolidation_progress` (`stage='segmenter'`,
-     `scope` = `conversation:<uuid>`, `note:<uuid>`,
-     `capture:<uuid>`, or batch identifier; `position` records the
+     `scope` = `conversation:<uuid>` or batch identifier; `position` records the
      last completed parent and, for windowed parents, window index).
    - Re-segmentation under a new prompt/model version inserts new
      rows under a new `segment_generations` row. New rows remain
@@ -337,8 +339,9 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      tier for any raw row covered by an active segment must deactivate
      that segment and its `segment_embeddings` rows, set
      `invalidated_at` / `invalidation_reason`, then queue only the
-     affected parent conversation, note, or capture for
-     re-segmentation and re-embedding (D032).
+     affected parent conversation for re-segmentation and re-embedding
+     (D032). Note/capture invalidation uses the same rule when those
+     paths are enabled later.
    - P-FRAG is a slice probe, not a corpus path. It can land in
      parallel with D034 deterministic-profile implementation; the
      comparison is what the output gets judged against, not a competing
@@ -442,8 +445,9 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      parent row and constituent raw rows.
    - Reclassification capture against any constituent raw row
      deactivates affected segments and `segment_embeddings` rows and
-     queues only the affected parent conversation/note/capture for
-     reprocessing (D028 / D032).
+     queues only the affected parent conversation for reprocessing
+     (D028 / D032). Note/capture reprocessing is deferred with those
+     source paths.
 
 8. **Docs** (`docs/segmentation.md`, sibling to
    `docs/ingestion.md`): how to run, what the segmenter prompt and
@@ -478,7 +482,8 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
 ## Acceptance criteria
 
 - `make migrate` brings up the new tables from a Phase-1.5 schema.
-- `make segment` segments all conversations end-to-end. Re-running
+- `make segment` segments all ChatGPT, Claude, and Gemini conversations
+  end-to-end. Re-running
   with the same versions is a no-op (zero new rows).
 - The segmenter ik-llama client uses the D034 request profile and
   fails clearly on non-JSON, fenced JSON, `reasoning_content`-only, or

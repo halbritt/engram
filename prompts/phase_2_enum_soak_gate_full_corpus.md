@@ -1,9 +1,9 @@
-# Phase 2 Enum-ID Soak Gate To Full Corpus
+# Phase 2 Enum-ID Soak Gate To Full AI-Conversation Corpus
 
 > Hand this to a coding agent on branch `phase-2-segments-embeddings`.
 > Goal: finish the current bounded Phase 2 soak, evaluate explicit gates, and
-> only proceed to the full corpus if the gates pass. Do not change code. Record
-> findings, commit, and push.
+> only proceed to the full AI-conversation corpus if the gates pass. Do not
+> change code. Record findings, commit, and push.
 
 ## Context
 
@@ -115,9 +115,9 @@ Also compute/record from the run log:
 - VRAM start/end/mid if available
 - post-run P-HEALTH result
 
-## 3. Gate Before Full Corpus
+## 3. Gate Before Full AI-Conversation Corpus
 
-Proceed to full corpus only if all PASS gates hold.
+Proceed to the full AI-conversation corpus only if all PASS gates hold.
 
 PASS gates:
 
@@ -136,7 +136,7 @@ PASS gates:
 - Runaway failures are rare and classifiable from `attempt_max_tokens` /
   `decode_counts`.
 - Pending segmented backlog is either zero or can be drained with embed-only
-  before full corpus.
+  before full AI-conversation corpus.
 
 FAIL / STOP gates:
 
@@ -149,13 +149,13 @@ FAIL / STOP gates:
 - Non-runaway failure rate > 2%.
 - New unclassified failure class > 1%.
 
-If any FAIL gate trips, do not run full corpus. Record findings, commit, push,
-and stop.
+If any FAIL gate trips, do not run the full AI-conversation corpus. Record
+findings, commit, push, and stop.
 
 ## 4. Drain Embeddings If Needed
 
 If soak passes but leaves pending `segmented` / `embedding` generations, run
-embed-only before full corpus.
+embed-only before full AI-conversation corpus.
 
 Use `prompts/phase_2_embed_drain.md`.
 
@@ -181,7 +181,10 @@ ts=$(date -u +%Y%m%dT%H%M%SZ)
 Repeat until pending generations are drained as far as `engram embed` can drain
 them.
 
-## 5. If Gates Pass, Run Full Corpus
+## 5. If Gates Pass, Run Full AI-Conversation Corpus
+
+This run covers ChatGPT, Claude, and Gemini conversations only. It excludes
+Obsidian notes, live captures, and any other non-conversation source types.
 
 Keep OpenClaw stopped during the run. Stop the watchdog if the current soak
 protocol does so.
@@ -221,7 +224,7 @@ nvidia-smi -l 30
 journalctl --user -u ik-llama-server.service -f
 ```
 
-Stop full corpus if:
+Stop full AI-conversation corpus if:
 
 - backend wedges
 - CUDA/cuBLAS error appears

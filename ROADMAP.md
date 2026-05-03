@@ -6,12 +6,13 @@
 
 ## Right now
 
-**Step 4B: Build pipeline + smoke pre-pass.** Run the Phase 2 preflight probes,
-then implement V1 build order through the smoke gate (~200 random
-conversations) per D016. See V1_ARCHITECTURE_DRAFT and
+**Step 4B: Full Phase 2 AI-conversation segmentation run.** Segment and embed
+the entire AI-conversation corpus: ChatGPT, Gemini, and Claude conversation
+history. This explicitly excludes Obsidian notes, live captures, and any other
+non-conversation source. See V1_ARCHITECTURE_DRAFT and
 [prompts/phase_2_segments_embeddings.md](prompts/phase_2_segments_embeddings.md)
-for build steps. Done when smoke passes and the corpus inventory is browsable —
-that inventory is what Step 5 needs.
+for the operational path. Done when the conversation-derived segments are
+embedded, active, resumability-clean, and browsable.
 
 ## Already done
 
@@ -23,15 +24,25 @@ that inventory is what Step 5 needs.
 
 ## Up next, in order
 
-**Step 5: Author the gold set.** 25–50 entries via GOLD_SET_TEMPLATE. *Trap to watch:* `expected_facts` come from my real-life answer, not from what the smoke pipeline extracted. Reference evidence by content, not by id. Done after a 24-hour-gap re-read.
+**Step 4C: Claim extraction + belief consolidation.** Run Phase 3 over the
+active Phase 2 segments. Done when claims and reviewable candidate/accepted
+beliefs exist with evidence back to raw messages.
 
-**Step 6: Adversarial round** on V1 + principles + gold set + smoke inventory.
-This is the post-smoke round and does not replace the narrower D026
+**Step 5: Author the gold set.** 25–50 entries via GOLD_SET_TEMPLATE, after
+claims and beliefs exist. *Trap to watch:* `expected_facts` come from my
+real-life answer, not from what extraction produced. Reference evidence by
+content, not by id. Done after a 24-hour-gap re-read.
+
+**Step 6: Adversarial round** on V1 + principles + gold set + claim/belief
+inventory.
+This is the post-claims/beliefs round and does not replace the narrower D026
 pre-Phase-2 round.
 
 **Step 7: Synthesize.** Update DECISION_LOG and V1_ARCHITECTURE_DRAFT as needed.
 
-**Step 8: Full V1-corpus consolidation.** Runs unblocked. Multi-week local compute.
+**Step 8: Full V1-corpus stabilization.** Re-run non-destructive extraction /
+consolidation cycles as needed after synthesis. Multi-week local compute is
+acceptable, but it is not a prerequisite for authoring the first gold set.
 
 **Step 9: Gold set against consolidated V1 corpus.** Drives prompt/model re-extraction cycles via the non-destructive pipeline. Done when pass-rate stabilizes.
 
