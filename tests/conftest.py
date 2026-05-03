@@ -20,6 +20,10 @@ def conn():
             """
             DROP TABLE IF EXISTS
                 schema_migrations,
+                segment_embeddings,
+                embedding_cache,
+                segments,
+                segment_generations,
                 captures,
                 notes,
                 messages,
@@ -30,9 +34,16 @@ def conn():
             """
         )
         admin.execute("DROP FUNCTION IF EXISTS prevent_raw_evidence_mutation() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS prevent_segment_mutation() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS prevent_embedding_cache_mutation() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS prevent_segment_embedding_mutation() CASCADE")
+        admin.execute(
+            "DROP FUNCTION IF EXISTS validate_conversation_segment_message_ids() CASCADE"
+        )
         admin.execute("DROP TYPE IF EXISTS source_kind CASCADE")
         admin.execute("DROP TYPE IF EXISTS capture_type CASCADE")
         admin.execute("DROP TYPE IF EXISTS consolidation_status CASCADE")
     with psycopg.connect(TEST_DATABASE_URL) as connection:
         migrate(connection)
+        connection.autocommit = True
         yield connection

@@ -4,8 +4,10 @@ TEST_DATABASE_URL ?= postgresql:///engram_test
 DOCKER_DATABASE_URL ?= postgresql://engram:engram@127.0.0.1:54329/engram
 DOCKER_TEST_DATABASE_URL ?= postgresql://engram:engram@127.0.0.1:54329/engram_test
 EXPORT_PATH := $(if $(filter command line,$(origin PATH)),$(PATH),)
+SEGMENTER_MODEL ?=
+SEGMENTER_MODEL_ENV := $(if $(SEGMENTER_MODEL),ENGRAM_SEGMENTER_MODEL="$(SEGMENTER_MODEL)",)
 
-.PHONY: install db-up db-down wait-db migrate migrate-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker test test-db test-docker test-db-docker schema-docs
+.PHONY: install db-up db-down wait-db migrate migrate-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker segment segment-docker segment-isolated pipeline-isolated embed embed-docker pipeline pipeline-docker test test-db test-docker test-db-docker schema-docs
 
 install: .venv/.installed
 
@@ -56,6 +58,40 @@ ingest-gemini: install
 ingest-gemini-docker: install wait-db
 	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make ingest-gemini-docker PATH=/path/to/google-takeout"; exit 2; fi
 	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli ingest-gemini "$(EXPORT_PATH)"
+
+segment: install
+	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli segment
+
+segment-docker: install wait-db
+	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli segment
+
+embed: install
+	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli embed
+
+embed-docker: install wait-db
+	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli embed
+
+pipeline: install
+	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli pipeline
+
+pipeline-docker: install wait-db
+	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli pipeline
+
+# segment-isolated and pipeline-isolated stop openclaw-gateway and ik-llama-watchdog.timer
+# for the duration of the run, then restore them. The watchdog calls /health, which blocks
+# while a slot is occupied — under load it false-positives and SIGTERMs ik-llama mid-generation
+# (see docs/reviews/v1/PHASE_2_CODE_REVIEW_FINDINGS.md, Empirical Findings I).
+ENGRAM_QUIESCED_UNITS := openclaw-gateway.service ik-llama-watchdog.timer
+
+segment-isolated: install
+	@trap 'for u in $(ENGRAM_QUIESCED_UNITS); do systemctl --user start $$u 2>/dev/null || true; done' EXIT INT TERM; \
+	for u in $(ENGRAM_QUIESCED_UNITS); do systemctl --user stop $$u 2>/dev/null || true; done; \
+	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli segment
+
+pipeline-isolated: install
+	@trap 'for u in $(ENGRAM_QUIESCED_UNITS); do systemctl --user start $$u 2>/dev/null || true; done' EXIT INT TERM; \
+	for u in $(ENGRAM_QUIESCED_UNITS); do systemctl --user stop $$u 2>/dev/null || true; done; \
+	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli pipeline
 
 test-db:
 	@createdb engram_test 2>/dev/null || true

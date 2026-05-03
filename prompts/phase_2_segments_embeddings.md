@@ -71,6 +71,46 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      model/dimension before writing DDL (D033).
    - Simulate two concurrent cache inserts for identical text and
      verify the intended conflict path (see Embedder below).
+   - **P-HEALTH completion smoke.** Before any long segmentation or
+     soak run, confirm ik-llama health with an actual tiny
+     `POST /v1/chat/completions` using the D034 request profile and a
+     small schema-valid JSON response. Do not rely on `GET /v1/models`
+     or `GET /props` alone: those endpoints can remain healthy while
+     inference is wedged after a CUDA/runtime fault. Record the exact
+     request, elapsed time, response shape, and whether
+     `choices[0].message.content` parses. Then run a 10-conversation
+     local-only preflight (`segment` or `pipeline` with `--limit 10`,
+     pinned `ENGRAM_SEGMENTER_MODEL`, OpenClaw quiesced if it shares
+     the same GPU/endpoint, and the blocking watchdog disabled or
+     replaced). Run the same tiny completion smoke immediately after.
+     If either smoke fails or times out, stop the soak and record the
+     backend state/log pointers; do not burn the full run budget on a
+     poisoned inference process.
+   - **P-FRAG fragmentation probe** (runs *after* the step-2 schema
+     migration lands; depends on `min_token_count`, `merge_rule`, and
+     the extended `window_strategy` enum). On a local-only
+     ~50-conversation slice spanning all three raw sources, compare:
+     (A) D034-profile LLM topic segmentation (the current plan),
+     (B) fixed N-token windows with overlap, and
+     (C) message-group segmentation (one segment per contiguous
+     role-turn group up to N tokens). Each strategy writes into its
+     own `segment_generations` row per parent (three generations per
+     parent in the slice), all remaining `status != 'active'` for the
+     duration of the probe; the active-sequence uniqueness index is
+     partial on `is_active = true`, so probe rows do not collide.
+     Activation of the winning generation, if any, follows the standard
+     cutover (D031); losing strategies' generations remain inactive for
+     audit, not deleted. Record per strategy: median / p10 / p90 segment
+     token length; sub-floor segment count at 50 / 100 / 200 tokens;
+     and, on a 10-prompt micro gold set, claim precision and claim
+     recall when extraction runs over each strategy's segments under
+     an identical extraction prompt. External RAG benchmarks (FloTorch
+     2026, Vectara NAACL 2025) report semantic chunking degrading
+     end-to-end QA accuracy via over-fragmentation. Engram's pipeline
+     (segments -> claims -> beliefs -> context_for) does not share that
+     failure shape, but the over-fragmentation risk is real and
+     falsifiable; P-FRAG lets eval adjudicate rather than benchmark
+     transfer.
 
 2. **Schema migration** (`migrations/004_segments_embeddings.sql`).
    Derived/control schema additions plus one raw-schema backfill:
@@ -122,9 +162,20 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      embedder, with role/source markers as the segmenter chose.
    - `summary_text TEXT NULL` — optional segmenter-emitted topic
      label or short summary, if it produces one.
-   - `window_strategy TEXT NOT NULL DEFAULT 'whole' CHECK
-     (window_strategy IN ('whole', 'windowed'))` — D029.
+   - `window_strategy TEXT NOT NULL DEFAULT 'topic' CHECK
+     (window_strategy IN ('topic', 'windowed_overlap',
+     'message_group'))` — D029 extended by P-FRAG. Record the
+     segmentation strategy on every row so re-derivation is
+     non-destructive across strategies.
    - `window_index INT NULL` — set for windowed segmentation.
+   - `min_token_count INT NOT NULL DEFAULT 0` — the segment floor
+     used by the producing strategy. Sub-floor candidates must be
+     merged with predecessor or successor before insert.
+   - `merge_rule TEXT NULL CHECK (merge_rule IS NULL OR merge_rule IN
+     ('merge_predecessor', 'merge_successor',
+     'single_parent_exception'))` — recorded only for sub-floor
+     candidates. NULL means the segment is at or above
+     `min_token_count` and required no merge.
    - `segmenter_prompt_version TEXT NOT NULL`
    - `segmenter_model_version TEXT NOT NULL`
    - `is_active BOOLEAN NOT NULL DEFAULT false` — retrieval-visible
@@ -203,10 +254,33 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
    - Long-conversation handling (D029): probe the effective local
      model context window, reserve margin for instructions/output, and
      set a per-parent budget. If a parent exceeds budget, segment
-     overlapping message windows, record `window_strategy='windowed'`
+     overlapping message windows, record
+     `window_strategy='windowed_overlap'`
      and `window_index`, and merge adjacent boundary segments only
      when the overlap shows they cover the same topic. Window-boundary
      uncertainty belongs in `raw_payload`.
+   - Topic segmentation rows use `window_strategy='topic'`. Baseline
+     P-FRAG rows use `window_strategy='windowed_overlap'` for fixed
+     N-token windows with overlap and `window_strategy='message_group'`
+     for contiguous role-turn grouping up to N tokens. Non-LLM baseline
+     strategies pin canonical literal values in the version columns so
+     re-runs and supersession semantics work uniformly:
+     - `windowed_overlap`: `segmenter_model_version='fixed_window_v1'`,
+       `segmenter_prompt_version='n/a'`.
+     - `message_group`: `segmenter_model_version='message_group_v1'`,
+       `segmenter_prompt_version='n/a'`.
+     Bump the `_v1` suffix only when the algorithm's semantics change
+     (window size, overlap fraction, role-grouping rule, etc.). The LLM
+     topic strategy continues to record the probed model id and the
+     actual prompt version. Distinct version pairs keep each strategy's
+     segments in their own `segment_generations` rows so comparisons
+     never overwrite each other.
+   - Enforce a configured segment token floor (`min_token_count`) before
+     insert. A segment candidate below the floor must merge with its
+     predecessor or successor according to a deterministic recorded
+     rule (`merge_rule`), except when the entire parent is shorter than
+     the floor; record that as `single_parent_exception`. The floor is
+     selected from the P-FRAG results, not guessed upfront.
    - Message canonicalization: include NULL-content messages in
      `message_ids` when they are within the segment span, but exclude
      non-text placeholders from the embedded text unless they carry
@@ -222,8 +296,9 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      hardcode that path without checking the running service. Set
      `stream=false`, `temperature=0`, `top_p=1`, and
      `chat_template_kwargs={"enable_thinking": false}`. Set bounded
-     `max_tokens` from configuration; the starting default is 4096 per
-     parent/window unless the largest-conversation probe justifies a
+     `max_tokens` from configuration; the current robust starting
+     default is 16384 per parent/window with one truncation-oriented
+     retry capped at 32768, unless the preflight evidence justifies a
      different cap. Parse only `choices[0].message.content`; treat
      `reasoning_content` as
      diagnostic output, never as the segment payload. Record the exact
@@ -251,12 +326,21 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      The schema must require `segments`, `message_ids`, `content_text`,
      and `raw`; allow `summary` to be `null`; set
      `additionalProperties=false` at the response and segment levels;
-     and allow `raw` to carry model-specific diagnostic fields. Reject
-     empty `segments` unless the whole parent/window is explicitly
-     recorded as skipped in generation/progress metadata. Do not accept
-     Markdown fences or explanatory text as the normal path. Invalid JSON
-     or schema violations fail the parent/window and are recorded in
-     `consolidation_progress.last_error`.
+     constrain `message_ids.items` to an enum of the exact message UUIDs
+     present in the current parent/window; and allow `raw` to carry
+     model-specific diagnostic fields. Reject empty `segments` unless
+     the whole parent/window is explicitly recorded as skipped in
+     generation/progress metadata. Do not accept Markdown fences or
+     explanatory text as the normal path. Invalid JSON, schema
+     violations, or evidence-invalid message ids fail the parent/window
+     and are recorded in `consolidation_progress.last_error`.
+   - Failed segment generations must persist enough diagnostics in
+     `segment_generations.raw_payload` to classify failures after an
+     unattended run: `failure_kind`, `last_error`, attempt count,
+     per-attempt `max_tokens`, and per-attempt decoded-token counts
+     when the local endpoint exposes them. This is required to
+     distinguish insufficient output budget from runaway generation and
+     backend wedges without guessing from wall-clock time.
    - `segment_pending(conn, batch_size, model_version) ->
      BatchResult`. Drives segmentation across all conversations
      with no active or pending generation under the current
@@ -277,6 +361,13 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      `invalidated_at` / `invalidation_reason`, then queue only the
      affected parent conversation, note, or capture for
      re-segmentation and re-embedding (D032).
+   - P-FRAG is a slice probe, not a corpus path. It can land in
+     parallel with D034 deterministic-profile implementation; the
+     comparison is what the output gets judged against, not a competing
+     production pipeline. The message-group baseline is intentionally
+     cheap insurance for model portability because it requires no LLM
+     call and can serve as a fallback when the segmenter model is
+     unavailable.
 
 4. **Embedder** (`src/engram/embedder.py`).
    - `embed_text(text, model_version) -> EmbeddingResult` — hashes
@@ -339,8 +430,27 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
      the new generation becomes active and the old generation becomes
      inactive.
    - Long conversation over the configured budget uses windowed
-     segmentation, records `window_strategy='windowed'`, and resumes
-     from a window checkpoint after interruption.
+     segmentation, records `window_strategy='windowed_overlap'`, and
+     resumes from a window checkpoint after interruption.
+   - P-FRAG compares `topic`, `windowed_overlap`, and `message_group`
+     segmentation on the ~50-conversation / all-source slice and records
+     median / p10 / p90 token lengths, sub-floor counts at 50 / 100 /
+     200 tokens, and micro gold-set claim precision/recall for all
+     three strategies under an identical extraction prompt.
+   - `segments.window_strategy` is one of `topic`,
+     `windowed_overlap`, or `message_group`, and re-derivation under a
+     different strategy creates new rows/generations rather than
+     overwriting old rows.
+   - `segments.min_token_count` is recorded and enforced. Sub-floor
+     candidates merge with predecessor or successor according to a
+     recorded `merge_rule`; no active segment below the floor is allowed
+     except the recorded `single_parent_exception`.
+   - Decision rule: if (A) D034-profile LLM topic segmentation fails to
+     beat (B) fixed N-token windows with overlap on claim precision and
+     produces more sub-floor fragments, falsify D005 ("topic
+     segmentation is the embedding unit") and revisit before Phase 2
+     ships. Otherwise pin the floor at the value where (A) stops
+     over-fragmenting.
    - Active sequence uniqueness rejects two active segments with the
      same `(parent, sequence_index)`.
    - `message_ids` validation rejects unknown message ids,
@@ -406,6 +516,14 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
 - The segmenter ik-llama client uses the D034 request profile and
   fails clearly on non-JSON, fenced JSON, `reasoning_content`-only, or
   schema-invalid responses.
+- Before long runs, P-HEALTH completion smoke passes before and after a
+  10-conversation preflight; if it fails, the run stops with backend
+  logs recorded rather than continuing into a known-bad inference
+  process.
+- Failed `segment_generations.raw_payload` records `failure_kind`,
+  `last_error`, attempt count, per-attempt `max_tokens`, and decoded
+  counts when available, so truncation/runaway/backend failures can be
+  classified mechanically after a soak.
 - `make embed` embeds all pending-generation segments end-to-end and
   activates completed generations. Re-running with the same model
   version is a no-op.
@@ -438,6 +556,8 @@ canonicalization, no `context_for`. Each is a separate phase prompt.
 - Embedding raw turns or full conversations (D009 — segments only).
 - Embedding beliefs (Phase 3 — beliefs don't exist yet).
 - LLM cross-encoder reranker (F003 — deferred).
+- Full-corpus P-FRAG runs. P-FRAG is a preflight slice probe; do not
+  run all strategies across the full corpus in Phase 2.
 - Auto-re-embed inside `segment`. A standalone segment run may create
   inactive generations, but retrieval visibility requires the
   subsequent `embed` / `pipeline` activation step.
