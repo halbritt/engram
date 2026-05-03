@@ -489,6 +489,102 @@ def test_segmenter_retries_truncation_with_larger_output_budget(conn):
     assert raw_payload["retry_count"] == 1
 
 
+def test_segmenter_adaptively_splits_window_when_retry_hits_context_guard(conn):
+    class SplitOnRetryGuardClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[list[str], int]] = []
+
+        def segment(self, prompt: str, *, model_id: str, max_tokens: int) -> list[SegmentDraft]:
+            message_ids = re.findall(r'<message id="([^"]+)"', prompt)
+            self.calls.append((message_ids, max_tokens))
+            if len(message_ids) > 1 and max_tokens == 100:
+                raise segmenter.SegmenterResponseError(
+                    "segmenter returned invalid JSON: Unterminated string",
+                    response={"usage": {"completion_tokens": max_tokens}},
+                )
+            if len(message_ids) > 1:
+                raise segmenter.SegmenterContextBudgetError(
+                    "segmenter request would reach context shift"
+                )
+            return [
+                SegmentDraft(
+                    message_ids=message_ids,
+                    summary=None,
+                    content_text=f"segment for {message_ids[0]}",
+                    raw={},
+                )
+            ]
+
+    conversation_id, message_ids = insert_conversation(
+        conn,
+        [
+            ("user", "one", 1),
+            ("assistant", "two", 1),
+            ("user", "three", 1),
+            ("assistant", "four", 1),
+        ],
+    )
+    client = SplitOnRetryGuardClient()
+
+    result = segment_conversation(
+        conn,
+        conversation_id,
+        model_version="model-a",
+        client=client,
+        max_tokens=100,
+        retries=1,
+        window_char_budget=10000,
+    )
+
+    assert result.segments_inserted == 4
+    assert [call[1] for call in client.calls[:2]] == [100, 200]
+    assert all(len(call[0]) == 1 for call in client.calls[-4:])
+    rows = conn.execute(
+        """
+        SELECT message_ids::text[], window_strategy, window_index, raw_payload
+        FROM segments
+        ORDER BY sequence_index
+        """
+    ).fetchall()
+    assert [row[0][0] for row in rows] == message_ids
+    assert {row[1] for row in rows} == {"windowed"}
+    assert {row[2] for row in rows} == {0}
+    assert all(row[3]["adaptive_split_depth"] > 0 for row in rows)
+
+
+def test_segmenter_replaces_invalid_utf8_surrogates_before_insert(conn):
+    class SurrogateClient:
+        def __init__(self, message_ids):
+            self.message_ids = message_ids
+
+        def segment(self, prompt: str, *, model_id: str, max_tokens: int) -> list[SegmentDraft]:
+            return [
+                SegmentDraft(
+                    message_ids=self.message_ids,
+                    summary="bad\ud83d",
+                    content_text="text\ud803",
+                    raw={"note": "raw\ud83d"},
+                )
+            ]
+
+    conversation_id, message_ids = insert_conversation(conn, [("user", "hello", 1)])
+
+    result = segment_conversation(
+        conn,
+        conversation_id,
+        model_version="model-a",
+        client=SurrogateClient(message_ids),
+    )
+
+    assert result.segments_inserted == 1
+    row = conn.execute(
+        "SELECT summary_text, content_text, raw_payload FROM segments"
+    ).fetchone()
+    assert row[0] == "bad?"
+    assert row[1] == "text?"
+    assert row[2]["segment"]["invalid_utf8_surrogates_replaced"] is True
+
+
 def test_service_unavailable_fails_parent_and_continues(conn):
     class DownClient:
         def segment(self, prompt: str, *, model_id: str, max_tokens: int) -> list[SegmentDraft]:

@@ -46,6 +46,9 @@ MIN_CONTEXT_SAFE_WINDOW_CHAR_BUDGET = int(
 )
 WINDOW_OVERLAP_MESSAGES = max(0, int(os.environ.get("ENGRAM_SEGMENTER_WINDOW_OVERLAP", "0")))
 MAX_SEGMENTER_ERROR_COUNT = int(os.environ.get("ENGRAM_SEGMENTER_MAX_ERROR_COUNT", "3"))
+ADAPTIVE_SPLIT_MAX_DEPTH = int(
+    os.environ.get("ENGRAM_SEGMENTER_ADAPTIVE_SPLIT_MAX_DEPTH", "8")
+)
 
 _SEGMENTER_MODEL_ID_CACHE: str | None = None
 _SEGMENTER_PROBE_CACHE: SegmenterProbe | None = None
@@ -130,6 +133,14 @@ class SegmentationResult:
     skipped_windows: int
     status: str
     noop: bool = False
+
+
+@dataclass(frozen=True)
+class WindowSegmentation:
+    window: MessageWindow
+    drafts: list[SegmentDraft]
+    retry_count: int
+    adaptive_split_depth: int = 0
 
 
 @dataclass(frozen=True)
@@ -417,12 +428,18 @@ def parse_segmentation_payload(payload: Any) -> list[SegmentDraft]:
         summary = item["summary"]
         if summary is not None and not isinstance(summary, str):
             raise SegmentationError(f"segment {index} has invalid summary")
+        summary, summary_sanitized = sanitize_model_string(summary)
         content_text = item["content_text"]
         if not isinstance(content_text, str) or not content_text.strip():
             raise SegmentationError(f"segment {index} has empty content_text")
+        content_text, content_sanitized = sanitize_model_string(content_text)
         raw = item["raw"]
         if not isinstance(raw, dict):
             raise SegmentationError(f"segment {index} has invalid raw metadata")
+        raw, raw_sanitized = sanitize_model_json(raw)
+        if summary_sanitized or content_sanitized or raw_sanitized:
+            raw = dict(raw)
+            raw["invalid_utf8_surrogates_replaced"] = True
         drafts.append(
             SegmentDraft(
                 message_ids=message_ids,
@@ -432,6 +449,54 @@ def parse_segmentation_payload(payload: Any) -> list[SegmentDraft]:
             )
         )
     return drafts
+
+
+def sanitize_model_string(value: str | None) -> tuple[str | None, bool]:
+    if value is None:
+        return None, False
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return value.encode("utf-8", "replace").decode("utf-8"), True
+    return value, False
+
+
+def sanitize_segment_draft(draft: SegmentDraft) -> SegmentDraft:
+    summary, summary_sanitized = sanitize_model_string(draft.summary)
+    content_text, content_sanitized = sanitize_model_string(draft.content_text)
+    raw, raw_sanitized = sanitize_model_json(draft.raw)
+    if summary_sanitized or content_sanitized or raw_sanitized:
+        raw = dict(raw)
+        raw["invalid_utf8_surrogates_replaced"] = True
+    return SegmentDraft(
+        message_ids=draft.message_ids,
+        summary=summary,
+        content_text=str(content_text),
+        raw=raw,
+    )
+
+
+def sanitize_model_json(value: Any) -> tuple[Any, bool]:
+    if isinstance(value, str):
+        return sanitize_model_string(value)
+    if isinstance(value, list):
+        changed = False
+        items: list[Any] = []
+        for item in value:
+            sanitized, item_changed = sanitize_model_json(item)
+            changed = changed or item_changed
+            items.append(sanitized)
+        return items, changed
+    if isinstance(value, dict):
+        changed = False
+        sanitized_dict: dict[str, Any] = {}
+        for key, item in value.items():
+            sanitized_key, key_changed = sanitize_model_string(str(key))
+            sanitized_item, item_changed = sanitize_model_json(item)
+            changed = changed or key_changed or item_changed
+            sanitized_dict[str(sanitized_key)] = sanitized_item
+        return sanitized_dict, changed
+    return value, False
 
 
 def segment_conversation(
@@ -558,15 +623,14 @@ def segment_conversation(
             )
             continue
 
-        prompt = build_segmenter_prompt(window, window_strategy)
         try:
-            drafts, retry_count = segment_window_with_retries(
+            window_results = segment_window_adaptively(
                 segmenter,
-                prompt,
+                window,
+                window_strategy=window_strategy,
                 model_id=model_id,
                 max_tokens=max_tokens,
                 retries=retries,
-                allowed_message_ids=[message.id for message in window.messages],
             )
         except SegmenterServiceUnavailable as exc:
             mark_generation_failed(
@@ -624,63 +688,78 @@ def segment_conversation(
             )
             raise
 
-        for draft in drafts:
-            expanded_message_ids = expand_message_span(draft.message_ids, sequence_by_id)
-            content_text = canonicalize_embeddable_text(draft.content_text)
-            if not content_text:
-                skipped += 1
-                append_generation_metadata(
+        for window_result in window_results:
+            result_window = window_result.window
+            result_window_strategy = (
+                "windowed"
+                if window_strategy == "windowed" or window_result.adaptive_split_depth > 0
+                else window_strategy
+            )
+            for draft in window_result.drafts:
+                draft = sanitize_segment_draft(draft)
+                expanded_message_ids = expand_message_span(draft.message_ids, sequence_by_id)
+                content_text = canonicalize_embeddable_text(draft.content_text)
+                if not content_text:
+                    skipped += 1
+                    append_generation_metadata(
+                        conn,
+                        generation_id,
+                        {
+                            f"window_{result_window.index}_segment_{next_sequence_index}_skip": {
+                                "reason": "empty_embeddable_text_after_canonicalization",
+                                "message_ids": expanded_message_ids,
+                                "raw": draft.raw,
+                            }
+                        },
+                    )
+                    continue
+                privacy_tier = max(
+                    [int(conversation["privacy_tier"])]
+                    + [
+                        message_by_id[message_id].privacy_tier
+                        for message_id in expanded_message_ids
+                    ]
+                )
+                insert_segment(
                     conn,
-                    generation_id,
-                    {
-                        f"window_{window.index}_segment_{next_sequence_index}_skip": {
-                            "reason": "empty_embeddable_text_after_canonicalization",
-                            "message_ids": expanded_message_ids,
-                            "raw": draft.raw,
-                        }
+                    generation_id=generation_id,
+                    source_id=str(conversation["source_id"]),
+                    source_kind=str(conversation["source_kind"]),
+                    conversation_id=conversation_id,
+                    message_ids=expanded_message_ids,
+                    sequence_index=next_sequence_index,
+                    content_text=content_text,
+                    summary_text=draft.summary,
+                    window_strategy=result_window_strategy,
+                    window_index=(
+                        result_window.index if result_window_strategy == "windowed" else None
+                    ),
+                    prompt_version=prompt_version,
+                    model_version=model_id,
+                    privacy_tier=privacy_tier,
+                    raw_payload={
+                        "segment": draft.raw,
+                        "model_output": {
+                            "message_ids": draft.message_ids,
+                            "summary": draft.summary,
+                            "content_text": draft.content_text,
+                        },
+                        "expanded_message_ids": expanded_message_ids,
+                        "span_expansion_added": [
+                            message_id
+                            for message_id in expanded_message_ids
+                            if message_id not in draft.message_ids
+                        ],
+                        "window_index": result_window.index,
+                        "parent_window_index": window.index,
+                        "retry_count": window_result.retry_count,
+                        "adaptive_split_depth": window_result.adaptive_split_depth,
+                        "truncated_message_ids": result_window.truncated_message_ids,
+                        "request_profile_version": SEGMENTER_REQUEST_PROFILE_VERSION,
                     },
                 )
-                continue
-            privacy_tier = max(
-                [int(conversation["privacy_tier"])]
-                + [message_by_id[message_id].privacy_tier for message_id in expanded_message_ids]
-            )
-            insert_segment(
-                conn,
-                generation_id=generation_id,
-                source_id=str(conversation["source_id"]),
-                source_kind=str(conversation["source_kind"]),
-                conversation_id=conversation_id,
-                message_ids=expanded_message_ids,
-                sequence_index=next_sequence_index,
-                content_text=content_text,
-                summary_text=draft.summary,
-                window_strategy=window_strategy,
-                window_index=window.index if window_strategy == "windowed" else None,
-                prompt_version=prompt_version,
-                model_version=model_id,
-                privacy_tier=privacy_tier,
-                raw_payload={
-                    "segment": draft.raw,
-                    "model_output": {
-                        "message_ids": draft.message_ids,
-                        "summary": draft.summary,
-                        "content_text": draft.content_text,
-                    },
-                    "expanded_message_ids": expanded_message_ids,
-                    "span_expansion_added": [
-                        message_id
-                        for message_id in expanded_message_ids
-                        if message_id not in draft.message_ids
-                    ],
-                    "window_index": window.index,
-                    "retry_count": retry_count,
-                    "truncated_message_ids": window.truncated_message_ids,
-                    "request_profile_version": SEGMENTER_REQUEST_PROFILE_VERSION,
-                },
-            )
-            next_sequence_index += 1
-            inserted += 1
+                next_sequence_index += 1
+                inserted += 1
 
     status = "segmented"
     conn.execute(
@@ -946,6 +1025,103 @@ def mark_parent_segmenting_generations_failed(
     )
 
 
+def segment_window_adaptively(
+    client: SegmenterClient,
+    window: MessageWindow,
+    *,
+    window_strategy: str,
+    model_id: str,
+    max_tokens: int,
+    retries: int,
+    split_depth: int = 0,
+) -> list[WindowSegmentation]:
+    prompt = build_segmenter_prompt(window, window_strategy)
+    try:
+        drafts, retry_count = segment_window_with_retries(
+            client,
+            prompt,
+            model_id=model_id,
+            max_tokens=max_tokens,
+            retries=retries,
+            allowed_message_ids=[message.id for message in window.messages],
+        )
+        return [
+            WindowSegmentation(
+                window=window,
+                drafts=drafts,
+                retry_count=retry_count,
+                adaptive_split_depth=split_depth,
+            )
+        ]
+    except (SegmenterServiceUnavailable, SegmenterRequestTimeout):
+        raise
+    except Exception as exc:
+        if not should_adaptively_split_window(exc, window, split_depth):
+            raise
+        results: list[WindowSegmentation] = []
+        for child in split_message_window(window):
+            results.extend(
+                segment_window_adaptively(
+                    client,
+                    child,
+                    window_strategy="windowed",
+                    model_id=model_id,
+                    max_tokens=max_tokens,
+                    retries=retries,
+                    split_depth=split_depth + 1,
+                )
+            )
+        return results
+
+
+def should_adaptively_split_window(
+    exc: BaseException,
+    window: MessageWindow,
+    split_depth: int,
+) -> bool:
+    if split_depth >= ADAPTIVE_SPLIT_MAX_DEPTH or len(window.messages) <= 1:
+        return False
+    if isinstance(exc, SegmenterContextBudgetError):
+        return True
+    diagnostics = getattr(exc, "segmenter_attempt_diagnostics", None)
+    if isinstance(diagnostics, dict):
+        attempt_errors = diagnostics.get("attempt_errors")
+        if isinstance(attempt_errors, list):
+            if any("context shift" in str(error).lower() for error in attempt_errors):
+                return True
+            if any(is_likely_truncation_text(str(error)) for error in attempt_errors):
+                return True
+    return is_likely_truncation_error(exc)
+
+
+def split_message_window(window: MessageWindow) -> list[MessageWindow]:
+    if len(window.messages) <= 1:
+        return [window]
+    midpoint = max(1, len(window.messages) // 2)
+    left = window.messages[:midpoint]
+    right = window.messages[midpoint:]
+    return [
+        MessageWindow(
+            index=window.index,
+            messages=left,
+            truncated_message_ids=[
+                message_id
+                for message_id in window.truncated_message_ids
+                if any(message.id == message_id for message in left)
+            ],
+        ),
+        MessageWindow(
+            index=window.index,
+            messages=right,
+            truncated_message_ids=[
+                message_id
+                for message_id in window.truncated_message_ids
+                if any(message.id == message_id for message in right)
+            ],
+        ),
+    ]
+
+
 def segment_window_with_retries(
     client: SegmenterClient,
     prompt: str,
@@ -1114,7 +1290,11 @@ def retry_max_tokens(base_max_tokens: int, retry_number: int) -> int:
 
 
 def is_likely_truncation_error(exc: Exception) -> bool:
-    message = str(exc).lower()
+    return is_likely_truncation_text(str(exc))
+
+
+def is_likely_truncation_text(message: str) -> bool:
+    message = message.lower()
     return (
         "unterminated string" in message
         or "truncated" in message
