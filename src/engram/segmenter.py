@@ -23,7 +23,7 @@ from engram.progress import upsert_progress
 IK_LLAMA_BASE_URL = os.environ.get("ENGRAM_IK_LLAMA_BASE_URL", "http://127.0.0.1:8081")
 SEGMENTER_PROMPT_VERSION = os.environ.get(
     "ENGRAM_SEGMENTER_PROMPT_VERSION",
-    "segmenter.v2.d034.enum-ids",
+    "segmenter.v2.d034.enum-ids.tool-placeholders",
 )
 SEGMENTER_REQUEST_PROFILE_VERSION = "ik-llama-json-schema.d034.v2"
 DEFAULT_MAX_TOKENS = int(os.environ.get("ENGRAM_SEGMENTER_MAX_TOKENS", "16384"))
@@ -61,10 +61,13 @@ MARKER_ONLY_RE = re.compile(
     r"^\s*(?:"
     r"\[(?:image_asset_pointer|image|tool_use|tool_result|attachment|audio|video|file|"
     r"input_image|output_image|computer_call|computer_call_output|reasoning)[^\]]*\]"
+    r"|\[tool artifact omitted[^\]]*\]"
     r"|<\|[^>]+\|>"
     r")\s*$",
     re.IGNORECASE,
 )
+FILECITE_RE = re.compile(r"filecite|turn\d+file\d+|Content source:\s*Source\.file")
+URL_RE = re.compile(r"https?://\S+")
 
 
 class SegmentationError(RuntimeError):
@@ -1574,12 +1577,12 @@ def build_windows(
 
 
 def prompt_message_length(message: ConversationMessage) -> int:
-    return len(message.content_text or "") + len(message.id) + len(message.role or "") + 80
+    return len(prompt_content_for_message(message)) + len(message.id) + len(message.role or "") + 80
 
 
 def window_has_embeddable_text(window: MessageWindow) -> bool:
     for message in window.messages:
-        if canonicalize_embeddable_text(message.content_text or ""):
+        if embeddable_content_for_message(message):
             return True
     return False
 
@@ -1597,6 +1600,7 @@ Rules:
 - `message_ids` must be in the original message order.
 - Include null-content message ids when they are inside a covered span.
 - `content_text` is the exact text that will be embedded, so omit image/tool-only placeholders unless they carry semantic content.
+- Tool/file artifact placeholders are provenance markers, not embeddable text; do not copy them into `content_text`.
 - Short or single-topic windows may produce one segment.
 - Put uncertainty about window boundaries or overlap inside `raw`.
 - Return JSON only. No Markdown fences and no explanatory text.
@@ -1611,7 +1615,7 @@ window_index={window.index}
 
 
 def format_message_for_prompt(message: ConversationMessage) -> str:
-    content = message.content_text or "[no text content]"
+    content = prompt_content_for_message(message)
     max_chars = max(4000, DEFAULT_WINDOW_CHAR_BUDGET // 2)
     if len(content) > max_chars:
         content = content[:max_chars] + "\n[message truncated for bounded segmentation prompt]"
@@ -1620,6 +1624,41 @@ def format_message_for_prompt(message: ConversationMessage) -> str:
         f'<message id="{message.id}" sequence="{message.sequence_index}" role="{role}">\n'
         f"{content}\n"
         "</message>"
+    )
+
+
+def prompt_content_for_message(message: ConversationMessage) -> str:
+    content = message.content_text or ""
+    if is_non_embeddable_tool_artifact(message):
+        return tool_artifact_placeholder(message)
+    return content or "[no text content]"
+
+
+def embeddable_content_for_message(message: ConversationMessage) -> str:
+    if is_non_embeddable_tool_artifact(message):
+        return ""
+    return canonicalize_embeddable_text(message.content_text or "")
+
+
+def is_non_embeddable_tool_artifact(message: ConversationMessage) -> bool:
+    role = (message.role or "").lower()
+    if role != "tool":
+        return False
+    return True
+
+
+def tool_artifact_placeholder(message: ConversationMessage) -> str:
+    content = message.content_text or ""
+    markers: list[str] = ["tool"]
+    if FILECITE_RE.search(content):
+        markers.append("filecite")
+    if URL_RE.search(content):
+        markers.append("urls")
+    if "Role Profiles Export" in content:
+        markers.append("role_profile_export")
+    return (
+        "[tool artifact omitted: "
+        f"chars={len(content)}, markers={','.join(dict.fromkeys(markers))}]"
     )
 
 

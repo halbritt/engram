@@ -113,7 +113,7 @@ Request profile:
 
 Runtime version defaults:
 
-- `segmenter_prompt_version`: `segmenter.v2.d034.enum-ids`
+- `segmenter_prompt_version`: `segmenter.v2.d034.enum-ids.tool-placeholders`
 - `request_profile_version`: `ik-llama-json-schema.d034.v2`
 
 Only `choices[0].message.content` is parsed. `reasoning_content` is diagnostic
@@ -165,8 +165,13 @@ malformed UUIDs, or UUIDs from another conversation. The database trigger still
 validates the final expanded span at insert time.
 
 `content_text` is the text fed to the embedder. Marker-only image/tool lines are
-stripped before insertion and hashing. Null-content messages inside a covered
-span remain in `message_ids` for provenance.
+stripped before insertion and hashing. Tool-role message bodies are treated as
+non-embeddable artifacts in Phase 2: the raw table still keeps the exact tool or
+file-extraction payload, but the segmenter prompt sees only a bounded
+placeholder such as `[tool artifact omitted: chars=106276,
+markers=tool,filecite,urls]`. Null-content and omitted-tool messages inside a
+covered span remain in `message_ids` for provenance, but the segmenter is
+instructed not to copy placeholders into `content_text`.
 
 ## Windowing
 

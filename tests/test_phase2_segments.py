@@ -1007,6 +1007,82 @@ def test_marker_only_window_skips_without_empty_segment(conn):
     assert raw_payload["window_0_skip"]["reason"] == "no_embeddable_text"
 
 
+def test_tool_artifact_body_is_placeholder_in_segmenter_prompt(conn):
+    class CapturingClient:
+        def __init__(self, segment_ids):
+            self.segment_ids = segment_ids
+            self.prompts: list[str] = []
+
+        def segment(self, prompt: str, *, model_id: str, max_tokens: int) -> list[SegmentDraft]:
+            self.prompts.append(prompt)
+            return [
+                SegmentDraft(
+                    message_ids=self.segment_ids,
+                    summary=None,
+                    content_text="human request and assistant answer",
+                    raw={},
+                )
+            ]
+
+    conversation_id, message_ids = insert_conversation(
+        conn,
+        [
+            ("user", "please summarize the attached review packet", 1),
+            (
+                "tool",
+                "Make sure to include filecite turn0file15. "
+                + "Role Profiles Export "
+                + ("artifact body " * 5000),
+                1,
+            ),
+            ("assistant", "Here is the useful summary.", 1),
+        ],
+    )
+    client = CapturingClient([message_ids[0], message_ids[2]])
+
+    result = segment_conversation(
+        conn,
+        conversation_id,
+        model_version="model-a",
+        client=client,
+        window_char_budget=10000,
+    )
+
+    assert result.segments_inserted == 1
+    assert len(client.prompts) == 1
+    assert "artifact body" not in client.prompts[0]
+    assert "[tool artifact omitted:" in client.prompts[0]
+    raw_payload = conn.execute("SELECT raw_payload FROM segments").fetchone()[0]
+    assert raw_payload["expanded_message_ids"] == message_ids
+
+
+def test_tool_artifact_only_window_skips_without_segmenter_call(conn):
+    conversation_id, message_ids = insert_conversation(
+        conn,
+        [
+            (
+                "tool",
+                "Make sure to include filecite turn0file15. "
+                + "Role Profiles Export "
+                + ("artifact body " * 5000),
+                1,
+            )
+        ],
+    )
+
+    result = segment_conversation(
+        conn,
+        conversation_id,
+        model_version="model-a",
+        client=ExplodingSegmenter(),
+    )
+
+    assert result.segments_inserted == 0
+    assert result.skipped_windows == 1
+    raw_payload = conn.execute("SELECT raw_payload FROM segment_generations").fetchone()[0]
+    assert raw_payload["window_0_skip"]["message_ids"] == message_ids
+
+
 def test_segment_immutability_allows_only_activation_and_invalidation(conn):
     conversation_id, message_ids = insert_conversation(conn, [("user", "hello", 1)])
     generation_id = insert_generation(conn, conversation_id)
