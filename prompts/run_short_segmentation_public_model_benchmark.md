@@ -54,19 +54,19 @@ Use exactly these three local model files:
 
 ```text
 qwen_35b_a3b_iq4_xs:
-  /home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf
+  ~/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf
 
 qwen_27b_q5_k_m:
-  /home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf
+  ~/models/Qwen3.6-27B-Q5_K_M.gguf
 
 gemma_26b_a4b_q4_k_m:
-  /home/halbritt/models/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-Q4_K_M.gguf
+  ~/models/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-Q4_K_M.gguf
 ```
 
 Use the local patched `ik_llama` binary:
 
 ```text
-/home/halbritt/git/ik_llama.cpp/build/bin/llama-server
+~/git/ik_llama.cpp/build/bin/llama-server
 ```
 
 Use the canonical local endpoint for benchmark calls:
@@ -236,7 +236,7 @@ For each model profile, launch the patched server with a comparable baseline
 configuration. Start from the current Qwen service shape:
 
 ```bash
-/home/halbritt/git/ik_llama.cpp/build/bin/llama-server \
+~/git/ik_llama.cpp/build/bin/llama-server \
   --model "$MODEL_PATH" \
   --host 127.0.0.1 \
   --port 8081 \
