@@ -17,6 +17,12 @@ Start with the root canonical docs when orienting on the current system:
 - [segmentation.md](segmentation.md) — Phase 2 segmentation operations and behavior.
 - [ingestion.md](ingestion.md) — ingestion behavior and source notes.
 
+## Process
+
+- [process/multi-agent-review-loop.md](process/multi-agent-review-loop.md) —
+  where multi-agent feedback goes, how synthesis is applied, and when to use a
+  fresh execution context.
+
 ## Proposals
 
 - [rfcs/README.md](rfcs/README.md) — proposal index. RFCs are not binding until

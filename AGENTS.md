@@ -53,3 +53,10 @@ Database migrations live under `migrations`.
 - Add or update tests for behavior changes.
 - Avoid broad refactors unless needed for the requested change.
 - Do not rewrite generated schema docs by hand; use `make schema-docs`.
+
+## Multi-Agent Review
+
+For substantial artifacts that use one agent to create and another agent to
+review, follow `docs/process/multi-agent-review-loop.md`: feedback lands under
+`docs/reviews/`, the originating agent synthesizes it, accepted deltas update
+the source artifact, and fresh execution contexts are preferred after synthesis.
