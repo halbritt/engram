@@ -48,8 +48,16 @@ inactive and isolate them by benchmark run id.
 ## Synthetic Fixture Set
 
 Create a small set of synthetic parent conversations with deterministic,
-human-authored expected outputs. The target size is 30-50 parents, enough to
-cover edge cases without making every benchmark run expensive.
+human-authored expected outputs. Start at 12-15 parents covering the listed
+fixture families, and grow only when a real failure mode escapes the bench.
+Hand-grading 50 fixtures up front is expensive and the marginal coverage past
+~15 well-chosen fixtures is small.
+
+The fixture set is versioned. `synthetic_parents.jsonl` carries a leading
+header object with `fixture_version` (semver-style: bump minor on additions,
+major when expected outputs for an existing fixture change). Each result file
+records the `fixture_version` it was scored against, so green runs across
+fixture edits are not falsely comparable.
 
 Each fixture should include:
 
@@ -84,6 +92,41 @@ Recommended fixture families:
 
 The expected output should be verifiable by code. Avoid vague judgments such as
 "good topic split." Prefer explicit spans and explicit claims.
+
+## Public Dataset Use
+
+Synthetic fixtures cover edge cases with hand-graded ground truth. They are not
+representative of distribution-shape stress at scale, and they are expensive to
+expand. Two public datasets complement them.
+
+**SuperDialseg** (Jiang et al., EMNLP 2023): ~9,478 dialogues with
+human-annotated topic segmentation boundaries, derived from document-grounded
+dialogue corpora. It is the standard external benchmark for dialogue topic
+segmentation and ships with established evaluation metrics. Use cases:
+
+- Score the segmenter against labeled boundaries at a scale the synthetic set
+  cannot reach.
+- Compare against the literature when assessing whether a candidate model is
+  competitive for the task category, not just for engram-shaped data.
+
+**LMSYS-Chat-1M**: 1M real human-LLM multi-turn conversations across 25 LLMs.
+No segmentation labels. Use cases:
+
+- Operational stress on a distribution closer to engram's actual ChatGPT /
+  Claude / Gemini corpus.
+- Throughput, runaway rate, schema-valid rate, VRAM behavior on realistic
+  prompt distributions, without authoring more synthetic fixtures.
+- Quality metrics that depend on labels (boundary precision/recall, claim
+  precision/recall) cannot use this dataset and must remain on the synthetic
+  set.
+
+LMSYS-Chat-1M's license is non-commercial-research with gated Hugging Face
+access. Engram's research-lab framing is compatible, but the dataset must be
+isolated to local benchmark runs and not redistributed.
+
+Public datasets are optional. The benchmark is functional with the synthetic
+set alone; the public datasets are added when distribution-shape and
+literature-comparable scoring become useful.
 
 ## Candidate Strategies
 
@@ -125,10 +168,22 @@ Report segmentation metrics:
 
 - median, p10, and p90 segment token length,
 - segment count per parent,
-- expected-span precision and recall,
+- expected-span precision and recall (strict boundary match),
+- window-tolerant F1 (W-F1) at boundary tolerance values that match the
+  segmenter's expected granularity (recommend reporting at ±1 and ±2 message
+  positions),
+- P_k (Beeferman et al., 1999) for probability-of-disagreement-at-distance-k,
+- WindowDiff (Pevzner & Hearst, 2002) for boundary-count-aware penalty,
 - boundary over-split count,
 - boundary under-split count,
 - topic re-entry handling on fixtures that return to an earlier topic.
+
+Strict F1 alone is brittle for fuzzy boundaries: a one-message offset on a
+correct topic shift counts as both a false positive and a false negative.
+Window-tolerant F1, P_k, and WindowDiff are the dialogue-segmentation
+literature standards and should be reported alongside strict F1 so a candidate
+that is "close enough" is not penalized identically to one that is structurally
+wrong. Strict F1 stays useful as a hard ceiling on perfectly-aligned output.
 
 Report claim utility metrics by running the same local extraction prompt over
 each strategy's segments:
@@ -142,6 +197,14 @@ each strategy's segments:
 Claim extraction does not need to be production Phase 3. A benchmark-only
 extractor prompt is acceptable if it is fixed across all strategies and its
 version is recorded in the output.
+
+The benchmark-only extractor is a within-run measuring stick, not a Phase 3
+quality predictor. It exists to compare strategies under identical extraction
+conditions in a single benchmark run. Claim precision/recall numbers do not
+project onto the eventual Phase 3 extractor's output, and should not be cited
+as a Phase 3 readiness signal. Each result file should reproduce the
+benchmark-extractor prompt version verbatim so cross-run claim-utility
+comparisons are unambiguous.
 
 ## Decision Rules
 
@@ -165,6 +228,31 @@ deployed segmentation contract.
 If topic segmentation wins, pin the minimum segment floor where it stops
 over-fragmenting and only then consider a follow-up migration for
 `min_token_count`, `merge_rule`, or expanded `window_strategy` values.
+
+## Reproducibility
+
+Each result file must record enough metadata to reproduce the run on the same
+hardware:
+
+- git commit (already in the existing per-result list),
+- model file path **and** SHA256,
+- ik-llama or Ollama endpoint version, build commit, and `/props` snapshot
+  where applicable,
+- request profile name + version,
+- segmenter prompt version,
+- benchmark-extractor prompt version,
+- context window, max tokens, retry max tokens, batch and ubatch sizes,
+- sampling parameters (`temperature=0`, `top_p`, seed if applicable),
+- CUDA toolkit and driver versions,
+- fixture version,
+- public-dataset version/snapshot identifier when used,
+- environment variables that influence behavior (e.g. `ENGRAM_SEGMENTER_*`).
+
+Determinism caveats: ik-llama output can vary slightly across batch sizes and
+across server restarts even at `temperature=0`. The harness should treat
+single-run scores as point estimates, not exact reproductions, and should
+report median across N reruns when a metric is being used to make a
+decision-grade comparison between candidates.
 
 ## Harness Shape
 
@@ -191,6 +279,20 @@ The harness should:
 4. Run the fixed claim extraction prompt over resulting segments.
 5. Emit one machine-readable result file and one human-readable Markdown
    report.
+
+Failure modes the harness must handle without corrupting partial results:
+
+- backend unreachable on startup → abort cleanly before running any strategy,
+  emit a result file with `aborted: true` and the failed precondition;
+- backend becomes unreachable mid-run → record per-strategy partial counts,
+  mark the run incomplete, do not rerun automatically;
+- a strategy times out on a single fixture → record the timeout against that
+  fixture and continue with the next fixture; report aggregate timeout count
+  per strategy;
+- a strategy returns malformed output → score as a provenance-validation
+  failure for that fixture, do not exclude from aggregates;
+- fixture file fails to parse → abort the run before any strategy starts so
+  partial results cannot be misattributed to the wrong fixture set.
 
 Suggested output path:
 
