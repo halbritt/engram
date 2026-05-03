@@ -8,6 +8,9 @@ or write `consolidation_progress` rows.
 
 Migrations are plain SQL files in `migrations/`, applied in filename order by
 `engram migrate`. Applied filenames are recorded in `schema_migrations`.
+See [migrations/README.md](../migrations/README.md) for the filename stability
+policy; once applied, filenames are the source of truth, not numeric prefixes
+alone.
 
 The normal target is the system PostgreSQL cluster. The default connection URLs
 use local socket auth:
