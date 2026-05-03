@@ -99,10 +99,11 @@ Synthetic fixtures cover edge cases with hand-graded ground truth. They are not
 representative of distribution-shape stress at scale, and they are expensive to
 expand. Two public datasets complement them.
 
-**SuperDialseg** (Jiang et al., EMNLP 2023): ~9,478 dialogues with
-human-annotated topic segmentation boundaries, derived from document-grounded
-dialogue corpora. It is the standard external benchmark for dialogue topic
-segmentation and ships with established evaluation metrics. Use cases:
+**SuperDialseg** (Jiang et al., EMNLP 2023): 9,478 dialogues with supervised
+topic-segmentation boundaries derived from document-grounded dialogue corpora,
+plus human verification on the test set. It is a useful external benchmark for
+dialogue topic segmentation and ships with established evaluation metrics. Use
+cases:
 
 - Score the segmenter against labeled boundaries at a scale the synthetic set
   cannot reach.
@@ -120,9 +121,12 @@ No segmentation labels. Use cases:
   precision/recall) cannot use this dataset and must remain on the synthetic
   set.
 
-LMSYS-Chat-1M's license is non-commercial-research with gated Hugging Face
-access. Engram's research-lab framing is compatible, but the dataset must be
-isolated to local benchmark runs and not redistributed.
+LMSYS-Chat-1M is gated on Hugging Face and carries restrictive terms, including
+non-identification, prohibited transfer, and deletion-on-request obligations.
+Its license permits compliant research and commercial development use, but the
+dataset must be isolated to local benchmark runs, not redistributed, and never
+mixed into Engram's production corpus. Download and license acceptance happen
+outside any no-egress Engram corpus-reading runtime.
 
 Public datasets are optional. The benchmark is functional with the synthetic
 set alone; the public datasets are added when distribution-shape and
