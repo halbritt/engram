@@ -18,7 +18,8 @@ from typing import Any, Literal, Protocol
 StrategyKind = Literal["llm", "fixed_window", "message_group"]
 
 STRATEGY_IMPLEMENTATION_VERSION = "segmentation-benchmark-strategy.v1"
-TOKEN_ESTIMATOR_VERSION = "segmentation-benchmark-token-estimator.v1"
+TOKEN_ESTIMATOR_VERSION = "segmentation-benchmark-token-estimator.v2"
+TOKEN_ESTIMATOR_CHARS_PER_TOKEN = 2.5
 
 MARKER_ONLY_RE = re.compile(
     r"^\s*(?:"
@@ -272,7 +273,7 @@ def non_negative_int_config(config: dict[str, Any], key: str, default: int) -> i
 def estimate_text_tokens(text: str | None) -> int:
     if not text:
         return 0
-    return max(1, math.ceil(len(text) / 4))
+    return max(1, math.ceil(len(text) / TOKEN_ESTIMATOR_CHARS_PER_TOKEN))
 
 
 def estimate_message_tokens(message: BenchmarkMessage) -> int:

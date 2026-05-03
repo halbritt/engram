@@ -178,6 +178,9 @@ def load_superdialseg(
         messages: list[BenchmarkMessage] = []
         boundaries: set[int] = set()
         previous_topic: str | None = None
+        has_segmentation_labels = any(
+            usable_boundary_label(row.get("segmentation_label")) for row in raw_turns
+        )
         for sequence_index, row in enumerate(raw_turns):
             utterance = row.get("utterance")
             if utterance is None:
@@ -206,8 +209,13 @@ def load_superdialseg(
                     privacy_tier=1,
                 )
             )
-            if sequence_index > 0 and truthy_boundary_label(row.get("segmentation_label")):
-                boundaries.add(sequence_index)
+            if has_segmentation_labels:
+                if (
+                    truthy_boundary_label(row.get("segmentation_label"))
+                    and sequence_index < len(raw_turns) - 1
+                ):
+                    boundaries.add(sequence_index + 1)
+                continue
             topic = row.get("topic_id")
             topic_str = str(topic) if topic is not None else None
             if sequence_index > 0 and previous_topic is not None and topic_str != previous_topic:
@@ -361,13 +369,19 @@ def validate_dataset_source(
 ) -> None:
     if dataset_name == "superdialseg":
         allowed = (
+            "huggingface:Coldog2333/super_dialseg",
+            "github:Coldog2333/SuperDialseg",
+            "local:superdialseg",
             "Coldog2333/super_dialseg",
             "Coldog2333/SuperDialseg",
-            "local:superdialseg",
         )
     else:
-        allowed = ("lmsys/lmsys-chat-1m", "local:lmsys_chat_1m")
-    if not any(value in dataset_source for value in allowed):
+        allowed = (
+            "huggingface:lmsys/lmsys-chat-1m",
+            "local:lmsys_chat_1m",
+            "lmsys/lmsys-chat-1m",
+        )
+    if dataset_source not in allowed:
         errors.append(
             f"{label}: dataset_source {dataset_source!r} does not match known "
             f"{dataset_name} sources {allowed}"
@@ -403,6 +417,25 @@ def truthy_boundary_label(value: Any) -> bool:
         return value != 0
     if isinstance(value, str):
         return value.strip().casefold() in {"1", "true", "yes", "boundary", "b"}
+    return False
+
+
+def usable_boundary_label(value: Any) -> bool:
+    if isinstance(value, bool):
+        return True
+    if isinstance(value, (int, float)):
+        return value in {0, 1}
+    if isinstance(value, str):
+        return value.strip().casefold() in {
+            "0",
+            "1",
+            "false",
+            "true",
+            "no",
+            "yes",
+            "boundary",
+            "b",
+        }
     return False
 
 

@@ -53,7 +53,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-local-models",
         action="store_true",
         default=False,
-        help="Permit future local-model strategies. This implementation still does not call models.",
+        help=(
+            "Allow future local-model strategies to be selected. In this "
+            "implementation they still raise NotImplementedError before any "
+            "model or network call."
+        ),
     )
 
     score = subparsers.add_parser("score")

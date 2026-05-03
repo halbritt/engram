@@ -11,6 +11,7 @@ from benchmarks.segmentation.fixtures import (
     ExpectedClaim,
     load_fixtures,
 )
+from benchmarks.segmentation.results import relevant_segmenter_environment
 from benchmarks.segmentation.run_benchmark import main as benchmark_main
 from benchmarks.segmentation.scoring import (
     boundary_precision_recall_f1,
@@ -30,6 +31,8 @@ from benchmarks.segmentation.strategies import (
     SegmentProposal,
     StrategyOutput,
     StrategyUnavailable,
+    TOKEN_ESTIMATOR_VERSION,
+    estimate_text_tokens,
 )
 
 
@@ -72,6 +75,80 @@ def test_public_dataset_manifest_and_superdialseg_adapter(tmp_path):
     assert len(dataset.parents) == 2
     assert dataset.parents[0].expected_boundaries == (2,)
     assert dataset.parents[0].messages[0].id != dataset.parents[0].messages[1].id
+
+
+def test_superdialseg_prefers_segmentation_label_after_labeled_turn(tmp_path):
+    sample = tmp_path / "superdialseg_disagreement.synthetic.jsonl"
+    sample.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "record_type": "header",
+                        "synthetic_shape_data": True,
+                        "description": "not copied from SuperDialseg",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "dial_id": "dialog",
+                        "turn_id": 0,
+                        "role": "user",
+                        "utterance": "Topic A starts.",
+                        "topic_id": "A",
+                        "segmentation_label": 0,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "dial_id": "dialog",
+                        "turn_id": 1,
+                        "role": "assistant",
+                        "utterance": "Topic A ends here.",
+                        "topic_id": "A",
+                        "segmentation_label": 1,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "dial_id": "dialog",
+                        "turn_id": 2,
+                        "role": "user",
+                        "utterance": "Topic B starts.",
+                        "topic_id": "B",
+                        "segmentation_label": 0,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "dial_id": "dialog",
+                        "turn_id": 3,
+                        "role": "assistant",
+                        "utterance": "Topic B continues.",
+                        "topic_id": "B",
+                        "segmentation_label": 0,
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    manifest_path = write_manifest(tmp_path, local_path=str(sample))
+
+    dataset = load_public_dataset(manifest_path)
+
+    assert dataset.parents[0].expected_boundaries == (2,)
+
+
+def test_dataset_source_validation_rejects_substring_forks(tmp_path):
+    manifest_path = write_manifest(
+        tmp_path,
+        dataset_source="local:superdialseg-personal-fork",
+    )
+
+    with pytest.raises(BenchmarkValidationError, match="dataset_source"):
+        load_public_dataset_manifest(manifest_path)
 
 
 def test_lmsys_adapter_is_unlabeled_and_gated_license_is_explicit(tmp_path):
@@ -128,6 +205,7 @@ def test_lmsys_adapter_is_unlabeled_and_gated_license_is_explicit(tmp_path):
         dataset.parents,
         {dataset.parents[0].parent_id: output},
     )
+    assert metrics.operational["schema_valid_rate"] == "not_applicable"
     assert metrics.segmentation["strict_boundary"] == "not_applicable"
 
 
@@ -293,9 +371,21 @@ def test_message_groups_keep_user_assistant_pairs_together():
 def test_boundary_metrics_known_case():
     strict = boundary_precision_recall_f1({2}, {3})
     tolerant = window_tolerant_boundary_f1((2,), (3,), tolerance=1)
+    no_boundary_strict = boundary_precision_recall_f1(set(), set())
+    no_boundary_tolerant = window_tolerant_boundary_f1((), (), tolerance=1)
+    over_split = boundary_precision_recall_f1(set(), {2})
+    under_split = boundary_precision_recall_f1({2}, set())
 
     assert strict["f1"] == 0.0
     assert tolerant["f1"] == 1.0
+    assert no_boundary_strict["precision"] == 1.0
+    assert no_boundary_strict["recall"] == 1.0
+    assert no_boundary_strict["f1"] == 1.0
+    assert no_boundary_tolerant["f1"] == 1.0
+    assert over_split["f1"] == 0.0
+    assert over_split["false_positives"] == 1
+    assert under_split["f1"] == 0.0
+    assert under_split["false_negatives"] == 1
     assert pk_score((2,), (3,), 5) == 0.5
     assert windowdiff_score((2,), (3,), 5) == 0.5
 
@@ -353,6 +443,22 @@ def test_claim_normalization_is_nfkc_casefold_whitespace_without_punctuation_str
     assert claim_matches(claim, "RESUME   notes")
 
 
+def test_token_estimator_matches_production_default_and_empty_env_is_explicit(monkeypatch):
+    monkeypatch.delenv("ENGRAM_SEGMENTER_MODEL", raising=False)
+    monkeypatch.delenv("ENGRAM_SEGMENTER_TIMEOUT_SECONDS", raising=False)
+
+    assert TOKEN_ESTIMATOR_VERSION == "segmentation-benchmark-token-estimator.v2"
+    assert estimate_text_tokens("x" * 5) == 2
+    assert relevant_segmenter_environment() == {
+        "_note": "no ENGRAM_SEGMENTER_* env vars set"
+    }
+
+    monkeypatch.setenv("ENGRAM_SEGMENTER_MODEL", "local-model.gguf")
+    assert relevant_segmenter_environment() == {
+        "ENGRAM_SEGMENTER_MODEL": "local-model.gguf"
+    }
+
+
 def test_cli_validate_list_run_and_score(tmp_path, capsys):
     manifest = write_manifest(tmp_path)
 
@@ -378,6 +484,13 @@ def test_cli_validate_list_run_and_score(tmp_path, capsys):
 
     assert benchmark_main(["list-strategies"]) == 0
     assert "fixed_token_windows" in capsys.readouterr().out
+
+    with pytest.raises(SystemExit) as help_exit:
+        benchmark_main(["run", "--help"])
+    assert help_exit.value.code == 0
+    help_output = capsys.readouterr().out
+    assert "NotImplementedError" in help_output
+    assert "before any model or network call" in help_output
 
     output_dir = tmp_path / "results"
     assert benchmark_main(

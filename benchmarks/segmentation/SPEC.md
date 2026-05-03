@@ -59,7 +59,12 @@ Adapters:
 
 - `superdialseg`: consumes JSONL local exports with `dial_id`, ordered
   `utterance`, `role`, `turn_id`, `topic_id`, and/or `segmentation_label`.
-  It emits benchmark parents plus boundary positions between utterances.
+  It emits benchmark parents plus boundary positions between utterances. When
+  any usable `segmentation_label` values are present for a parent, labels are
+  the authoritative boundary source: `segmentation_label=1` means the boundary
+  is after that turn, so the recorded boundary position is
+  `sequence_index + 1`, with no boundary after the final turn. `topic_id`
+  changes are used only when segmentation labels are absent from that parent.
 - `lmsys_chat_1m`: consumes JSONL local exports with `conversation_id` and
   message rows or message arrays. It emits parents with `expected_boundaries`
   set to null.
@@ -139,7 +144,7 @@ benchmark extractor is implemented in this pass.
 ## Strategies
 
 Strategy implementation version: `segmentation-benchmark-strategy.v1`.
-Token estimator version: `segmentation-benchmark-token-estimator.v1`.
+Token estimator version: `segmentation-benchmark-token-estimator.v2`.
 
 - `fixed_token_windows`: groups messages into deterministic estimated-token
   windows. It preserves message order, does not split a single message, records
@@ -153,7 +158,8 @@ Token estimator version: `segmentation-benchmark-token-estimator.v1`.
   model access in this implementation.
 
 The estimator is deliberately local and simple; it does not import production
-segmenter code.
+segmenter code. It uses `ceil(chars / 2.5)`, matching production's default
+`ENGRAM_SEGMENTER_CONTEXT_GUARD_CHARS_PER_TOKEN` calibration.
 
 ## CLI
 
@@ -218,9 +224,9 @@ Result schema version: `segmentation-benchmark-result.v1`.
 - UTC creation timestamp;
 - explicit deterministic-run model fields with null or `not_run` values.
 
-Large local model SHA256 values are not recomputed on every run. Future model
-strategies must use a scratch sidecar manifest keyed by absolute path, mtime,
-and size; stale entries invalidate when mtime or size changes.
+Local model SHA256 capture is deferred until local-model strategies are
+implemented. Planned future policy: write a scratch sidecar manifest under the
+run directory keyed by absolute path, mtime, and size.
 
 Report schema version: `segmentation-benchmark-report.v1`.
 
@@ -241,7 +247,9 @@ Scoring implementation version: `segmentation-benchmark-scoring.v1`.
 
 Operational metrics:
 
-- schema-valid rate;
+- schema-valid rate for LLM JSON/schema outputs. Deterministic constructed
+  strategies report `not_applicable`; provenance-valid rate remains meaningful
+  for every strategy.
 - provenance-valid rate;
 - unknown, cross-parent, and unordered message id counts;
 - empty embeddable segment count;

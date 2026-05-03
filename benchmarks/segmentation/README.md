@@ -23,6 +23,10 @@ harness and referenced through local manifests.
 The committed `superdialseg_shape.synthetic.jsonl` file is hand-authored shape
 data for tests only. It is not copied from SuperDialseg.
 
+For SuperDialseg local exports, `segmentation_label=1` is interpreted as a
+boundary after the labeled turn (`sequence_index + 1`). `topic_id` changes are
+only a fallback when a parent has no usable segmentation labels.
+
 ## CLI
 
 ```bash
@@ -51,8 +55,8 @@ python3 -m benchmarks.segmentation.run_benchmark report \
 ```
 
 `--allow-local-models` is the only model opt-in flag. In this implementation,
-LLM strategies still stop before any model or network call and report that
-local-model execution is not implemented.
+LLM strategies still raise `NotImplementedError` before any model or network
+call.
 
 ## Strategies
 
@@ -84,8 +88,11 @@ Runs write only under the caller's output directory:
 `run.json` records git commit, dataset manifest metadata, strategy config,
 scoring version, token estimator version, relevant `ENGRAM_SEGMENTER_*`
 environment variables, and explicit `not_run` model fields for deterministic
-runs. Claim-utility metrics currently report `not_run` with denominators; no
-benchmark extractor is implemented in this pass.
+runs. Empty environment capture is recorded explicitly with a note.
+Claim-utility metrics currently report `not_run` with denominators; no
+benchmark extractor is implemented in this pass. Deterministic strategies
+report schema validity as `not_applicable` because they do not exercise LLM
+JSON/schema parsing.
 
 `report` reads only the existing result artifacts. It writes strategy
 comparison tables, segment-length tables, backend error counts, and per-parent

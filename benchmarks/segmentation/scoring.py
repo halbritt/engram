@@ -70,6 +70,7 @@ def score_strategy_outputs(
     windowdiff_values: list[float] = []
     oversplit_total = 0
     undersplit_total = 0
+    strategy_kind = first_strategy_kind(outputs_by_parent)
 
     for parent in parents:
         output = outputs_by_parent.get(parent.parent_id)
@@ -135,7 +136,11 @@ def score_strategy_outputs(
     throughput = parent_count / total_duration if total_duration > 0 else None
 
     operational = {
-        "schema_valid_rate": safe_rate(schema_valid_count, parent_count),
+        "schema_valid_rate": (
+            safe_rate(schema_valid_count, parent_count)
+            if strategy_kind == "llm"
+            else "not_applicable"
+        ),
         "provenance_valid_rate": safe_rate(provenance_valid_count, parent_count),
         "unknown_message_id_count": count_failure(provenance_failures, "provenance_unknown_id"),
         "cross_parent_message_id_count": count_failure(
@@ -302,6 +307,15 @@ def boundary_precision_recall_f1(
     true_positives = len(expected & predicted)
     false_positives = len(predicted - expected)
     false_negatives = len(expected - predicted)
+    if not expected and not predicted:
+        return {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "true_positives": true_positives,
+            "false_positives": false_positives,
+            "false_negatives": false_negatives,
+        }
     precision = safe_rate(true_positives, true_positives + false_positives)
     recall = safe_rate(true_positives, true_positives + false_negatives)
     f1 = f1_score(precision, recall)
@@ -321,6 +335,15 @@ def window_tolerant_boundary_f1(
     *,
     tolerance: int,
 ) -> dict[str, float | int]:
+    if not expected and not predicted:
+        return {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "false_negatives": 0,
+        }
     unmatched_expected = list(expected)
     true_positives = 0
     false_positives = 0
@@ -424,6 +447,12 @@ def macro_boundary_scores(scores: list[dict[str, float | int]]) -> dict[str, flo
 
 def count_failure(failures: list[dict[str, Any]], kind: str) -> int:
     return sum(1 for failure in failures if failure.get("kind") == kind)
+
+
+def first_strategy_kind(outputs_by_parent: dict[str, StrategyOutput]) -> str | None:
+    for output in outputs_by_parent.values():
+        return output.strategy_kind
+    return None
 
 
 def safe_rate(numerator: int | float, denominator: int | float) -> float:

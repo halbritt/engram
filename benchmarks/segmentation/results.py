@@ -98,9 +98,9 @@ def write_run_results(
         "benchmark_token_estimator_version": TOKEN_ESTIMATOR_VERSION,
         "environment": relevant_segmenter_environment(),
         "model_sha256_manifest_policy": (
-            "Local model SHA256 values are read from a scratch sidecar manifest "
-            "keyed by absolute path, mtime, and size; stale entries must be "
-            "invalidated before model strategies run."
+            "Local model SHA256 capture is deferred until local-model strategies "
+            "are implemented. Planned policy: write a scratch sidecar manifest "
+            "under the run directory keyed by absolute path, mtime, and size."
         ),
         "parents_path": "parents.jsonl",
         "metrics": {name: metric_bundle_to_dict(bundle) for name, bundle in metrics.items()},
@@ -302,8 +302,11 @@ def git_commit() -> str | None:
 
 
 def relevant_segmenter_environment() -> dict[str, str]:
-    return {
+    captured = {
         key: value
         for key, value in sorted(os.environ.items())
         if key.startswith("ENGRAM_SEGMENTER_")
     }
+    if not captured:
+        return {"_note": "no ENGRAM_SEGMENTER_* env vars set"}
+    return captured
