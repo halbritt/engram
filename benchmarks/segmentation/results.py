@@ -98,9 +98,9 @@ def write_run_results(
         "benchmark_token_estimator_version": TOKEN_ESTIMATOR_VERSION,
         "environment": relevant_segmenter_environment(),
         "model_sha256_manifest_policy": (
-            "Local model SHA256 capture is deferred until local-model strategies "
-            "are implemented. Planned policy: write a scratch sidecar manifest "
-            "under the run directory keyed by absolute path, mtime, and size."
+            "Local model strategies record the absolute model path and file size. "
+            "SHA256 capture is opt-in with --compute-model-sha256 because hashing "
+            "large GGUF files can materially extend a short benchmark run."
         ),
         "parents_path": "parents.jsonl",
         "metrics": {name: metric_bundle_to_dict(bundle) for name, bundle in metrics.items()},
@@ -255,19 +255,22 @@ def strategy_metadata(
     strategy_name: str, outputs_by_parent: dict[str, StrategyOutput]
 ) -> dict[str, Any]:
     first_output = next(iter(outputs_by_parent.values()))
-    return {
-        "name": strategy_name,
-        "kind": first_output.strategy_kind,
-        "config": first_output.metadata,
-        "implementation_version": first_output.metadata.get("implementation_version"),
-        "model": {
+    model_metadata = first_output.metadata.get("model")
+    if not isinstance(model_metadata, dict):
+        model_metadata = {
             "model_id": None,
             "model_path": None,
             "model_sha256": "not_run",
             "model_sha256_sidecar": "not_run",
             "request_profile": "not_run",
             "endpoint": "not_run",
-        },
+        }
+    return {
+        "name": strategy_name,
+        "kind": first_output.strategy_kind,
+        "config": first_output.metadata,
+        "implementation_version": first_output.metadata.get("implementation_version"),
+        "model": model_metadata,
     }
 
 

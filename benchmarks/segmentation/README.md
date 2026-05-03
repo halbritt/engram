@@ -54,9 +54,10 @@ python3 -m benchmarks.segmentation.run_benchmark report \
   --max-parents 25
 ```
 
-`--allow-local-models` is the only model opt-in flag. In this implementation,
-LLM strategies still raise `NotImplementedError` before any model or network
-call.
+`--allow-local-models` is the model execution opt-in flag. Local-model
+strategies refuse to run without it and also refuse non-loopback base URLs.
+They use the benchmark-local D034 JSON-schema request profile against an
+operator-managed local OpenAI-compatible endpoint.
 
 ## Strategies
 
@@ -64,9 +65,12 @@ call.
   configurable `--target-tokens` and `--overlap-messages`.
 - `message_groups`: deterministic contiguous role-turn grouping that keeps
   adjacent user/assistant turns together when possible.
-- `current_qwen_d034`, `qwen_candidate_d034`, `gemma_candidate_d034`: registered
-  future local-model strategies that refuse to run unless explicitly opted in,
-  and still do not call a model in this pass.
+- `qwen_35b_a3b_iq4_xs_d034`,
+  `qwen_27b_q5_k_m_d034`,
+  `gemma_26b_a4b_q4_k_m_d034`: local-model strategies for the public short
+  benchmark. They require `--allow-local-models`, constrain `message_ids` to
+  the current parent in the JSON schema, parse only
+  `choices[0].message.content`, and record request/model metadata.
 
 `StrategyKind` is benchmark-internal. It is not production
 `segments.window_strategy` and does not introduce deferred P-FRAG schema values
@@ -87,8 +91,9 @@ Runs write only under the caller's output directory:
 
 `run.json` records git commit, dataset manifest metadata, strategy config,
 scoring version, token estimator version, relevant `ENGRAM_SEGMENTER_*`
-environment variables, and explicit `not_run` model fields for deterministic
-runs. Empty environment capture is recorded explicitly with a note.
+environment variables, model metadata for local-model strategies, and explicit
+`not_run` model fields for deterministic runs. Empty environment capture is
+recorded explicitly with a note.
 Claim-utility metrics currently report `not_run` with denominators; no
 benchmark extractor is implemented in this pass. Deterministic strategies
 report schema validity as `not_applicable` because they do not exercise LLM

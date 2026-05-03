@@ -27,6 +27,8 @@ from benchmarks.segmentation.strategies import (
     DEFAULT_STRATEGIES,
     BenchmarkMessage,
     BenchmarkParent,
+    LocalModelProfile,
+    LocalModelStrategy,
     RunConfig,
     SegmentProposal,
     StrategyOutput,
@@ -489,8 +491,9 @@ def test_cli_validate_list_run_and_score(tmp_path, capsys):
         benchmark_main(["run", "--help"])
     assert help_exit.value.code == 0
     help_output = capsys.readouterr().out
-    assert "NotImplementedError" in help_output
-    assert "before any model or network call" in help_output
+    assert "--allow-local-models" in help_output
+    assert "Non-local URLs" in help_output
+    assert "are refused" in help_output
 
     output_dir = tmp_path / "results"
     assert benchmark_main(
@@ -542,6 +545,45 @@ def test_cli_validate_list_run_and_score(tmp_path, capsys):
     assert "Showing 1 of 2 parents" in report_text
 
 
+class FakeLocalModelClient:
+    def __init__(self, response: dict):
+        self.response = response
+        self.gets: list[str] = []
+        self.posts: list[dict] = []
+
+    def get_json(self, path: str, *, timeout_seconds: int) -> dict:
+        self.gets.append(path)
+        if path == "/v1/models":
+            return {"data": [{"id": "fake-model"}]}
+        if path == "/props":
+            return {"total_slots": 1, "default_generation_settings": {"n_ctx": 49152}}
+        raise AssertionError(f"unexpected GET {path}")
+
+    def post_json(
+        self,
+        path: str,
+        *,
+        payload: dict,
+        timeout_seconds: int,
+    ) -> dict:
+        self.posts.append({"path": path, "payload": payload, "timeout_seconds": timeout_seconds})
+        return self.response
+
+
+def llm_parent() -> BenchmarkParent:
+    return BenchmarkParent(
+        fixture_id="llm",
+        source_kind="synthetic",
+        parent_id="parent",
+        title=None,
+        privacy_tier=1,
+        messages=(
+            BenchmarkMessage("m1", 0, "user", "Topic A", 1),
+            BenchmarkMessage("m2", 1, "assistant", "Topic B", 1),
+        ),
+    )
+
+
 def test_llm_strategy_refuses_without_local_model_opt_in():
     parent = BenchmarkParent(
         fixture_id="llm",
@@ -551,9 +593,106 @@ def test_llm_strategy_refuses_without_local_model_opt_in():
         privacy_tier=1,
         messages=(BenchmarkMessage("m1", 0, "user", "hello", 1),),
     )
-    strategy = DEFAULT_STRATEGIES["current_qwen_d034"]
+    strategy = DEFAULT_STRATEGIES["qwen_35b_a3b_iq4_xs_d034"]
 
     with pytest.raises(StrategyUnavailable):
         strategy.segment(parent, RunConfig(run_id="test"))
-    with pytest.raises(NotImplementedError):
-        strategy.segment(parent, RunConfig(run_id="test", allow_local_models=True))
+
+
+def test_llm_strategy_refuses_non_loopback_url(tmp_path):
+    client = FakeLocalModelClient({"choices": []})
+    strategy = LocalModelStrategy(
+        LocalModelProfile("test_local_d034", str(tmp_path / "model.gguf")),
+        client=client,
+    )
+
+    with pytest.raises(StrategyUnavailable):
+        strategy.segment(
+            llm_parent(),
+            RunConfig(
+                run_id="test",
+                allow_local_models=True,
+                strategy_config={"local_model_base_url": "http://example.com:8081"},
+            ),
+        )
+    assert client.posts == []
+
+
+def test_llm_strategy_uses_d034_schema_and_parses_segments(tmp_path):
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"tiny fake model")
+    response = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "segments": [
+                                {
+                                    "message_ids": ["m1"],
+                                    "summary": "A",
+                                    "content_text": "Topic A",
+                                    "raw": {"confidence": "low"},
+                                },
+                                {
+                                    "message_ids": ["m2"],
+                                    "summary": None,
+                                    "content_text": "Topic B",
+                                    "raw": {},
+                                },
+                            ]
+                        }
+                    )
+                }
+            }
+        ]
+    }
+    client = FakeLocalModelClient(response)
+    strategy = LocalModelStrategy(
+        LocalModelProfile("test_local_d034", str(model_path)),
+        client=client,
+    )
+
+    output = strategy.segment(
+        llm_parent(),
+        RunConfig(run_id="test", allow_local_models=True),
+    )
+
+    assert output.strategy_kind == "llm"
+    assert [segment.message_ids for segment in output.segments] == [("m1",), ("m2",)]
+    assert output.metadata["model"]["model_path"] == str(model_path)
+    assert output.metadata["model"]["size_bytes"] == len(b"tiny fake model")
+    assert output.metadata["model"]["request_profile"] == "ik-llama-json-schema.d034.benchmark.v1"
+    assert output.metadata["request"]["status"] == "ok"
+    assert output.metadata["request"]["latency_seconds"] >= 0
+    assert client.gets == ["/v1/models", "/props"]
+    payload = client.posts[0]["payload"]
+    assert payload["stream"] is False
+    assert payload["temperature"] == 0
+    assert payload["top_p"] == 1
+    assert payload["chat_template_kwargs"]["enable_thinking"] is False
+    assert payload["response_format"]["type"] == "json_schema"
+    schema = payload["response_format"]["json_schema"]["schema"]
+    enum = schema["properties"]["segments"]["items"]["properties"]["message_ids"][
+        "items"
+    ]["enum"]
+    assert enum == ["m1", "m2"]
+
+
+def test_llm_strategy_records_failed_schema_response(tmp_path):
+    client = FakeLocalModelClient(
+        {"choices": [{"message": {"content": "not json"}}]}
+    )
+    strategy = LocalModelStrategy(
+        LocalModelProfile("test_local_d034", str(tmp_path / "model.gguf")),
+        client=client,
+    )
+
+    output = strategy.segment(
+        llm_parent(),
+        RunConfig(run_id="test", allow_local_models=True),
+    )
+
+    assert output.segments == ()
+    assert output.failures[0]["kind"] == "schema_invalid"
+    assert output.metadata["request"]["status"] == "failed"

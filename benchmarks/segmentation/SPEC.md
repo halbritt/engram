@@ -152,10 +152,11 @@ Token estimator version: `segmentation-benchmark-token-estimator.v2`.
   `content_text` only from embeddable messages.
 - `message_groups`: groups contiguous messages up to the target token budget
   while keeping adjacent user/assistant turns together when possible.
-- `current_qwen_d034`, `qwen_candidate_d034`, `gemma_candidate_d034`: registered
-  local-model strategies. They refuse to run unless `--allow-local-models` is
-  provided, and even then raise `NotImplementedError` before any network or
-  model access in this implementation.
+- `qwen_35b_a3b_iq4_xs_d034`, `qwen_27b_q5_k_m_d034`,
+  `gemma_26b_a4b_q4_k_m_d034`: benchmark-local model strategies. They refuse
+  to run unless `--allow-local-models` is provided, refuse non-loopback base
+  URLs, and call the operator-managed local OpenAI-compatible endpoint with the
+  D034 deterministic JSON-schema request profile.
 
 The estimator is deliberately local and simple; it does not import production
 segmenter code. It uses `ceil(chars / 2.5)`, matching production's default
@@ -222,11 +223,11 @@ Result schema version: `segmentation-benchmark-result.v1`.
 - relevant `ENGRAM_SEGMENTER_*` environment variables;
 - dataset kind/name/snapshot;
 - UTC creation timestamp;
-- explicit deterministic-run model fields with null or `not_run` values.
+- explicit deterministic-run model fields with null or `not_run` values, or
+  local model metadata for local-model strategies.
 
-Local model SHA256 capture is deferred until local-model strategies are
-implemented. Planned future policy: write a scratch sidecar manifest under the
-run directory keyed by absolute path, mtime, and size.
+Local model SHA256 capture is opt-in with `--compute-model-sha256` because the
+GGUF files are large enough that hashing can materially extend a short run.
 
 Report schema version: `segmentation-benchmark-report.v1`.
 

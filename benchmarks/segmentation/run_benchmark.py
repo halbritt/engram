@@ -15,6 +15,9 @@ from benchmarks.segmentation.reporting import write_report_files
 from benchmarks.segmentation.results import score_run_file, write_run_results
 from benchmarks.segmentation.strategies import (
     DEFAULT_STRATEGIES,
+    LOCAL_MODEL_DEFAULT_BASE_URL,
+    LOCAL_MODEL_DEFAULT_MAX_TOKENS,
+    LOCAL_MODEL_DEFAULT_TIMEOUT_SECONDS,
     RunConfig,
     StrategyOutput,
     StrategyUnavailable,
@@ -54,10 +57,33 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help=(
-            "Allow future local-model strategies to be selected. In this "
-            "implementation they still raise NotImplementedError before any "
-            "model or network call."
+            "Allow benchmark-local model strategies to call a loopback "
+            "OpenAI-compatible endpoint. Non-local URLs are refused."
         ),
+    )
+    run.add_argument(
+        "--local-model-base-url",
+        default=LOCAL_MODEL_DEFAULT_BASE_URL,
+        help=(
+            "Loopback OpenAI-compatible base URL for local-model strategies. "
+            f"Default: {LOCAL_MODEL_DEFAULT_BASE_URL}."
+        ),
+    )
+    run.add_argument(
+        "--local-model-timeout-seconds",
+        type=positive_int,
+        default=LOCAL_MODEL_DEFAULT_TIMEOUT_SECONDS,
+    )
+    run.add_argument(
+        "--local-model-max-tokens",
+        type=positive_int,
+        default=LOCAL_MODEL_DEFAULT_MAX_TOKENS,
+    )
+    run.add_argument(
+        "--compute-model-sha256",
+        action="store_true",
+        default=False,
+        help="Compute local model file SHA256 values during local-model runs.",
     )
 
     score = subparsers.add_parser("score")
@@ -176,6 +202,10 @@ def run_command(args: argparse.Namespace) -> int:
                 strategy_config={
                     "target_tokens": args.target_tokens,
                     "overlap_messages": args.overlap_messages,
+                    "local_model_base_url": args.local_model_base_url,
+                    "local_model_timeout_seconds": args.local_model_timeout_seconds,
+                    "local_model_max_tokens": args.local_model_max_tokens,
+                    "compute_model_sha256": args.compute_model_sha256,
                 },
             )
             started = time.perf_counter()
