@@ -1,0 +1,7 @@
+{"record_type":"header","schema_version":"segmentation-public-shape-sample.v1","dataset_name":"superdialseg","synthetic_shape_data":true,"description":"Hand-authored shape sample for tests; not copied from SuperDialseg."}
+{"dial_id":"synthetic_dialog_001","split":"test","turn_id":0,"role":"user","utterance":"Let's plan the workshop agenda around introductions and goals.","topic_id":"agenda","segmentation_label":0}
+{"dial_id":"synthetic_dialog_001","split":"test","turn_id":1,"role":"assistant","utterance":"Start with a short welcome, then collect one goal from each attendee.","topic_id":"agenda","segmentation_label":0}
+{"dial_id":"synthetic_dialog_001","split":"test","turn_id":2,"role":"user","utterance":"Switch to food: order vegetarian lunches and avoid peanuts.","topic_id":"food","segmentation_label":1}
+{"dial_id":"synthetic_dialog_001","split":"test","turn_id":3,"role":"assistant","utterance":"Vegetarian lunches with no peanuts are now part of the plan.","topic_id":"food","segmentation_label":0}
+{"dial_id":"synthetic_dialog_002","split":"test","turn_id":0,"role":"user","utterance":"The reading group should discuss the first chapter only.","topic_id":"reading","segmentation_label":0}
+{"dial_id":"synthetic_dialog_002","split":"test","turn_id":1,"role":"assistant","utterance":"I'll keep the discussion scoped to chapter one.","topic_id":"reading","segmentation_label":0}
