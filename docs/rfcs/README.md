@@ -11,3 +11,4 @@ or a phase prompt.
 | [0003](0003-segmenter-soc.md) | proposal | Segmenter separation of concerns |
 | [0004](0004-segmenter-work-boundary.md) | proposal | Segmenter worker boundary |
 | [0005](0005-supervisor-event-triggers.md) | proposal | Supervisor event triggers and queue prioritization |
+| [0006](0006-segmentation-model-benchmark.md) | proposal | Synthetic segmentation model benchmark |
