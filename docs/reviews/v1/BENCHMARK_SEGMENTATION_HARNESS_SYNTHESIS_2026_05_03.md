@@ -74,8 +74,14 @@ Apply these before implementing the live runner:
 
 ## Decision Log Impact
 
-No `DECISION_LOG.md` update is needed. The review confirms existing decisions
-D005, D034, D037, D038, and D039 rather than changing them.
+Original review impact: no `DECISION_LOG.md` update was needed because the
+review confirmed existing decisions D005, D034, D037, D038, and D039 rather
+than changing them.
+
+Later update: D041 supersedes the skeleton's dataset-order assumption. The
+benchmark now starts with public datasets for portability: SuperDialseg first
+for labeled quality, LMSYS-Chat-1M for optional operational stress, and
+synthetic fixtures as regression traps.
 
 ## Verdict
 

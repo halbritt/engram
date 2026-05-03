@@ -16,6 +16,8 @@ benchmark runner yet.
   useful downstream.
 - Compare current Qwen, candidate Qwen, optional Gemma, fixed token windows,
   and message-group strategies under one local-only harness.
+- Start with public datasets for portability: SuperDialseg for labeled boundary
+  quality and LMSYS-Chat-1M for optional operational stress.
 - Keep P-FRAG benchmark work separate from the deployed Phase 2 schema per
   D039.
 
@@ -26,16 +28,27 @@ benchmark runner yet.
 - Do not replace the Phase 2 runner, prompt, schema, or migrations.
 - Do not call ik-llama, Ollama, Hugging Face, or any external service from this
   skeleton.
-- Do not create a large fixture set before the fixture schema is reviewed.
+- Do not depend on the private Engram corpus for benchmark comparisons.
 - Do not treat benchmark-only claim extraction metrics as Phase 3 readiness
   evidence.
 
 ## Local-Only Constraint
 
 All benchmark execution must preserve Engram's local-first rule: no user data
-leaves the machine unless explicitly requested. Public datasets, if used later,
-are downloaded and license-accepted outside the corpus-reading runtime, stored
-outside production state, and referenced only by local snapshot identifiers.
+leaves the machine unless explicitly requested. Public datasets are acquired
+only through explicit operator action, downloaded and license-accepted outside
+the corpus-reading runtime, stored outside production state, and referenced only
+by local snapshot identifiers.
+
+## Dataset Order
+
+1. SuperDialseg: first quality target with public supervised dialogue-boundary
+   labels.
+2. LMSYS-Chat-1M: optional stress target for realistic human-LLM prompt shape;
+   quality metrics requiring labels do not apply unless labels are separately
+   authored.
+3. Synthetic fixtures: small edge-case and regression layer. They are not the
+   first benchmark substrate.
 
 ## Relationship To Phase 2
 

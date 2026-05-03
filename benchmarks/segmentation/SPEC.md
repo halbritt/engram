@@ -13,13 +13,82 @@ production Phase 2 behavior.
 - Benchmark outputs are inactive artifacts scoped by benchmark run id.
 - Production Phase 2 schema remains authoritative; P-FRAG stays deferred per
   D039.
+- Public datasets are the first benchmark substrate per D041. The private
+  Engram corpus is not a benchmark dependency.
 - Deterministic, structured request contracts from D034 are the default for LLM
   strategies.
 - Context-boundary failures must fail closed per D037.
 
+## Dataset Order
+
+The harness starts with public datasets for portability:
+
+1. **SuperDialseg** is the first quality target. It provides public supervised
+   dialogue-boundary labels, so boundary precision/recall, W-F1, P_k, and
+   WindowDiff can be measured without private data.
+2. **LMSYS-Chat-1M** is an optional operational stress target. It has realistic
+   human-LLM chat shape but no segmentation labels, so it is for throughput,
+   valid-output, runaway, VRAM, and backend error metrics only unless labels are
+   separately authored.
+3. **Synthetic fixtures** are small edge-case and regression tests. They are
+   not the primary starting dataset.
+
+No public dataset rows are committed to this repository. Dataset acquisition
+and license acceptance are explicit operator steps outside any no-egress
+Engram corpus-reading runtime. The harness consumes local snapshots described
+by manifests.
+
+## Public Dataset Snapshot Schema
+
+Each local public dataset snapshot is described by a manifest committed only in
+scratch/output directories, not in the repo:
+
+```json
+{
+  "schema_version": "segmentation-public-dataset-manifest.v1",
+  "dataset_name": "superdialseg",
+  "dataset_source": "huggingface:Coldog2333/super_dialseg",
+  "dataset_version": "snapshot-or-commit-id",
+  "local_path": "/abs/path/to/local/snapshot",
+  "local_path_sha256": "sha256 over manifest-relevant file list",
+  "license_name": "apache-2.0",
+  "license_accepted_at": null,
+  "preprocessing_version": "segmentation-public-preprocess.v1",
+  "created_at": "2026-05-03T00:00:00Z"
+}
+```
+
+Dataset adapters normalize public rows into the same in-memory parent shape the
+strategies consume:
+
+```json
+{
+  "dataset_name": "superdialseg",
+  "dataset_split": "test",
+  "parent_id": "public:superdialseg:<dial_id>",
+  "messages": [
+    {
+      "id": "deterministic-uuid-or-stable-public-id",
+      "sequence_index": 0,
+      "role": "user",
+      "content_text": "utterance",
+      "privacy_tier": 1,
+      "placeholders": []
+    }
+  ],
+  "expected_boundaries": [2, 5, 9],
+  "expected_segments": []
+}
+```
+
+For SuperDialseg, `segmentation_label` / `topic_id` fields are converted into
+boundary positions between utterances. For LMSYS-Chat-1M, `expected_boundaries`
+is null and quality metrics that require labels report `not_applicable`.
+
 ## Fixture Schema
 
-Synthetic parent fixtures live in JSONL. The first line is a header object.
+Synthetic parent fixtures live in JSONL and remain as regression fixtures. The
+first line is a header object.
 
 ```json
 {
@@ -54,6 +123,7 @@ Each later line is a parent fixture:
     {
       "segment_id": "s1",
       "message_ids": ["00000000-0000-4000-8000-000000001001"],
+      "embeddable_message_ids": ["00000000-0000-4000-8000-000000001001"],
       "topic_label": "short label for humans",
       "summary": "Expected topic summary.",
       "expected_claim_ids": ["c1"]
@@ -72,6 +142,9 @@ Rules:
 - Expected segment spans are explicit, not vague topic judgments.
 - Null, image-only, and tool/file artifact messages are represented as
   placeholder messages and may be included in expected spans for provenance.
+- `embeddable_message_ids` is the subset of `message_ids` whose message bodies
+  should contribute to segment `content_text`; placeholder-only tool/null/image
+  messages cite for provenance only.
 - `privacy_tier` on an expected segment is computed as the max of parent and
   covered message tiers when scoring privacy leakage.
 - Fixture version bumps minor for additive fixtures and major when expected
@@ -119,12 +192,13 @@ acceptable for streaming, as long as every result record is self-contained.
 ```json
 {
   "schema_version": "segmentation-benchmark-result.v1",
-  "run_id": "2026-05-03T00-00-00Z.current-qwen.synthetic-v0.1.0",
+  "run_id": "2026-05-03T00-00-00Z.current-qwen.superdialseg.snapshot",
   "created_at": "2026-05-03T00:00:00Z",
-  "fixture_version": "0.1.0",
+  "fixture_version": null,
   "dataset": {
-    "kind": "synthetic",
-    "snapshot": "fixtures/segmentation/0.1.0"
+    "kind": "public",
+    "name": "superdialseg",
+    "snapshot": "huggingface:Coldog2333/super_dialseg:<snapshot>"
   },
   "strategy": {
     "name": "current_qwen_d034",
@@ -174,6 +248,9 @@ for comparable fragment-floor reporting.
 The future CLI should be explicit about scratch-only operation:
 
 ```bash
+python -m benchmarks.segmentation.run_benchmark validate-dataset \
+  --manifest .scratch/benchmarks/datasets/superdialseg/manifest.json
+
 python -m benchmarks.segmentation.run_benchmark validate-fixtures \
   --fixtures benchmarks/segmentation/fixtures/synthetic_parents.example.jsonl \
   --expected-claims benchmarks/segmentation/fixtures/expected_claims.example.jsonl
@@ -181,19 +258,19 @@ python -m benchmarks.segmentation.run_benchmark validate-fixtures \
 python -m benchmarks.segmentation.run_benchmark list-strategies
 
 python -m benchmarks.segmentation.run_benchmark run \
-  --fixtures benchmarks/segmentation/fixtures/synthetic_parents.example.jsonl \
-  --expected-claims benchmarks/segmentation/fixtures/expected_claims.example.jsonl \
-  --strategy current_qwen_d034 \
+  --dataset-manifest .scratch/benchmarks/datasets/superdialseg/manifest.json \
   --strategy fixed_token_windows \
-  --output-dir .scratch/benchmarks/segmentation \
-  --offline
+  --strategy message_groups \
+  --output-dir .scratch/benchmarks/segmentation
 
 python -m benchmarks.segmentation.run_benchmark score \
-  --results .scratch/benchmarks/segmentation/run.jsonl
+  --results .scratch/benchmarks/segmentation/<run_id>/run.json
 ```
 
-`--offline` is the default posture: no downloads, no service discovery, no model
-calls unless a later implementation adds an explicit local strategy enable flag.
+The default posture is local-snapshot only: no downloads, no service discovery,
+and no model calls unless a later implementation adds an explicit local-model
+enable flag. Synthetic fixtures may be included as an optional regression input,
+but the default example run is SuperDialseg-based per D041.
 
 ## Scoring Plan
 
@@ -281,7 +358,7 @@ Every result file must include:
 - sampling params
 - CUDA toolkit and driver versions
 - fixture version
-- public dataset snapshot/version if used
+- public dataset snapshot/version/manifest
 - relevant `ENGRAM_SEGMENTER_*` environment variables
 - benchmark strategy implementation version
 - scoring implementation version
@@ -293,8 +370,9 @@ across server restarts and batch sizes.
 
 ## Public Dataset Handling
 
-Public datasets are optional. The synthetic fixture set is sufficient for the
-initial harness.
+Public datasets are the initial harness target. The synthetic fixture set is
+not sufficient for model/profile portability because it is small and
+hand-shaped.
 
 Rules:
 
@@ -306,9 +384,11 @@ Rules:
   and preprocessing script version.
 - Never redistribute dataset rows or derived examples in committed fixtures.
 - Never mix public dataset rows into Engram's production corpus.
-- SuperDialseg may be used for labeled topic-boundary metrics.
+- SuperDialseg is the first labeled topic-boundary dataset.
 - LMSYS-Chat-1M may be used only for operational stress metrics unless labels
   are separately authored.
+- If a public snapshot is unavailable or its license has not been accepted
+  locally, the runner fails clearly instead of falling back to private data.
 
 ## Open Questions For Review
 
@@ -320,7 +400,6 @@ Rules:
   provenance validity?
 - Should fixed-window baselines use estimated tokens from the current segmenter
   heuristic or a tokenizer-specific estimate?
-- Which public dataset, if any, is worth adding first after synthetic fixtures?
 - Should benchmark artifacts ever use scratch tables, or should the first
   implementation stay purely file/in-memory?
 - What minimum segment floor should trigger a follow-up P-FRAG schema proposal?

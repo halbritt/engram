@@ -7,15 +7,15 @@
 > `feature/benchmark-segmentation-harness-runner`.
 >
 > Goal: turn the `benchmarks/segmentation/` skeleton into a runnable,
-> local-only benchmark harness for fixture validation, deterministic baseline
-> runs, result writing, and scoring. Do not run local model benchmarks as part
-> of this task.
+> local-only, public-first benchmark harness for public dataset snapshot
+> validation, deterministic baseline runs, result writing, and scoring. Do not
+> run local model benchmarks as part of this task.
 
 ## Read First
 
 1. `README.md`
 2. `HUMAN_REQUIREMENTS.md`
-3. `DECISION_LOG.md`, especially D005, D034, D037, D038, and D039.
+3. `DECISION_LOG.md`, especially D005, D034, D037, D038, D039, and D041.
 4. `BUILD_PHASES.md`
 5. `ROADMAP.md`
 6. `SPEC.md`
@@ -36,7 +36,8 @@ refactor Phase 2 runtime code.
 ## Hard Constraints
 
 - No cloud APIs, hosted services, telemetry, or external persistence.
-- Do not download public datasets.
+- Do not auto-download public datasets. The harness consumes explicit local
+  snapshots and fails clearly when a required snapshot is absent.
 - Do not write to the production database.
 - Do not alter production migrations or Phase 2 runtime code.
 - Do not call ik-llama, Ollama, Hugging Face, or any external service during
@@ -49,8 +50,8 @@ refactor Phase 2 runtime code.
 
 ## Required Implementation
 
-Implement the live harness for **offline deterministic benchmark work** and
-leave explicit, safe hooks for future local-model strategies.
+Implement the live harness for **offline deterministic public-dataset benchmark
+work** and leave explicit, safe hooks for future local-model strategies.
 
 ### 1. Apply Review Synthesis Cleanup
 
@@ -71,11 +72,51 @@ Resolve all accepted findings from
 - Add backend error classes:
   `connect_refused`, `read_timeout`, `http_5xx`, `grammar_stack_empty`,
   `cuda_oom`, `backend_wedge_post_smoke`, `unknown`.
+- Apply D041: SuperDialseg is the first quality dataset, LMSYS-Chat-1M is the
+  first optional operational stress dataset, and synthetic fixtures are only
+  edge-case/regression tests.
 
 No `DECISION_LOG.md` update is expected unless you discover a new architecture
 decision.
 
-### 2. Fixture Loading And Validation
+### 2. Public Dataset Manifests And Adapters
+
+Add public dataset support, for example:
+
+```text
+benchmarks/segmentation/datasets.py
+```
+
+It should:
+
+- Load a local public dataset manifest. Do not download data.
+- Validate manifest `schema_version`, `dataset_name`, `dataset_source`,
+  `dataset_version`, `local_path`, license metadata, and preprocessing version.
+- Refuse missing local paths or unaccepted gated-license snapshots with clear
+  errors.
+- Normalize public rows into the same in-memory parent type used by strategies.
+- Support SuperDialseg first:
+  - adapter name: `superdialseg`
+  - source identifiers: Hugging Face `Coldog2333/super_dialseg` and/or local
+    export from the SuperDialseg project repository
+  - input fields: `dial_id`, ordered `utterance`, `role`, `turn_id`,
+    `topic_id`, `segmentation_label` where available
+  - output: parent messages plus labeled boundary positions between utterances
+- Support an LMSYS-Chat-1M manifest and adapter skeleton:
+  - adapter name: `lmsys_chat_1m`
+  - source identifier: Hugging Face `lmsys/lmsys-chat-1m`
+  - no quality labels by default; boundary/claim metrics that require labels
+    must report `not_applicable`
+  - no redistribution of rows, no committed sample rows from the dataset
+- Include a tiny hand-authored public-shaped sample file for tests if needed,
+  clearly marked as synthetic shape data and not copied from the public
+  datasets.
+
+Do not add `datasets`, `huggingface_hub`, `pyarrow`, or `pandas` unless the
+task is explicitly expanded. For this pass, prefer JSON/JSONL/parquet-free
+local exports that can be prepared outside the harness.
+
+### 3. Fixture Loading And Validation
 
 Add a fixture module, for example:
 
@@ -97,7 +138,10 @@ It should:
 
 Do not add `pydantic` or other schema libraries.
 
-### 3. Strategies
+Synthetic fixtures are not the primary benchmark dataset. They are regression
+tests for edge cases public datasets do not isolate well.
+
+### 4. Strategies
 
 Make `benchmarks/segmentation/strategies.py` executable for deterministic
 strategies:
@@ -125,7 +169,7 @@ Add a local benchmark token estimator with an explicit version string. Keep it
 simple and deterministic; do not import production segmenter code just to count
 tokens.
 
-### 4. Result Writing
+### 5. Result Writing
 
 Add result support, for example:
 
@@ -144,24 +188,26 @@ The runner should write scratch artifacts under:
 Result metadata must include:
 
 - git commit
-- fixture version
-- fixture schema version
-- expected-claims schema version
+- dataset manifest/schema version
+- public dataset name/source/snapshot/version
+- fixture version/schema version when synthetic fixtures are included
+- expected-claims schema version when synthetic claims are included
 - strategy name/kind/config/version
 - scoring implementation version
 - benchmark token estimator version
 - relevant `ENGRAM_SEGMENTER_*` environment variables
-- dataset kind/snapshot
+- dataset kind/name/snapshot
 - created_at UTC timestamp
 
 For model fields that are unavailable because local-model strategies were not
 run, write explicit `null` values or `"not_run"` markers rather than omitting
 the keys.
 
-### 5. Scoring
+### 6. Scoring
 
 Implement `benchmarks/segmentation/scoring.py` enough to score deterministic
-baseline outputs against synthetic fixtures:
+baseline outputs against SuperDialseg-style labeled public parents and
+synthetic regression fixtures:
 
 - Provenance validation:
   - unknown message ids
@@ -193,12 +239,17 @@ baseline outputs against synthetic fixtures:
 
 Boundary metrics should operate on boundary positions between message sequence
 indexes. Macro-average by parent where appropriate and report denominators.
+For LMSYS-Chat-1M or any unlabeled public dataset, label-dependent metrics
+must report `not_applicable`, never zero.
 
-### 6. CLI
+### 7. CLI
 
 Make `python3 -m benchmarks.segmentation.run_benchmark` support:
 
 ```bash
+python3 -m benchmarks.segmentation.run_benchmark validate-dataset \
+  --manifest .scratch/benchmarks/datasets/superdialseg/manifest.json
+
 python3 -m benchmarks.segmentation.run_benchmark validate-fixtures \
   --fixtures benchmarks/segmentation/fixtures/synthetic_parents.example.jsonl \
   --expected-claims benchmarks/segmentation/fixtures/expected_claims.example.jsonl
@@ -206,8 +257,7 @@ python3 -m benchmarks.segmentation.run_benchmark validate-fixtures \
 python3 -m benchmarks.segmentation.run_benchmark list-strategies
 
 python3 -m benchmarks.segmentation.run_benchmark run \
-  --fixtures benchmarks/segmentation/fixtures/synthetic_parents.example.jsonl \
-  --expected-claims benchmarks/segmentation/fixtures/expected_claims.example.jsonl \
+  --dataset-manifest .scratch/benchmarks/datasets/superdialseg/manifest.json \
   --strategy fixed_token_windows \
   --strategy message_groups \
   --output-dir .scratch/benchmarks/segmentation
@@ -218,16 +268,20 @@ python3 -m benchmarks.segmentation.run_benchmark score \
 
 The `run` command should:
 
-- Validate fixtures first.
-- Run each requested deterministic strategy over all fixtures.
+- Validate the public dataset manifest first.
+- Run each requested deterministic strategy over the selected public dataset
+  split or bounded slice.
 - Write scratch results.
 - Print the output run path.
-- Exit nonzero on fixture validation errors or unknown strategies.
+- Exit nonzero on dataset/fixture validation errors or unknown strategies.
 - Refuse LLM strategies unless explicitly enabled, and even then do not make
   network calls in this implementation unless the task has been explicitly
   expanded.
 
-### 7. Tests
+It may also accept optional synthetic fixtures in the same run for regression
+coverage, but the default example run should be SuperDialseg-based.
+
+### 8. Tests
 
 Add focused tests, for example:
 
@@ -237,6 +291,9 @@ tests/test_benchmark_segmentation.py
 
 Cover:
 
+- Public dataset manifest validation.
+- SuperDialseg adapter behavior on a tiny hand-authored public-shaped sample.
+- LMSYS adapter refusal/not-applicable behavior without labels.
 - Fixture and expected-claim JSONL validation.
 - Invalid UUID / unknown message id / bad claim reference errors.
 - `embeddable_message_ids` subset validation.
@@ -245,7 +302,7 @@ Cover:
 - P_k and WindowDiff on at least one known boundary vector.
 - Claim normalization behavior.
 - CLI `validate-fixtures`, `list-strategies`, `run`, and `score` on example
-  fixtures.
+  public-shaped sample data and synthetic fixtures.
 - LLM strategy refusal path without network access.
 
 Tests must not require Postgres, ik-llama, Ollama, network, or GPU.
@@ -258,8 +315,8 @@ Update:
 - `benchmarks/segmentation/SPEC.md`
 
 Reflect the implemented CLI shape, deterministic strategy support, scratch
-result layout, current `not_run` claim-utility behavior, and all synthesis
-cleanup decisions.
+result layout, public-first dataset order, current `not_run` claim-utility
+behavior, and all synthesis cleanup decisions.
 
 Do not edit generated schema docs.
 
@@ -270,13 +327,14 @@ Run:
 ```bash
 python3 -m py_compile benchmarks/segmentation/*.py
 python3 -m benchmarks.segmentation.run_benchmark --help
+python3 -m benchmarks.segmentation.run_benchmark validate-dataset \
+  --manifest <local-superdialseg-manifest>
 python3 -m benchmarks.segmentation.run_benchmark validate-fixtures \
   --fixtures benchmarks/segmentation/fixtures/synthetic_parents.example.jsonl \
   --expected-claims benchmarks/segmentation/fixtures/expected_claims.example.jsonl
 python3 -m benchmarks.segmentation.run_benchmark list-strategies
 python3 -m benchmarks.segmentation.run_benchmark run \
-  --fixtures benchmarks/segmentation/fixtures/synthetic_parents.example.jsonl \
-  --expected-claims benchmarks/segmentation/fixtures/expected_claims.example.jsonl \
+  --dataset-manifest <local-superdialseg-manifest> \
   --strategy fixed_token_windows \
   --strategy message_groups \
   --output-dir .scratch/benchmarks/segmentation
@@ -288,12 +346,17 @@ make test
 If `.venv` is required for `make test`, use the repo Makefile. Do not start
 model services.
 
+If no local SuperDialseg snapshot exists on the machine, run the unit tests
+against the tiny hand-authored public-shaped sample and report that full public
+dataset validation was not run. Do not fall back to the private Engram corpus.
+
 ## Deliverable Summary
 
 At the end, summarize:
 
 - Files changed.
 - Which synthesis findings were resolved.
+- How D041 public-first dataset order was implemented.
 - Exact validation commands and results.
 - Any deliberately deferred local-model or benchmark-extractor work.
 - The scratch result path from the example deterministic run.

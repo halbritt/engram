@@ -1,8 +1,8 @@
-# RFC 0006: Synthetic Segmentation Model Benchmark
+# RFC 0006: Public-First Segmentation Model Benchmark
 
 Status: proposal
 Date: 2026-05-03
-Context: Phase 2 model/profile selection; D005, D034, D037, D039
+Context: Phase 2 model/profile selection; D005, D034, D037, D039, D041
 
 This RFC proposes a local-only benchmark harness for comparing segmentation
 models, request profiles, and cheap non-LLM baselines before changing the
@@ -35,23 +35,93 @@ The benchmark should answer two questions independently:
 2. Are those segments useful for claim extraction compared with cheap
    deterministic baselines?
 
+D041 changes the benchmark substrate order: start with public datasets for
+portability. The private Engram corpus is not a benchmark dependency, and
+synthetic fixtures are an edge-case/regression layer rather than the first
+quality substrate.
+
 ## Scope
 
 This benchmark is a development tool, not a production pipeline path. It should
 not mutate active `segment_generations`, activate retrieval-visible rows, or
 change `migrations/004_segments_embeddings.sql`.
 
-The harness may use scratch tables, temporary databases, JSON fixtures, or
-in-memory repositories. If it writes to the normal schema, it must mark outputs
-inactive and isolate them by benchmark run id.
+The harness may use local public-dataset snapshots, scratch tables, temporary
+databases, JSON fixtures, or in-memory repositories. If it writes to the normal
+schema, it must mark outputs inactive and isolate them by benchmark run id.
+
+Public dataset snapshots are stored outside this repository and outside the
+production database. Download and license acceptance are explicit operator
+actions outside any no-egress Engram corpus-reading runtime.
+
+## Dataset Order
+
+1. **SuperDialseg first for quality.** It has supervised dialogue segmentation
+   labels and supports strict boundary, window-tolerant F1, P_k, and
+   WindowDiff scoring without private data.
+2. **LMSYS-Chat-1M second for operational stress.** It is closer to real
+   human-LLM conversation shape, but it has no segmentation labels. Use it for
+   throughput, runaway, schema-validity, VRAM, and backend-stability metrics,
+   not for boundary or claim-recall scores unless labels are separately
+   authored.
+3. **Synthetic fixtures third for traps and regressions.** They remain small,
+   versioned, and hand-authored to cover edge cases public datasets do not
+   isolate well.
+
+The private Engram corpus is intentionally absent from this order. It can be
+used later for private local smoke only, but it must not be required for model
+or strategy comparisons.
+
+## Public Dataset Use
+
+Public datasets are the primary starting point, not optional follow-up work.
+
+**SuperDialseg** (Jiang et al., EMNLP 2023): 9,478 dialogues with supervised
+topic-segmentation boundaries derived from document-grounded dialogue corpora,
+plus human verification on the test set. Public sources currently expose it as
+[`Coldog2333/super_dialseg`](https://huggingface.co/datasets/Coldog2333/super_dialseg)
+on Hugging Face and the
+[`Coldog2333/SuperDialseg`](https://github.com/Coldog2333/SuperDialseg)
+project repository. Use cases:
+
+- Score segmenters against labeled dialogue boundaries at a scale synthetic
+  fixtures cannot reach.
+- Compare against dialogue-segmentation literature when assessing whether a
+  candidate model/profile is competitive for the task category, not just for
+  Engram-shaped private data.
+- Exercise deterministic baselines and P-FRAG candidates without any private
+  corpus dependency.
+
+**LMSYS-Chat-1M**: 1M real human-LLM multi-turn conversations across 25 LLMs,
+available through
+[`lmsys/lmsys-chat-1m`](https://huggingface.co/datasets/lmsys/lmsys-chat-1m).
+No segmentation labels. Use cases:
+
+- Operational stress on a distribution closer to Engram's actual ChatGPT /
+  Claude / Gemini corpus.
+- Throughput, runaway rate, schema-valid rate, VRAM behavior, and backend error
+  taxonomy on realistic prompt distributions.
+- Distribution-shape checks for the prompt builder and structured-output
+  parser, without authoring more synthetic fixtures.
+
+Quality metrics that depend on labels (boundary precision/recall, W-F1, P_k,
+WindowDiff, claim precision/recall) cannot use LMSYS-Chat-1M unless a separate
+labeling layer exists.
+
+LMSYS-Chat-1M is gated on Hugging Face and carries restrictive terms, including
+non-identification, prohibited transfer, and deletion-on-request obligations.
+Its license permits compliant research and commercial development use, but the
+dataset must be isolated to local benchmark runs, not redistributed, and never
+mixed into Engram's production corpus. Download and license acceptance happen
+outside any no-egress Engram corpus-reading runtime.
 
 ## Synthetic Fixture Set
 
 Create a small set of synthetic parent conversations with deterministic,
-human-authored expected outputs. Start at 12-15 parents covering the listed
-fixture families, and grow only when a real failure mode escapes the bench.
-Hand-grading 50 fixtures up front is expensive and the marginal coverage past
-~15 well-chosen fixtures is small.
+human-authored expected outputs after the public-dataset adapters exist. Start
+at 12-15 parents covering the listed fixture families, and grow only when a
+real failure mode escapes the public bench. Hand-grading 50 fixtures up front
+is expensive and the marginal coverage past ~15 well-chosen fixtures is small.
 
 The fixture set is versioned. `synthetic_parents.jsonl` carries a leading
 header object with `fixture_version` (semver-style: bump minor on additions,
@@ -92,45 +162,6 @@ Recommended fixture families:
 
 The expected output should be verifiable by code. Avoid vague judgments such as
 "good topic split." Prefer explicit spans and explicit claims.
-
-## Public Dataset Use
-
-Synthetic fixtures cover edge cases with hand-graded ground truth. They are not
-representative of distribution-shape stress at scale, and they are expensive to
-expand. Two public datasets complement them.
-
-**SuperDialseg** (Jiang et al., EMNLP 2023): 9,478 dialogues with supervised
-topic-segmentation boundaries derived from document-grounded dialogue corpora,
-plus human verification on the test set. It is a useful external benchmark for
-dialogue topic segmentation and ships with established evaluation metrics. Use
-cases:
-
-- Score the segmenter against labeled boundaries at a scale the synthetic set
-  cannot reach.
-- Compare against the literature when assessing whether a candidate model is
-  competitive for the task category, not just for engram-shaped data.
-
-**LMSYS-Chat-1M**: 1M real human-LLM multi-turn conversations across 25 LLMs.
-No segmentation labels. Use cases:
-
-- Operational stress on a distribution closer to engram's actual ChatGPT /
-  Claude / Gemini corpus.
-- Throughput, runaway rate, schema-valid rate, VRAM behavior on realistic
-  prompt distributions, without authoring more synthetic fixtures.
-- Quality metrics that depend on labels (boundary precision/recall, claim
-  precision/recall) cannot use this dataset and must remain on the synthetic
-  set.
-
-LMSYS-Chat-1M is gated on Hugging Face and carries restrictive terms, including
-non-identification, prohibited transfer, and deletion-on-request obligations.
-Its license permits compliant research and commercial development use, but the
-dataset must be isolated to local benchmark runs, not redistributed, and never
-mixed into Engram's production corpus. Download and license acceptance happen
-outside any no-egress Engram corpus-reading runtime.
-
-Public datasets are optional. The benchmark is functional with the synthetic
-set alone; the public datasets are added when distribution-shape and
-literature-comparable scoring become useful.
 
 ## Candidate Strategies
 
@@ -217,7 +248,8 @@ Do not choose a model by throughput alone.
 A candidate model/profile can replace the current one only if:
 
 - it preserves provenance-valid output,
-- it has no worse runaway or backend-wedge behavior on the synthetic set,
+- it has no worse runaway or backend-wedge behavior on the public benchmark
+  slice,
 - it has comparable or better claim precision,
 - it has comparable or better claim recall,
 - and its throughput improvement is large enough to matter operationally.
@@ -265,6 +297,7 @@ Recommended repo layout:
 ```text
 benchmarks/
   segmentation/
+    datasets.py
     fixtures/
       synthetic_parents.jsonl
       expected_claims.jsonl
@@ -276,7 +309,8 @@ benchmarks/
 
 The harness should:
 
-1. Load fixtures without requiring the production database.
+1. Load public dataset snapshots and fixtures without requiring the production
+   database.
 2. Run each configured strategy against the exact same parent set.
 3. Validate output against the same segment parser/provenance rules used by
    Phase 2 where practical.
@@ -328,7 +362,8 @@ Each result should record:
 
 ## Consequences
 
-This gives Engram a falsifiable way to compare new local models before spending
-multi-day corpus passes. It also creates a stable target for future segmenter
-refactors: if the synthetic benchmark and later gold set stay green, internal
-structure can change without guessing about semantic regressions.
+This gives Engram a falsifiable and portable way to compare new local models
+before spending multi-day private corpus passes. It also creates a stable target
+for future segmenter refactors: if the public benchmark, synthetic regression
+fixtures, and later gold set stay green, internal structure can change without
+guessing about semantic regressions.
