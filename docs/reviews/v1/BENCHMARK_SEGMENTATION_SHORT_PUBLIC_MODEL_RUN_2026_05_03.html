@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Segmentation Benchmark Short Public Model Run</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; background: #f7f7f4; color: #202124; }
+    main { max-width: 1280px; margin: 0 auto; padding: 32px 24px 48px; }
+    h1 { font-size: 28px; margin: 0 0 8px; letter-spacing: 0; }
+    p { margin: 0 0 20px; color: #555; }
+    .summary { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: 12px; margin: 24px 0; }
+    .metric { background: #fff; border: 1px solid #ddd8ce; border-radius: 6px; padding: 14px; }
+    .metric strong { display: block; font-size: 22px; margin-bottom: 4px; }
+    .metric span { color: #666; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #ddd8ce; border-radius: 6px; overflow: hidden; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #e8e3da; text-align: left; font-size: 13px; vertical-align: middle; }
+    th { background: #ece8df; font-weight: 700; color: #333; position: sticky; top: 0; }
+    tr:last-child td { border-bottom: 0; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+    a { color: #185abc; text-decoration: none; font-weight: 600; }
+    a:hover { text-decoration: underline; }
+    .bar { position: relative; width: 120px; height: 22px; border-radius: 4px; background: #f0ece3; overflow: hidden; }
+    .bar span { display: block; height: 100%; background: #5b7f48; }
+    .bar.blue span { background: #316b83; }
+    .bar b { position: absolute; inset: 0; display: flex; align-items: center; padding-left: 8px; font-size: 12px; color: #111; }
+    .note { margin-top: 16px; font-size: 13px; color: #5f6368; }
+    @media (max-width: 900px) {
+      main { padding: 20px 12px 36px; }
+      .summary { grid-template-columns: 1fr 1fr; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Segmentation Benchmark: Short Public Model Run</h1>
+    <p>SuperDialseg validation split, first 10 parents. Generated from scratch artifacts; no private Engram corpus used.</p>
+    <section class="summary">
+      <div class="metric"><strong>Gemma 26B</strong><span>Best strict boundary F1: 0.735</span></div>
+      <div class="metric"><strong>Qwen 27B</strong><span>Best Qwen strict F1: 0.552</span></div>
+      <div class="metric"><strong>1.000</strong><span>Schema-valid rate for completed model runs</span></div>
+      <div class="metric"><strong>0</strong><span>Backend errors and timeouts</span></div>
+    </section>
+    <table>
+      <thead>
+        <tr>
+          <th>Run</th><th>Strategy</th><th>Schema</th><th>Prov.</th><th>Segments</th><th>Parent/s</th>
+          <th>Strict F1</th><th>Strict P</th><th>Strict R</th><th>W-F1 +/-1</th><th>W-F1 +/-2</th><th>Pk</th><th>WindowDiff</th><th>Links</th>
+        </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td>Deterministic baselines</td>
+        <td><code>fixed_token_windows</code></td>
+        <td>not_applicable</td>
+        <td>1.000</td>
+        <td>29</td>
+        <td>11189.975</td>
+        <td><div class="bar"><span style="width:31.4%"></span><b>0.230</b></div></td>
+        <td>0.317</td>
+        <td>0.192</td>
+        <td><div class="bar blue"><span style="width:83.3%"></span><b>0.612</b></div></td>
+        <td>0.646</td>
+        <td>0.389</td>
+        <td>0.389</td>
+        <td><a href="../../../.scratch/benchmarks/segmentation/short-public-model-benchmark/deterministic/20260503T224756Z.superdialseg.6e38602c/report.html">report</a> · <a href="../../../.scratch/benchmarks/segmentation/short-public-model-benchmark/deterministic/20260503T224756Z.superdialseg.6e38602c/run.json">run.json</a></td>
+      </tr>
+      <tr>
+        <td>Deterministic baselines</td>
+        <td><code>message_groups</code></td>
+        <td>not_applicable</td>
+        <td>1.000</td>
+        <td>29</td>
+        <td>12655.137</td>
+        <td><div class="bar"><span style="width:31.4%"></span><b>0.230</b></div></td>
+        <td>0.317</td>
+        <td>0.192</td>
+        <td><div class="bar blue"><span style="width:83.3%"></span><b>0.612</b></div></td>
+        <td>0.646</td>
+        <td>0.389</td>
+        <td>0.389</td>
+        <td><a href="../../../.scratch/benchmarks/segmentation/short-public-model-benchmark/deterministic/20260503T224756Z.superdialseg.6e38602c/report.html">report</a> · <a href="../../../.scratch/benchmarks/segmentation/short-public-model-benchmark/deterministic/20260503T224756Z.superdialseg.6e38602c/run.json">run.json</a></td>
+      </tr>
+      <tr>
+        <td>Qwen 35B A3B IQ4_XS</td>
+        <td><code>qwen_35b_a3b_iq4_xs_d034</code></td>
+        <td>1.000</td>
+        <td>0.900</td>
+        <td>25</td>
+        <td>0.159</td>
+        <td><div class="bar"><span style="width:47.5%"></span><b>0.349</b></div></td>
+        <td>0.508</td>
+        <td>0.317</td>
+        <td><div class="bar blue"><span style="width:54.3%"></span><b>0.399</b></div></td>
+        <td>0.472</td>
+        <td>0.353</td>
+        <td>0.361</td>
+        <td><a href="../../../.scratch/benchmarks/segmentation/short-public-model-benchmark/qwen_35b_a3b_iq4_xs_d034/20260503T224958Z.superdialseg.192e1989/report.html">report</a> · <a href="../../../.scratch/benchmarks/segmentation/short-public-model-benchmark/qwen_35b_a3b_iq4_xs_d034/20260503T224958Z.superdialseg.192e1989/run.json">run.json</a></td>
+      </tr>
+      <tr>
+        <td>Qwen 27B Q5_K_M</td>
+        <td><code>qwen_27b_q5_k_m_d034</code></td>
+        <td>1.000</td>
+        <td>1.000</td>
+        <td>28</td>
+        <td>0.039</td>
+        <td><div class="bar"><span style="width:75.2%"></span><b>0.552</b></div></td>
+        <td>0.675</td>
+        <td>0.517</td>
+        <td><div class="bar blue"><span style="width:75.2%"></span><b>0.552</b></div></td>
+        <td>0.552</td>
+        <td>0.234</td>
+        <td>0.234</td>
+        <td><a href="../../../.scratch/benchmarks/segmentation/short-public-model-benchmark/qwen_27b_q5_k_m_d034/20260503T225501Z.superdialseg.b39b169c/report.html">report</a> · <a href="../../../.scratch/benchmarks/segmentation/short-public-model-benchmark/qwen_27b_q5_k_m_d034/20260503T225501Z.superdialseg.b39b169c/run.json">run.json</a></td>
+      </tr>
+      <tr>
+        <td>Gemma 26B A4B Q4_K_M</td>
+        <td><code>gemma_26b_a4b_q4_k_m_d034</code></td>
+        <td>1.000</td>
+        <td>1.000</td>
+        <td>39</td>
+        <td>0.149</td>
+        <td><div class="bar"><span style="width:100.0%"></span><b>0.735</b></div></td>
+        <td>0.825</td>
+        <td>0.725</td>
+        <td><div class="bar blue"><span style="width:100.0%"></span><b>0.735</b></div></td>
+        <td>0.735</td>
+        <td>0.234</td>
+        <td>0.234</td>
+        <td><a href="../../../.scratch/benchmarks/segmentation/short-public-model-benchmark/gemma_26b_a4b_q4_k_m_d034/20260503T225742Z.superdialseg.d3e9cec5/report.html">report</a> · <a href="../../../.scratch/benchmarks/segmentation/short-public-model-benchmark/gemma_26b_a4b_q4_k_m_d034/20260503T225742Z.superdialseg.d3e9cec5/run.json">run.json</a></td>
+      </tr>
+      </tbody>
+    </table>
+    <p class="note">Detailed per-parent boundary diagrams are in each linked report. This index is intentionally scratch-only.</p>
+  </main>
+</body>
+</html>

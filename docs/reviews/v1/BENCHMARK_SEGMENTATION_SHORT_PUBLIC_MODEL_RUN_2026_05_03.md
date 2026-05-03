@@ -122,6 +122,9 @@ ordering failure in `public:superdialseg:004c3a9f9f24203151aa259f8db7a8f8`.
 Markdown and HTML reports were written next to each `run.json`. Server logs
 were written under `.scratch/benchmarks/model-server/`.
 
+The checked-in overview visualization is
+`docs/reviews/v1/BENCHMARK_SEGMENTATION_SHORT_PUBLIC_MODEL_RUN_2026_05_03.html`.
+
 ## Verdict
 
 Qwen 27B Q5 is worth a longer benchmark as a Qwen-family candidate because it
