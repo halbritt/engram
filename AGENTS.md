@@ -60,3 +60,9 @@ For substantial artifacts that use one agent to create and another agent to
 review, follow `docs/process/multi-agent-review-loop.md`: feedback lands under
 `docs/reviews/`, the originating agent synthesizes it, accepted deltas update
 the source artifact, and fresh execution contexts are preferred after synthesis.
+
+## Coordinator Judgment
+
+Use `docs/process/project-judgment.md` for process and priority guidance. It is
+not product architecture; it captures scope-control taste, attention-management
+rules, and model-handoff preferences for coordinating work.
