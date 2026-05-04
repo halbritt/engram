@@ -1,8 +1,11 @@
 # RFC 0006: Public-First Segmentation Model Benchmark
 
-Status: proposal
+Status: specified
 Date: 2026-05-03
 Context: Phase 2 model/profile selection; D005, D034, D037, D039, D041
+
+Promoted: benchmarks/segmentation/SPEC.md and D041 on 2026-05-03; refined by
+RFC 0008 and D042 on 2026-05-04
 
 This RFC proposes a local-only benchmark harness for comparing segmentation
 models, request profiles, and cheap non-LLM baselines before changing the

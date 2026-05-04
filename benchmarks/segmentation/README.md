@@ -1,9 +1,9 @@
 # Segmentation Benchmark Harness
 
 This directory contains the local-only, scratch-only segmentation benchmark
-harness from RFC 0006. It compares public dataset snapshots and deterministic
-baseline strategies before any change to the production Phase 2 segmenter
-contract.
+harness from RFC 0006, refined by RFC 0008 / D042. It compares public dataset
+snapshots and deterministic baseline strategies before any change to the
+production Phase 2 segmenter contract.
 
 The harness does not download datasets, call hosted services, call ik-llama or
 Ollama, write the production database, or import production segmenter runtime
@@ -28,6 +28,9 @@ boundary after the labeled turn (`sequence_index + 1`). `topic_id` changes are
 only a fallback when a parent has no usable segmentation labels.
 
 ## Benchmark Tiers
+
+The tier model is specified by RFC 0008 / D042 and is pending runner support
+for Tier 1 sample plans and early-signal verdict fields.
 
 - `smoke`: 10 labeled SuperDialseg validation parents. This validates the
   harness and a candidate model/profile only; reports must mark the run

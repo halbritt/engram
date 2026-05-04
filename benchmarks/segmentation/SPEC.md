@@ -22,7 +22,8 @@ fragmentation-aware.
 - Benchmark strategy names and `StrategyKind` values are benchmark-internal;
   they are not production `segments.window_strategy` values and do not land
   deferred P-FRAG schema values from D039.
-- Every completed run declares its benchmark tier and selection caveat.
+- Planned RFC 0008 / D042 Tier 1 and Tier 2 runs declare their benchmark tier
+  and selection caveat once that runner support is implemented.
 - Raw boundary metrics are audit data; model-selection recommendations use
   the tier-specific verdict rules below.
 
@@ -41,6 +42,10 @@ No public dataset rows are committed. The committed
 for tests only and is explicitly not copied from SuperDialseg.
 
 ## Benchmark Tiers
+
+Status: planned (RFC 0008 / D042). The current executable harness can produce
+Tier 0-style scratch runs, but it does not yet emit `benchmark_tier`,
+`selection_caveat`, sample-plan, or verdict fields.
 
 Benchmark runs are classified by `benchmark_tier`.
 
@@ -132,6 +137,8 @@ Adapters:
 
 ## Sample Plans
 
+Status: planned (RFC 0008 / D042).
+
 Sample plan schema version: `segmentation-benchmark-sample-plan.v1`.
 
 Tier 0 may use a fixed 10-parent smoke sample, but Tier 1 and Tier 2 sample
@@ -161,6 +168,10 @@ Tier 1 SuperDialseg selection must be stratified across:
 The harness must not implement Tier 1 as "first N parents" from the dataset.
 The selected parent ids are part of the audit trail and must be stable for a
 given dataset revision, split, seed, and sample-plan implementation version.
+If a stratum has fewer parents than its target quota, the sample plan takes all
+available parents from that stratum, records the actual stratum sizes and
+shortfall, and fails validation only if the total Tier 1 sample falls below 60
+parents.
 
 ## Fixture Schema
 
@@ -221,6 +232,9 @@ ids, unordered message ids, unknown parent-local references,
 references.
 
 ## Engram Proxy Fixtures
+
+Status: planned (RFC 0008 / D042) beyond the current small example fixture
+set.
 
 Tier 1 and Tier 2 include the full synthetic fixture set. Fixtures remain
 small, public, and hand-authored; they are not a replacement for private
@@ -334,11 +348,9 @@ Result schema version: `segmentation-benchmark-result.v1`.
   report.html
 ```
 
-`run.json` records:
+Current implemented `run.json` records:
 
 - git commit;
-- benchmark tier and selection caveat;
-- sample plan schema/version/seed/path when applicable;
 - dataset manifest/schema version, dataset name/source/snapshot/version,
   preprocessing version, and license metadata;
 - fixture version/schema version and expected-claims schema version when
@@ -349,9 +361,16 @@ Result schema version: `segmentation-benchmark-result.v1`.
 - relevant `ENGRAM_SEGMENTER_*` environment variables;
 - dataset kind/name/snapshot;
 - UTC creation timestamp;
-- early-signal verdict when applicable;
 - explicit deterministic-run model fields with null or `not_run` values, or
   local model metadata for local-model strategies.
+
+Planned RFC 0008 / D042 result additions are:
+
+- benchmark tier and selection caveat;
+- sample plan schema/version/seed/path when applicable;
+- early-signal verdict when applicable.
+
+Existing scratch artifacts are not backfilled when planned fields are added.
 
 Local model SHA256 capture is opt-in with `--compute-model-sha256` because the
 GGUF files are large enough that hashing can materially extend a short run.
@@ -361,14 +380,17 @@ Report schema version: `segmentation-benchmark-report.v1`.
 Reports include:
 
 - run metadata;
-- benchmark tier and selection caveat;
 - strategy comparison table;
-- early-signal verdict table when applicable;
-- fragmentation quality table;
-- Engram proxy quality table when fixtures are included;
 - segment-length and sub-floor fragment table;
 - backend error count table;
 - per-parent boundary diagrams comparing expected and predicted boundaries.
+
+Planned RFC 0008 / D042 report additions are:
+
+- benchmark tier and selection caveat;
+- early-signal verdict table when applicable;
+- fragmentation quality table;
+- Engram proxy quality table when fixtures are included.
 
 `--max-parents` bounds per-parent detail so large public snapshots do not
 produce unreviewable reports by default.
@@ -418,6 +440,9 @@ Segmentation metrics:
 
 Fragmentation metrics:
 
+Status: planned (RFC 0008 / D042) except for already implemented segment-count,
+segment-token-length, sub-floor fragment, over-split, and under-split metrics.
+
 - predicted/expected segment-count ratio for labeled parents;
 - absolute segment-count distance from expected;
 - no-boundary false split count and rate;
@@ -440,21 +465,29 @@ For unlabeled datasets such as LMSYS-Chat-1M, label-dependent metrics report
 
 ## Early-Signal Verdict
 
+Status: planned (RFC 0008 / D042).
+
 Tier 1 `score.json` and `run.json` must include an `early_signal_verdict`
 object per strategy:
 
 ```json
 {
+  "schema_version": "segmentation-benchmark-early-signal-verdict.v1",
   "verdict": "longer_run",
   "selection_caveat": "early_signal_not_decision_grade",
   "summary": "Promising boundary quality, but requires Tier 2 before model change.",
   "hard_warnings": [],
   "blocking_failures": [],
-  "metric_reasons": [
-    "schema_valid_rate=1.0",
-    "provenance_valid_rate=1.0",
-    "no_boundary_false_split_rate=0.02"
-  ]
+  "metric_reasons": {
+    "schema_valid_rate": {"value": 1.0, "threshold": 1.0},
+    "provenance_valid_rate": {"value": 1.0, "threshold": 1.0},
+    "no_boundary_false_split_rate": {"value": 0.02, "threshold": "tbd"}
+  },
+  "threshold_set": {
+    "schema_version": "segmentation-benchmark-early-signal-thresholds.v1",
+    "status": "tbd",
+    "source": "RFC 0008 Open Question 1"
+  }
 }
 ```
 
@@ -481,6 +514,11 @@ Required gates:
 - boundary metrics beat deterministic baselines and the current operational
   model after fragmentation penalties before a challenger can receive
   `candidate`.
+
+Threshold defaults for fragmentation gates are not specified yet; they are
+tracked by RFC 0008 Open Question 1. The implementation must write the
+threshold set, source, and any overrides into `run.json` and `score.json` so
+verdicts are reproducible across runs.
 
 Tier 0 reports only smoke readiness, not `candidate`. Tier 2 reports a
 decision recommendation rather than an early-signal verdict.
