@@ -13,3 +13,4 @@ or a phase prompt.
 | [0005](0005-supervisor-event-triggers.md) | proposal | Supervisor event triggers and queue prioritization |
 | [0006](0006-segmentation-model-benchmark.md) | proposal | Synthetic segmentation model benchmark |
 | [0007](0007-artifact-id-and-subref-model.md) | proposal | Artifact ID and subref model |
+| [0009](0009-distributed-segmenter-work-leasing.md) | proposal | Distributed segmenter work leasing |
