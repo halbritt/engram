@@ -1,11 +1,16 @@
 # Segmentation Benchmark Specification
 
-Status: implemented offline deterministic harness
+Status: implemented offline deterministic harness; RFC 0008 early-signal
+revision specified, pending implementation
 
 This benchmark is a local-only, scratch-only development tool for comparing
 segmentation strategies before changing production Phase 2 behavior. It does
 not mutate production tables, production migrations, or the production
 segmenter runtime.
+
+This specification incorporates RFC 0006 and RFC 0008. D041 makes the harness
+public-first. D042 makes model-selection benchmarking tiered and
+fragmentation-aware.
 
 ## Principles
 
@@ -17,6 +22,9 @@ segmenter runtime.
 - Benchmark strategy names and `StrategyKind` values are benchmark-internal;
   they are not production `segments.window_strategy` values and do not land
   deferred P-FRAG schema values from D039.
+- Every completed run declares its benchmark tier and selection caveat.
+- Raw boundary metrics are audit data; model-selection recommendations use
+  the tier-specific verdict rules below.
 
 ## Dataset Order
 
@@ -31,6 +39,59 @@ segmenter runtime.
 No public dataset rows are committed. The committed
 `fixtures/superdialseg_shape.synthetic.jsonl` file is hand-authored shape data
 for tests only and is explicitly not copied from SuperDialseg.
+
+## Benchmark Tiers
+
+Benchmark runs are classified by `benchmark_tier`.
+
+### Tier 0: `smoke`
+
+Purpose: validate that the harness and candidate model/profile can run.
+
+Required shape:
+
+- 10 labeled SuperDialseg validation parents;
+- deterministic strategy/model configuration;
+- local-only execution;
+- result, score, and report artifacts written successfully.
+
+Tier 0 reports `selection_caveat: smoke_only`. It may answer whether a
+candidate is ready for a larger benchmark. It must not be used to choose a
+production segmenter model/profile.
+
+### Tier 1: `early_signal`
+
+Purpose: provide cheap but meaningful model triage before a long run.
+
+Required shape:
+
+- 60-100 deterministic, stratified SuperDialseg validation parents;
+- the full synthetic Engram-proxy fixture set;
+- optional LMSYS-Chat-1M operational-shape sample only when the dataset has
+  already been accepted and downloaded locally;
+- current operational model/profile, active challenger models, and cheap
+  deterministic baselines.
+
+Tier 1 produces an `early_signal_verdict` of `reject`, `defer`,
+`longer_run`, or `candidate`. A challenger does not become the operational
+choice from Tier 1 alone; `candidate` means schedule a Tier 2 decision run.
+
+### Tier 2: `decision`
+
+Purpose: support a production model/profile change.
+
+Required shape:
+
+- several hundred SuperDialseg parents or the full validation split;
+- the full synthetic Engram-proxy fixture set;
+- optional LMSYS-Chat-1M operational-stress slice when locally permitted;
+- repeated runs when the local backend or candidate model shows meaningful
+  variance.
+
+Tier 2 can justify changing the production segmenter model/profile. The
+current operational model may remain the default even when a challenger wins
+raw boundary F1 if the challenger loses the combined verdict after
+fragmentation and proxy-fixture checks.
 
 ## Public Dataset Manifest
 
@@ -68,6 +129,38 @@ Adapters:
 - `lmsys_chat_1m`: consumes JSONL local exports with `conversation_id` and
   message rows or message arrays. It emits parents with `expected_boundaries`
   set to null.
+
+## Sample Plans
+
+Sample plan schema version: `segmentation-benchmark-sample-plan.v1`.
+
+Tier 0 may use a fixed 10-parent smoke sample, but Tier 1 and Tier 2 sample
+selection must be deterministic and recorded. A sample plan records:
+
+- schema version;
+- benchmark tier;
+- dataset name/source/version/revision;
+- split;
+- fixed sample seed;
+- selected parent ids in run order;
+- stratum assignment per selected parent;
+- expected boundary count distribution;
+- message count distribution.
+
+Tier 1 SuperDialseg selection must be stratified across:
+
+- no-boundary parents;
+- 1-2 boundary parents;
+- 3-5 boundary parents;
+- high-boundary-count parents;
+- short dialogues;
+- medium dialogues;
+- long dialogues near the benchmark context budget;
+- mixed role patterns when present in the dataset.
+
+The harness must not implement Tier 1 as "first N parents" from the dataset.
+The selected parent ids are part of the audit trail and must be stable for a
+given dataset revision, split, seed, and sample-plan implementation version.
 
 ## Fixture Schema
 
@@ -126,6 +219,37 @@ Validation reports all discovered errors: invalid UUIDs, duplicate message
 ids, unordered message ids, unknown parent-local references,
 `embeddable_message_ids` not contained in `message_ids`, and bad expected-claim
 references.
+
+## Engram Proxy Fixtures
+
+Tier 1 and Tier 2 include the full synthetic fixture set. Fixtures remain
+small, public, and hand-authored; they are not a replacement for private
+corpus evaluation.
+
+The fixture set must cover these Engram-specific memory-unit failure modes:
+
+- long coding/debugging threads;
+- topic re-entry after interruption;
+- repeated or near-duplicate facts;
+- quiet durable preference inside noisy conversation;
+- tool/file artifact placeholders;
+- null/image/tool-only messages;
+- privacy-tier mixed spans;
+- JSON-looking content;
+- one-segment conversations;
+- conversations near the context guard.
+
+Proxy fixture scoring reports:
+
+- expected span F1;
+- expected segment-count distance;
+- provenance validity;
+- embeddable text validity;
+- sub-floor fragment counts;
+- whether tool/file placeholders stayed provenance-only.
+
+Proxy fixtures do not dominate public boundary metrics, but they may veto a
+candidate whose output is incompatible with Engram's memory-unit requirements.
 
 ## Claim Matching
 
@@ -213,6 +337,8 @@ Result schema version: `segmentation-benchmark-result.v1`.
 `run.json` records:
 
 - git commit;
+- benchmark tier and selection caveat;
+- sample plan schema/version/seed/path when applicable;
 - dataset manifest/schema version, dataset name/source/snapshot/version,
   preprocessing version, and license metadata;
 - fixture version/schema version and expected-claims schema version when
@@ -223,6 +349,7 @@ Result schema version: `segmentation-benchmark-result.v1`.
 - relevant `ENGRAM_SEGMENTER_*` environment variables;
 - dataset kind/name/snapshot;
 - UTC creation timestamp;
+- early-signal verdict when applicable;
 - explicit deterministic-run model fields with null or `not_run` values, or
   local model metadata for local-model strategies.
 
@@ -234,7 +361,11 @@ Report schema version: `segmentation-benchmark-report.v1`.
 Reports include:
 
 - run metadata;
+- benchmark tier and selection caveat;
 - strategy comparison table;
+- early-signal verdict table when applicable;
+- fragmentation quality table;
+- Engram proxy quality table when fixtures are included;
 - segment-length and sub-floor fragment table;
 - backend error count table;
 - per-parent boundary diagrams comparing expected and predicted boundaries.
@@ -245,6 +376,10 @@ produce unreviewable reports by default.
 ## Scoring
 
 Scoring implementation version: `segmentation-benchmark-scoring.v1`.
+
+The early-signal revision is a semantic scoring change and must bump
+`SCORING_IMPLEMENTATION_VERSION` when implemented. The implementation may keep
+the JSON schema version when it only adds backward-compatible fields.
 
 Operational metrics:
 
@@ -273,6 +408,7 @@ unknown
 Segmentation metrics:
 
 - segment count per parent;
+- average and median segments per parent;
 - p10/p50/p90 segment estimated token length;
 - strict boundary precision/recall/F1;
 - window-tolerant F1 at +/-1 and +/-2 message positions;
@@ -280,8 +416,74 @@ Segmentation metrics:
 - WindowDiff;
 - boundary over-split and under-split counts.
 
+Fragmentation metrics:
+
+- predicted/expected segment-count ratio for labeled parents;
+- absolute segment-count distance from expected;
+- no-boundary false split count and rate;
+- sub-50, sub-100, and sub-200 estimated-token fragment rates;
+- adjacent tiny-fragment rate;
+- duplicate or near-duplicate adjacent summary/content rate;
+- count of parents with more than twice the expected segment count.
+
+Engram proxy fixture metrics:
+
+- expected span precision/recall/F1;
+- expected segment-count distance;
+- provenance-valid rate;
+- embeddable-text-valid rate;
+- sub-floor fragment counts;
+- tool/file placeholder leakage count.
+
 For unlabeled datasets such as LMSYS-Chat-1M, label-dependent metrics report
 `not_applicable`, never zero.
+
+## Early-Signal Verdict
+
+Tier 1 `score.json` and `run.json` must include an `early_signal_verdict`
+object per strategy:
+
+```json
+{
+  "verdict": "longer_run",
+  "selection_caveat": "early_signal_not_decision_grade",
+  "summary": "Promising boundary quality, but requires Tier 2 before model change.",
+  "hard_warnings": [],
+  "blocking_failures": [],
+  "metric_reasons": [
+    "schema_valid_rate=1.0",
+    "provenance_valid_rate=1.0",
+    "no_boundary_false_split_rate=0.02"
+  ]
+}
+```
+
+Allowed verdicts:
+
+- `reject`: fails schema/provenance safety, has unacceptable backend failures,
+  or shows severe fragmentation.
+- `defer`: valid, but not enough improvement to justify more compute.
+- `longer_run`: promising, but evidence is insufficient for a production
+  change.
+- `candidate`: strong enough on Tier 1 to schedule a Tier 2 decision run.
+
+Required gates:
+
+- schema-valid rate is 1.0 for local-model strategies, or every failure is
+  explained in `blocking_failures`;
+- provenance-valid rate is 1.0;
+- no backend wedge, CUDA OOM, or runaway completion on Tier 1;
+- no-boundary false split rate is low and called out whenever nonzero;
+- average segment count does not exceed expected count by more than the
+  configured multiplier unless proxy metrics justify it;
+- sub-100 fragment rate stays below the configured threshold unless expected
+  by fixture labels;
+- boundary metrics beat deterministic baselines and the current operational
+  model after fragmentation penalties before a challenger can receive
+  `candidate`.
+
+Tier 0 reports only smoke readiness, not `candidate`. Tier 2 reports a
+decision recommendation rather than an early-signal verdict.
 
 ## Schema Version Discipline
 

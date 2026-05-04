@@ -27,6 +27,22 @@ For SuperDialseg local exports, `segmentation_label=1` is interpreted as a
 boundary after the labeled turn (`sequence_index + 1`). `topic_id` changes are
 only a fallback when a parent has no usable segmentation labels.
 
+## Benchmark Tiers
+
+- `smoke`: 10 labeled SuperDialseg validation parents. This validates the
+  harness and a candidate model/profile only; reports must mark the run
+  `smoke_only`.
+- `early_signal`: 60-100 deterministic, stratified SuperDialseg validation
+  parents plus the full synthetic Engram-proxy fixture set. This tier produces
+  `reject`, `defer`, `longer_run`, or `candidate`.
+- `decision`: several hundred SuperDialseg parents or the full validation
+  split, plus fixtures and optional local LMSYS operational stress. This is
+  the first tier that can justify changing the production segmenter model.
+
+Raw boundary F1 is not enough for model selection. Early-signal and decision
+runs must also surface fragmentation, no-boundary false splits, proxy-fixture
+quality, provenance safety, and operational reliability.
+
 ## CLI
 
 ```bash

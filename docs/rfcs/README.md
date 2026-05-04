@@ -13,4 +13,4 @@ or a phase prompt.
 | [0005](0005-supervisor-event-triggers.md) | proposal | Supervisor event triggers and queue prioritization |
 | [0006](0006-segmentation-model-benchmark.md) | proposal | Public-first segmentation model benchmark |
 | [0007](0007-artifact-id-and-subref-model.md) | proposal | Artifact ID and subref model |
-| [0008](0008-segmentation-benchmark-early-signal.md) | proposal | Segmentation benchmark early-signal revision |
+| [0008](0008-segmentation-benchmark-early-signal.md) | specified | Segmentation benchmark early-signal revision |

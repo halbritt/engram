@@ -1,8 +1,10 @@
 # RFC 0008: Segmentation Benchmark Early-Signal Revision
 
-Status: proposal
+Status: specified
 Date: 2026-05-04
 Context: RFC 0006; D034, D039, D041; short public model benchmark on 2026-05-03
+
+Promoted: benchmarks/segmentation/SPEC.md and D042 on 2026-05-04
 
 This RFC refines the public-first segmentation benchmark from RFC 0006 so it
 produces a better early signal before spending hours on a longer model run.
