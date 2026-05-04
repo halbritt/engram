@@ -2,7 +2,7 @@
 
 Status: proposal
 Date: 2026-05-03
-Context: Documentation traceability; DECISION_LOG; docs/rfcs; docs/reviews; docs/phases
+Context: Documentation traceability; DECISION_LOG; docs/rfcs; docs/reviews; docs/phases; prompts
 
 This RFC replaces the abandoned operational prompt
 `prompts/engram-artifact-refactor.md`. The idea is worth considering, but it
@@ -25,6 +25,11 @@ but uneven: `D034` is stable and compact, while RFCs, reviews, and phase docs
 are mostly referenced by filename, title, or prose. As the docs grow, broad
 references like "the pre-Phase-2 review" become harder to audit.
 
+Execution prompts have a second problem: they are a human attention queue. When
+several prompts are ready or half-ready, names alone do not make order,
+dependency, or supersession obvious. Human attention dilution is real; prompt
+ordering should be visible in the filesystem instead of held in memory.
+
 The failed prompt attempted to jump straight to a mechanical refactor. That is
 unsafe for four reasons:
 
@@ -43,6 +48,8 @@ unsafe for four reasons:
 - Preserve existing links and decision references.
 - Make future mechanical validation possible.
 - Keep RFCs as proposals until promoted through the normal decision process.
+- Make prompt execution order readable without requiring the user to remember
+  which handoff comes next.
 
 ## Non-goals
 
@@ -50,6 +57,8 @@ unsafe for four reasons:
 - Do not replace existing `D###` references unless an accepted decision defines
   a compatibility plan.
 - Do not make RFCs binding merely by assigning IDs.
+- Do not rename existing prompts in one broad pass before the prompt ordinal
+  policy is accepted.
 - Do not hand-edit generated schema docs.
 - Do not introduce external documentation tooling or hosted services.
 
@@ -63,6 +72,7 @@ Artifact ID sequences are independent per artifact family:
 | Decision | `D###` today; possible `DEC-####` alias later | `DECISION_LOG.md` |
 | Review | `REVIEW-####` | `docs/reviews/` |
 | Phase | `PHASE-####` | `BUILD_PHASES.md` and `docs/phases/` |
+| Prompt | `PROMPT-####` or phase-local ordinal | `prompts/` |
 
 Existing decision IDs remain canonical while this RFC is only proposed. If a
 future accepted decision introduces `DEC-####`, it must define whether
@@ -83,6 +93,8 @@ Review refs:
   - REVIEW-0003#context-overflow
 Phase refs:
   - PHASE-0002#generation-activation
+Prompt refs:
+  - PROMPT-0008#benchmark-harness-execution
 ```
 
 One artifact may reference many others. Shared numbering is not required and
@@ -113,6 +125,58 @@ Decision rows in `DECISION_LOG.md` need special care because table rows are not
 good anchor targets. If this RFC is accepted, the implementation should either
 add an explicit anchor registry for decisions or split decisions into anchored
 sections. It should not depend on table-row positioning.
+
+## Prompt Ordinals
+
+Operational prompts should be ordinal enough for a human to see the execution
+queue at a glance.
+
+Two shapes are plausible:
+
+```text
+prompts/0008-benchmark-segmentation-harness.md
+prompts/0009-phase-2-claim-extraction.md
+```
+
+or:
+
+```text
+prompts/phase_2/0001-segments-embeddings.md
+prompts/phase_2/0002-soak-test.md
+prompts/phase_2/0003-benchmark-segmentation-harness.md
+```
+
+The preferred shape is phase-local prompt folders. Engram prompts are usually
+execution handoffs tied to a phase, and phase-local ordinals make the active
+queue easier to scan without implying a single global chronology across the
+whole project.
+
+Rules if adopted:
+
+- Prompt filenames begin with a four-digit ordinal inside their folder.
+- Ordinals express intended execution order, not importance.
+- Superseded prompts are moved to `prompts/prior/` or marked in a prompt header;
+  they are not silently deleted if they explain prior work.
+- A prompt header should include status, phase, upstream refs, and whether it
+  is safe to execute.
+- Active prompts should be few. If many prompts are active at once, the queue
+  has become state that belongs in `ROADMAP.md` or a phase status doc.
+
+Recommended prompt header:
+
+```md
+# PROMPT-0008: Benchmark Segmentation Harness
+
+Status: ready
+Phase: Phase 2
+RFC refs:
+  - RFC-0006#synthetic-fixture-set
+Decision refs:
+  - D034#request-profile
+Review refs:
+  - none
+Safe to execute: yes
+```
 
 ## RFC Header Guidance
 
@@ -146,8 +210,9 @@ If accepted, migrate in small additive passes:
 4. Update numbered RFC headers, not the RFC index.
 5. Introduce review and phase IDs only after their numbering and scope are
    clear.
-6. Add a local reference checker before any broad mechanical rewrite.
-7. Only then create an operational prompt to apply the accepted policy.
+6. Choose the prompt ordinal policy before renaming active prompts.
+7. Add a local reference checker before any broad mechanical rewrite.
+8. Only then create an operational prompt to apply the accepted policy.
 
 ## Validation
 
@@ -157,6 +222,8 @@ A future checker should verify:
 - referenced subref anchors exist,
 - numbered RFC files are indexed in `docs/rfcs/README.md`,
 - the RFC index is not treated as an RFC artifact,
+- prompt ordinals are unique within their folder,
+- active prompt headers declare status and phase,
 - generated docs are not rewritten by hand.
 
 The checker must run locally and must not require network access.
@@ -168,7 +235,9 @@ The checker must run locally and must not require network access.
 3. Are phase IDs assigned to phase sections in `BUILD_PHASES.md`, files in
    `docs/phases/`, or both?
 4. Are review IDs assigned per review document, per finding, or both?
-5. Where should an artifact registry live, if one is needed at all?
+5. Should prompts use a global `PROMPT-####` sequence, phase-local folder
+   ordinals, or both?
+6. Where should an artifact registry live, if one is needed at all?
 
 ## Recommendation
 

@@ -22,6 +22,8 @@ Start with the root canonical docs when orienting on the current system:
 - [process/multi-agent-review-loop.md](process/multi-agent-review-loop.md) —
   where multi-agent feedback goes, how synthesis is applied, and when to use a
   fresh execution context.
+- [process/project-judgment.md](process/project-judgment.md) — coordinator
+  guidance for scope control, model use, and attention management.
 
 ## Proposals
 

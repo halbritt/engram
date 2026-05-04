@@ -4,12 +4,15 @@
 > V1_ARCHITECTURE_DRAFT.md, and `migrations/`. Edit freely.
 >
 > Goal: pin terminology so future sessions don't re-litigate "what is a
-> segment vs a capture vs an evidence row." When drift shows up in a
-> session, update this file *inline*, not later.
+> segment vs a capture vs an evidence row" or "what is a review vs a synthesis
+> vs an execution prompt." When drift shows up in a session, update this file
+> *inline*, not later.
 
 ## Bounded contexts
 
-engram splits into five contexts. Keep terminology pinned within each.
+Engram product language splits into six contexts. Project coordination is a
+separate process context; do not mix its terms into product architecture unless
+they become binding decisions.
 
 | Context | Owns |
 |---------|------|
@@ -19,6 +22,7 @@ engram splits into five contexts. Keep terminology pinned within each.
 | **Eval** | Gold set, smoke / tier-2 / full-corpus tiers, `context_feedback`, adversarial sweeps |
 | **Supervisor** | Pipeline orchestration, resumability, progress/error accounting, generation activation gates |
 | **Lifecycle** | Privacy tiers, posthumous handoff, prompt/model versioning, re-derivation triggers |
+| **Project coordination** | RFCs, reviews, synthesis, operational prompts, roadmap state, model handoffs |
 
 The corpus-reading process has no network egress; the network-using
 process has no direct corpus access. The wall is structural, not
@@ -146,6 +150,44 @@ Per D027, segment-level `superseded_by` was removed in favor of `is_active` prec
 - **Request profile** (D034) — the deterministic local-LLM call contract for derived stages: pinned endpoint and model id, streaming and thinking disabled, deterministic sampling, JSON schema response format, parse only `choices[0].message.content` (not `reasoning_content`). Recorded in derivation version metadata so re-runs are reproducible.
 - **Re-derivation trigger** — capability change, not calendar. Four canonical triggers: new embedding model, new extraction prompt/model, new segmentation heuristic, targeted slice upgrade.
 
+### Project coordination
+
+These terms describe how work moves through the repo. They are not product
+architecture by themselves.
+
+- **Project coordinator** — the human or agent managing work order, review
+  loops, synthesis, prompt creation, and handoffs. Do not confuse this with the
+  product **Supervisor**, which coordinates pipeline stages inside Engram.
+- **Artifact** — a durable repo document or code change with provenance:
+  RFC, decision, review, phase doc, operational prompt, implementation patch,
+  benchmark result, or status note.
+- **RFC** — a proposal parked under `docs/rfcs/`. Not binding until promoted
+  into `DECISION_LOG.md`, `BUILD_PHASES.md`, `ROADMAP.md`, or an accepted
+  execution prompt.
+- **Decision** — a binding architecture choice recorded in `DECISION_LOG.md`.
+  Current canonical IDs are `D###`.
+- **Review artifact** — feedback written under `docs/reviews/`. Raw review
+  findings live here first; reviewers do not patch the source artifact unless
+  explicitly assigned to.
+- **Synthesis** — the originating context's adjudication of review feedback:
+  accepted, accepted with modification, deferred, or rejected. Accepted deltas
+  update the source artifact; binding deltas update `DECISION_LOG.md`.
+- **Operational prompt** — a file under `prompts/` used as an execution handoff
+  for an agent. Distinct from `prompt_version`, which records an LLM extraction
+  prompt used in the data pipeline.
+- **Execution handoff** — a ready-to-run operational prompt with accepted
+  decisions only, non-goals, traps, files in scope, test commands, and
+  acceptance criteria.
+- **Fresh execution context** — a new agent context started after synthesis for
+  non-trivial implementation. Keeps rejected options and review debate out of
+  the worker's attention.
+- **Human attention queue** — the active set of ready or half-ready prompts and
+  decisions the human would otherwise have to remember. Queue state belongs in
+  filenames, prompt headers, `ROADMAP.md`, or phase docs.
+- **Human checkpoint** — a decision boundary that should still involve the
+  human: priority/taste calls, "good enough" calls, gold-set authorship, and
+  any relaxation of local-first/privacy/egress constraints.
+
 ---
 
 ## Forbidden / corrected terms
@@ -161,6 +203,10 @@ Per D027, segment-level `superseded_by` was removed in favor of `is_active` prec
 | "the model decides" | the extraction prompt at `prompt_version=X` produced | Pin which version did it |
 | "the model defaults" (for local-LLM call shape) | the request profile at D034 specifies | D034 forbids relying on model defaults for derivation calls |
 | segment "supersedes" prior segment | segment generation cutover via `is_active` | Segments don't supersede 1:1; D027 removed `superseded_by` from segments |
+| "supervisor" for the human/agent managing repo work | project coordinator | Supervisor is an Engram pipeline role |
+| "prompt" without context | operational prompt, extraction prompt, review prompt, or prompt_version | The project has multiple prompt types with different lifecycles |
+| "run the RFC" | create an operational prompt from the accepted RFC | RFCs are proposals, not execution handoffs |
+| "review feedback" in chat only | review artifact under `docs/reviews/` | Feedback should not live in volatile human memory |
 | "send this to the cloud" | (rejected — local-first) | Refusal, not phrasing |
 | "engram queries the web" | (rejected — corpus/network separation) | Same |
 
