@@ -15,6 +15,8 @@ Run summary:
 
 - Review artifact:
   `docs/reviews/v1/BENCHMARK_SEGMENTATION_EARLY_SIGNAL_RUN_2026_05_04.md`
+- HTML summary:
+  `docs/reviews/v1/BENCHMARK_SEGMENTATION_EARLY_SIGNAL_RUN_2026_05_04.html`
 - Scratch root:
   `.scratch/benchmarks/segmentation/early-signal-20260504T073337Z`
 - Production corpus: not used

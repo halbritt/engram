@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Segmentation Early-Signal Benchmark Run - 2026-05-04</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f7f4;
+      --panel: #ffffff;
+      --ink: #1f2528;
+      --muted: #5d666b;
+      --line: #cfd6d9;
+      --accent: #136f63;
+      --warn: #9b5d00;
+      --bad: #9a3412;
+      --good: #166534;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.45;
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 24px 56px;
+    }
+    h1, h2 {
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+    }
+    h2 {
+      margin: 32px 0 12px;
+      font-size: 20px;
+    }
+    p {
+      margin: 8px 0;
+      max-width: 920px;
+    }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.94em;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin: 20px 0 28px;
+    }
+    .fact {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 14px 16px;
+    }
+    .fact span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+    .fact strong {
+      display: block;
+      font-size: 18px;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      margin: 12px 0 20px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 9px 10px;
+      text-align: left;
+      vertical-align: top;
+      white-space: nowrap;
+    }
+    th {
+      background: #eef2f1;
+      font-size: 13px;
+      color: #2d3538;
+    }
+    td.num, th.num {
+      text-align: right;
+    }
+    tr:last-child td {
+      border-bottom: 0;
+    }
+    .badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .reject {
+      background: #ffedd5;
+      color: var(--bad);
+    }
+    .longer {
+      background: #fef3c7;
+      color: var(--warn);
+    }
+    .defer {
+      background: #e5e7eb;
+      color: #374151;
+    }
+    .ok {
+      color: var(--good);
+      font-weight: 650;
+    }
+    .bad {
+      color: var(--bad);
+      font-weight: 650;
+    }
+    .callout {
+      background: #fffaf0;
+      border: 1px solid #f3d38b;
+      border-radius: 6px;
+      padding: 14px 16px;
+      margin: 16px 0;
+      max-width: 940px;
+    }
+    .links li {
+      margin: 7px 0;
+    }
+    @media (max-width: 900px) {
+      main {
+        padding: 24px 14px 44px;
+      }
+      table {
+        display: block;
+        overflow-x: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Segmentation Early-Signal Benchmark Run</h1>
+    <p><strong>Date:</strong> 2026-05-04. <strong>Tier:</strong> RFC 0008 / D042 Tier 1 early signal.</p>
+    <p>This benchmark used the local public SuperDialseg validation snapshot plus committed synthetic Engram-proxy fixtures. It did not use the private Engram corpus, write the production database, alter migrations, or change production segmenter behavior.</p>
+
+    <div class="summary">
+      <div class="fact"><span>Selected public parents</span><strong>80</strong></div>
+      <div class="fact"><span>Synthetic fixtures</span><strong>10</strong></div>
+      <div class="fact"><span>Total scored parents</span><strong>90</strong></div>
+      <div class="fact"><span>Threshold set</span><strong>example-non-normative</strong></div>
+    </div>
+
+    <div class="callout">
+      <strong>Decision:</strong> Tier 1 is not decision-grade. This run does not authorize a production segmenter model switch. Qwen 27B is the best balanced Tier 2 candidate; Gemma should be included only if over-fragmentation is explicitly under test.
+    </div>
+
+    <h2>Key Metrics</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Strategy</th>
+          <th class="num">Schema</th>
+          <th class="num">Provenance</th>
+          <th class="num">Segments</th>
+          <th class="num">Parent/s</th>
+          <th class="num">Strict F1</th>
+          <th class="num">W-F1 +/-1</th>
+          <th class="num">W-F1 +/-2</th>
+          <th class="num">Pk</th>
+          <th class="num">WindowDiff</th>
+          <th class="num">Seg/expected</th>
+          <th class="num">No-boundary FS</th>
+          <th class="num">&lt;100 frag</th>
+          <th>Verdict</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>fixed_token_windows</code></td>
+          <td class="num">n/a</td>
+          <td class="num ok">1.000</td>
+          <td class="num">253</td>
+          <td class="num">12933.352</td>
+          <td class="num">0.185</td>
+          <td class="num">0.477</td>
+          <td class="num">0.539</td>
+          <td class="num">0.467</td>
+          <td class="num">0.467</td>
+          <td class="num">0.969</td>
+          <td class="num bad">0.632</td>
+          <td class="num">0.166</td>
+          <td><span class="badge defer">defer</span></td>
+        </tr>
+        <tr>
+          <td><code>message_groups</code></td>
+          <td class="num">n/a</td>
+          <td class="num ok">1.000</td>
+          <td class="num">253</td>
+          <td class="num">12921.407</td>
+          <td class="num">0.193</td>
+          <td class="num">0.477</td>
+          <td class="num">0.539</td>
+          <td class="num">0.462</td>
+          <td class="num">0.462</td>
+          <td class="num">0.969</td>
+          <td class="num bad">0.632</td>
+          <td class="num">0.166</td>
+          <td><span class="badge defer">defer</span></td>
+        </tr>
+        <tr>
+          <td><code>qwen_35b_a3b_iq4_xs_d034</code></td>
+          <td class="num ok">1.000</td>
+          <td class="num bad">0.956</td>
+          <td class="num">226</td>
+          <td class="num">0.170</td>
+          <td class="num">0.447</td>
+          <td class="num">0.466</td>
+          <td class="num">0.508</td>
+          <td class="num">0.327</td>
+          <td class="num">0.331</td>
+          <td class="num">0.952</td>
+          <td class="num bad">0.526</td>
+          <td class="num">0.358</td>
+          <td><span class="badge reject">reject</span></td>
+        </tr>
+        <tr>
+          <td><code>qwen_27b_q5_k_m_d034</code></td>
+          <td class="num ok">1.000</td>
+          <td class="num ok">1.000</td>
+          <td class="num">266</td>
+          <td class="num">0.041</td>
+          <td class="num">0.628</td>
+          <td class="num">0.628</td>
+          <td class="num">0.661</td>
+          <td class="num ok">0.238</td>
+          <td class="num ok">0.243</td>
+          <td class="num">0.981</td>
+          <td class="num bad">0.316</td>
+          <td class="num">0.395</td>
+          <td><span class="badge longer">longer_run</span></td>
+        </tr>
+        <tr>
+          <td><code>gemma_26b_a4b_q4_k_m_d034</code></td>
+          <td class="num ok">1.000</td>
+          <td class="num ok">1.000</td>
+          <td class="num bad">345</td>
+          <td class="num">0.155</td>
+          <td class="num ok">0.640</td>
+          <td class="num ok">0.662</td>
+          <td class="num ok">0.718</td>
+          <td class="num">0.301</td>
+          <td class="num">0.308</td>
+          <td class="num bad">1.437</td>
+          <td class="num bad">0.632</td>
+          <td class="num">0.519</td>
+          <td><span class="badge longer">longer_run</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Interpretation</h2>
+    <ul>
+      <li><code>qwen_35b_a3b_iq4_xs_d034</code> failed the hard provenance gate with five unordered-message-id failures.</li>
+      <li><code>qwen_27b_q5_k_m_d034</code> had the best Pk and WindowDiff, perfect schema/provenance validity, and much better boundary F1 than Qwen 35B, but it was very slow.</li>
+      <li><code>gemma_26b_a4b_q4_k_m_d034</code> had the strongest raw boundary F1 and good throughput, but fragmented much more aggressively.</li>
+      <li>Raw SuperDialseg boundary F1 alone should not drive model selection.</li>
+    </ul>
+
+    <h2>Files</h2>
+    <ul class="links">
+      <li><a href="BENCHMARK_SEGMENTATION_EARLY_SIGNAL_RUN_2026_05_04.md">Markdown summary report</a></li>
+      <li><a href="../../../.scratch/benchmarks/segmentation/early-signal-20260504T073337Z/results/deterministic/20260504T073400Z.superdialseg.fc323de0/report.html">Deterministic detailed HTML report</a></li>
+      <li><a href="../../../.scratch/benchmarks/segmentation/early-signal-20260504T073337Z/results/qwen_35b_a3b_iq4_xs_d034/20260504T074344Z.superdialseg.f740c203/report.html">Qwen 35B detailed HTML report</a></li>
+      <li><a href="../../../.scratch/benchmarks/segmentation/early-signal-20260504T073337Z/results/qwen_27b_q5_k_m_d034/20260504T082125Z.superdialseg.d93aed2e/report.html">Qwen 27B detailed HTML report</a></li>
+      <li><a href="../../../.scratch/benchmarks/segmentation/early-signal-20260504T073337Z/results/gemma_26b_a4b_q4_k_m_d034/20260504T083212Z.superdialseg.0174efcf/report.html">Gemma 26B detailed HTML report</a></li>
+    </ul>
+
+    <h2>Validation</h2>
+    <p>Benchmark dataset validation, fixture validation, benchmark tests, scoring, reporting, and local-model pre/post smoke checks passed. The normal Qwen 35B service was restored after manual model runs.</p>
+  </main>
+</body>
+</html>
