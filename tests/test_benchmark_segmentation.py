@@ -18,6 +18,8 @@ from benchmarks.segmentation.fixtures import (
 from benchmarks.segmentation.results import relevant_segmenter_environment
 from benchmarks.segmentation.sample_plan import (
     create_sample_plan,
+    load_sample_plan,
+    validate_sample_plan_for_manifest,
     write_sample_plan,
 )
 from benchmarks.segmentation.run_benchmark import main as benchmark_main
@@ -54,17 +56,19 @@ def write_manifest(
     *,
     dataset_name: str = "superdialseg",
     dataset_source: str = "huggingface:Coldog2333/super_dialseg",
+    dataset_version: str = "synthetic-shape-v1",
     local_path: str | None = None,
+    local_path_sha256: str | None = "not-computed-for-synthetic-shape-data",
     license_accepted_at: str | None = None,
 ) -> Path:
     manifest = {
         "schema_version": "segmentation-public-dataset-manifest.v1",
         "dataset_name": dataset_name,
         "dataset_source": dataset_source,
-        "dataset_version": "synthetic-shape-v1",
+        "dataset_version": dataset_version,
         "local_path": local_path
         or str((FIXTURES_DIR / "superdialseg_shape.synthetic.jsonl").resolve()),
-        "local_path_sha256": "not-computed-for-synthetic-shape-data",
+        "local_path_sha256": local_path_sha256,
         "license_name": "synthetic-shape-data",
         "license_accepted_at": license_accepted_at,
         "preprocessing_version": "segmentation-public-preprocess.v1",
@@ -331,6 +335,77 @@ def test_sample_plan_is_deterministic_stratified_and_records_shortfalls(tmp_path
     assert saved["schema_version"] == "segmentation-benchmark-sample-plan.v1"
 
 
+def test_smoke_sample_plan_uses_smoke_stratum_and_cli_path(tmp_path, capsys):
+    sample = write_superdialseg_sample(tmp_path, parent_count=8)
+    manifest_path = write_manifest(tmp_path, local_path=str(sample))
+    dataset = load_public_dataset(manifest_path, split="validation")
+
+    plan = create_sample_plan(
+        dataset,
+        benchmark_tier="smoke",
+        split="validation",
+        sample_seed=1,
+        target_sample_size=3,
+    )
+
+    assert len(plan.selected_parent_ids) == 3
+    assert plan.stratum_target_sizes == {"smoke": 3}
+    assert plan.stratum_actual_sizes == {"smoke": 3}
+    assert plan.stratum_shortfalls == {"smoke": 0}
+
+    output = tmp_path / "smoke-sample-plan.json"
+    assert benchmark_main(
+        [
+            "sample-plan",
+            "--dataset-manifest",
+            str(manifest_path),
+            "--split",
+            "validation",
+            "--benchmark-tier",
+            "smoke",
+            "--sample-seed",
+            "1",
+            "--target-size",
+            "3",
+            "--output",
+            str(output),
+        ]
+    ) == 0
+    assert Path(capsys.readouterr().out.strip()) == output
+    assert load_sample_plan(output).stratum_shortfalls == {"smoke": 0}
+
+
+def test_sample_plan_validation_rejects_dataset_revision_mismatch(tmp_path):
+    sample = write_superdialseg_sample(tmp_path, parent_count=65)
+    manifest_path = write_manifest(
+        tmp_path,
+        local_path=str(sample),
+        local_path_sha256="revision-a",
+    )
+    dataset = load_public_dataset(manifest_path, split="validation")
+    plan = create_sample_plan(
+        dataset,
+        benchmark_tier="early_signal",
+        split="validation",
+        sample_seed=42,
+        target_sample_size=60,
+    )
+    changed_manifest = load_public_dataset_manifest(
+        write_manifest(
+            tmp_path,
+            local_path=str(sample),
+            local_path_sha256="revision-b",
+        )
+    )
+
+    with pytest.raises(BenchmarkValidationError, match="dataset revision"):
+        validate_sample_plan_for_manifest(
+            plan,
+            changed_manifest,
+            split="validation",
+        )
+
+
 def test_tier1_sample_plan_validation_fails_below_minimum(tmp_path):
     sample = write_superdialseg_sample(tmp_path, parent_count=12)
     manifest_path = write_manifest(tmp_path, local_path=str(sample))
@@ -383,6 +458,8 @@ def test_run_with_sample_plan_respects_selected_parent_order(tmp_path, capsys):
             str(FIXTURES_DIR / "early_signal_thresholds.example.json"),
             "--strategy",
             "fixed_token_windows",
+            "--operational-model-strategy",
+            "qwen_27b_q5_k_m_d034",
             "--output-dir",
             str(output_dir),
         ]
@@ -398,6 +475,7 @@ def test_run_with_sample_plan_respects_selected_parent_order(tmp_path, capsys):
     run_json = json.loads(run_path.read_text(encoding="utf-8"))
     assert run_json["benchmark_tier"] == "early_signal"
     assert run_json["selection_caveat"] == "early_signal_not_decision_grade"
+    assert run_json["operational_model_strategy"] == "qwen_27b_q5_k_m_d034"
     assert run_json["sample_plan"]["selected_parent_count"] == 60
     assert (
         run_json["early_signal_thresholds"]["threshold_set_id"]
@@ -408,6 +486,7 @@ def test_run_with_sample_plan_respects_selected_parent_order(tmp_path, capsys):
     assert benchmark_main(["score", "--results", str(run_path)]) == 0
     capsys.readouterr()
     score_json = json.loads((run_path.parent / "score.json").read_text(encoding="utf-8"))
+    assert score_json["operational_model_strategy"] == "qwen_27b_q5_k_m_d034"
     assert (
         score_json["early_signal_thresholds"]["threshold_set_id"]
         == "example-non-normative"
@@ -420,7 +499,28 @@ def test_run_with_sample_plan_respects_selected_parent_order(tmp_path, capsys):
     report_text = (run_path.parent / "report.md").read_text(encoding="utf-8")
     assert "Early-Signal Verdicts" in report_text
     assert "Fragmentation" in report_text
+    assert "qwen_27b_q5_k_m_d034" in report_text
     assert "early_signal_not_decision_grade" in report_text
+
+
+def test_early_signal_run_requires_sample_plan(tmp_path, capsys):
+    sample = write_superdialseg_sample(tmp_path, parent_count=65)
+    manifest_path = write_manifest(tmp_path, local_path=str(sample))
+
+    assert benchmark_main(
+        [
+            "run",
+            "--dataset-manifest",
+            str(manifest_path),
+            "--benchmark-tier",
+            "early_signal",
+            "--strategy",
+            "fixed_token_windows",
+            "--output-dir",
+            str(tmp_path / "results"),
+        ]
+    ) == 2
+    assert "requires --sample-plan" in capsys.readouterr().err
 
 
 def test_fixture_and_expected_claim_validation():
@@ -828,6 +928,26 @@ def test_threshold_validation_and_structured_verdict_rules(tmp_path):
     assert verdicts["challenger"]["verdict"] == "longer_run"
     assert "comparison to operational model" in verdicts["challenger"]["hard_warnings"][0]
 
+    metrics_without_baselines = {
+        "qwen_35b_a3b_iq4_xs_d034": metrics["qwen_35b_a3b_iq4_xs_d034"],
+        "challenger": verdict_metric_payload(strict_f1=0.9),
+    }
+    kinds_without_baselines = {
+        "qwen_35b_a3b_iq4_xs_d034": "llm",
+        "challenger": "llm",
+    }
+    verdicts = generate_early_signal_verdicts(
+        benchmark_tier="early_signal",
+        selection_caveat="early_signal_not_decision_grade",
+        metrics_by_strategy=metrics_without_baselines,
+        strategy_kinds=kinds_without_baselines,
+        threshold_set=threshold_set,
+    )
+    assert verdicts["challenger"]["verdict"] == "longer_run"
+    assert "deterministic baselines unavailable" in verdicts["challenger"][
+        "hard_warnings"
+    ][0]
+
     metrics["challenger"] = verdict_metric_payload(
         strict_f1=0.9,
         no_boundary_false_split_rate=0.9,
@@ -865,6 +985,7 @@ def test_absent_thresholds_prevent_candidate_verdict():
         threshold_set=None,
     )
 
+    assert verdicts["fixed_token_windows"]["verdict"] == "defer"
     assert verdicts["challenger"]["verdict"] == "longer_run"
     assert verdicts["challenger"]["threshold_set"]["status"] == "missing"
 

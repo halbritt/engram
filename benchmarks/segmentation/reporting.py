@@ -117,6 +117,7 @@ def generate_markdown_report(report_input: ReportInput, *, max_parents: int) -> 
         f"| Dataset | `{dataset_label(run)}` |",
         f"| Benchmark tier | `{run.get('benchmark_tier', 'unknown')}` |",
         f"| Selection caveat | `{run.get('selection_caveat', 'unknown')}` |",
+        f"| Operational model strategy | `{run.get('operational_model_strategy', 'unknown')}` |",
         f"| Sample plan | `{sample_plan_label(run)}` |",
         f"| Threshold set | `{threshold_set_label(run)}` |",
         f"| Scoring | `{run.get('scoring_implementation_version')}` |",
@@ -515,6 +516,8 @@ def nested_metric(value: Any, *keys: str) -> Any:
 
 
 def format_metric(value: Any) -> str:
+    if value == "not_applicable":
+        return "n/a"
     if value is None:
         return "n/a"
     if isinstance(value, float):

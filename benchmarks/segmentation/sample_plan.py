@@ -219,8 +219,8 @@ def create_sample_plan(
         for stratum in stratum_keys
     }
     shortfalls = {
-        stratum: max(0, targets[stratum] - actuals[stratum])
-        for stratum in SUPERDIALSEG_TIER1_STRATA
+        stratum: max(0, targets[stratum] - actuals.get(stratum, 0))
+        for stratum in targets
     }
 
     return SamplePlan(
@@ -293,6 +293,16 @@ def validate_sample_plan_for_manifest(
         errors.append(
             f"sample plan dataset version {plan.dataset_version!r} does not match "
             f"manifest {manifest.dataset_version!r}"
+        )
+    manifest_revision = manifest.local_path_sha256
+    if (
+        plan.dataset_revision
+        and manifest_revision
+        and plan.dataset_revision != manifest_revision
+    ):
+        errors.append(
+            f"sample plan dataset revision {plan.dataset_revision!r} does not match "
+            f"manifest revision {manifest_revision!r}"
         )
     if split is not None and plan.split is not None and split != plan.split:
         errors.append(f"sample plan split {plan.split!r} does not match --split {split!r}")

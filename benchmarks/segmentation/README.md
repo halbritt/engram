@@ -80,6 +80,7 @@ python3 -m benchmarks.segmentation.run_benchmark run \
   --benchmark-tier early_signal \
   --sample-plan .scratch/benchmarks/segmentation/sample-plans/superdialseg-tier1.json \
   --early-signal-thresholds benchmarks/segmentation/fixtures/early_signal_thresholds.example.json \
+  --operational-model-strategy qwen_35b_a3b_iq4_xs_d034 \
   --strategy fixed_token_windows \
   --strategy message_groups \
   --output-dir .scratch/benchmarks/segmentation
@@ -97,6 +98,11 @@ python3 -m benchmarks.segmentation.run_benchmark report \
 strategies refuse to run without it and also refuse non-loopback base URLs.
 They use the benchmark-local D034 JSON-schema request profile against an
 operator-managed local OpenAI-compatible endpoint.
+`early_signal` runs require `--sample-plan`; the sample plan records the
+selected parent ids and validates dataset name/source/version/revision against
+the manifest before the run proceeds. `--operational-model-strategy` controls
+which strategy is treated as the current operational model for verdict
+comparisons and is recorded in result artifacts.
 
 ## Strategies
 

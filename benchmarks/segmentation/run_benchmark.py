@@ -11,6 +11,7 @@ from pathlib import Path
 
 from benchmarks.segmentation.datasets import PublicDataset, load_public_dataset
 from benchmarks.segmentation.early_signal import (
+    CURRENT_OPERATIONAL_MODEL_STRATEGY,
     SUPPORTED_BENCHMARK_TIERS,
     load_threshold_set,
     selection_caveat_for_tier,
@@ -82,6 +83,14 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--selection-caveat")
     run.add_argument("--sample-plan")
     run.add_argument("--early-signal-thresholds")
+    run.add_argument(
+        "--operational-model-strategy",
+        default=CURRENT_OPERATIONAL_MODEL_STRATEGY,
+        help=(
+            "Strategy name to treat as the current operational model for "
+            "early-signal verdict comparisons."
+        ),
+    )
     run.add_argument("--target-tokens", type=positive_int, default=200)
     run.add_argument("--overlap-messages", type=non_negative_int, default=0)
     run.add_argument(
@@ -217,6 +226,8 @@ def run_command(args: argparse.Namespace) -> int:
         else None
     )
     sample_plan = load_sample_plan(args.sample_plan) if args.sample_plan else None
+    if args.benchmark_tier == "early_signal" and sample_plan is None:
+        raise ValueError("--benchmark-tier early_signal requires --sample-plan")
     if sample_plan and args.limit is not None:
         raise ValueError("--sample-plan cannot be combined with --limit")
     if sample_plan and sample_plan.benchmark_tier != args.benchmark_tier:
@@ -296,6 +307,7 @@ def run_command(args: argparse.Namespace) -> int:
         selection_caveat=selection_caveat,
         sample_plan=sample_plan,
         threshold_set=threshold_set,
+        operational_model_strategy=args.operational_model_strategy,
     )
     print(run_path)
     return 0

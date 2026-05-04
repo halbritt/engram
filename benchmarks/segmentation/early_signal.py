@@ -305,8 +305,15 @@ def build_strategy_verdict(
         metrics_by_strategy, strategy_kinds, DETERMINISTIC_STRATEGY_KINDS
     )
     operational_f1 = strict_f1_for(metrics_by_strategy.get(operational_model_strategy, {}))
+    is_deterministic = strategy_kinds.get(strategy_name) in DETERMINISTIC_STRATEGY_KINDS
+    baseline_unavailable = baseline_f1 == "not_applicable"
     comparison_unavailable = operational_model_strategy not in metrics_by_strategy
-    if comparison_unavailable:
+    if baseline_unavailable and not is_deterministic:
+        hard_warnings.append(
+            "deterministic baselines unavailable; cannot evaluate challenger "
+            "without a cheap anchor"
+        )
+    if comparison_unavailable and not is_deterministic:
         hard_warnings.append(
             f"comparison to operational model {operational_model_strategy} unavailable"
         )
@@ -332,15 +339,18 @@ def build_strategy_verdict(
     if blocking_failures:
         verdict = "reject"
         summary = "Blocking safety or reliability failures were detected."
+    elif is_deterministic:
+        verdict = "defer"
+        summary = "Deterministic baseline scored for comparison; it is not a model candidate."
     elif threshold_set is None:
         verdict = "longer_run"
         summary = "No explicit threshold set was supplied, so candidate verdicts are disabled."
-    elif strategy_kinds.get(strategy_name) in DETERMINISTIC_STRATEGY_KINDS:
-        verdict = "defer"
-        summary = "Deterministic baseline scored for comparison; it is not a model candidate."
     elif comparison_unavailable:
         verdict = "longer_run"
         summary = "Promising runs need the current operational model in the same run before candidate status."
+    elif baseline_unavailable:
+        verdict = "longer_run"
+        summary = "Promising runs need deterministic baselines in the same run before candidate status."
     elif hard_warnings:
         verdict = "longer_run" if passes_comparison(metric_reasons) else "defer"
         summary = "Fragmentation or comparison warnings require a longer run before candidate status."
@@ -356,6 +366,7 @@ def build_strategy_verdict(
         "strategy_name": strategy_name,
         "verdict": verdict,
         "selection_caveat": selection_caveat,
+        "operational_model_strategy": operational_model_strategy,
         "summary": summary,
         "hard_warnings": hard_warnings,
         "blocking_failures": blocking_failures,

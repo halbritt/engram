@@ -13,6 +13,7 @@ from typing import Any
 
 from benchmarks.segmentation.datasets import PublicDataset, PublicDatasetManifest
 from benchmarks.segmentation.early_signal import (
+    CURRENT_OPERATIONAL_MODEL_STRATEGY,
     EarlySignalThresholdSet,
     generate_early_signal_verdicts,
     threshold_set_from_dict,
@@ -47,6 +48,7 @@ def write_run_results(
     selection_caveat: str = "smoke_only",
     sample_plan: SamplePlan | None = None,
     threshold_set: EarlySignalThresholdSet | None = None,
+    operational_model_strategy: str = CURRENT_OPERATIONAL_MODEL_STRATEGY,
 ) -> Path:
     run_id = make_run_id(dataset.manifest.dataset_name)
     run_dir = Path(output_dir) / run_id
@@ -88,6 +90,7 @@ def write_run_results(
         metrics_by_strategy=metrics_payload,
         strategy_kinds=strategy_kinds,
         threshold_set=threshold_set,
+        operational_model_strategy=operational_model_strategy,
     )
 
     run_json = {
@@ -97,6 +100,7 @@ def write_run_results(
         "git_commit": git_commit(),
         "benchmark_tier": benchmark_tier,
         "selection_caveat": selection_caveat,
+        "operational_model_strategy": operational_model_strategy,
         "dataset": {
             "kind": "public",
             "name": dataset.manifest.dataset_name,
@@ -185,18 +189,23 @@ def score_run_file(run_json_path: str | Path) -> dict[str, Any]:
         )
     if threshold_errors:
         raise ValueError("; ".join(threshold_errors))
+    operational_model_strategy = (
+        run.get("operational_model_strategy") or CURRENT_OPERATIONAL_MODEL_STRATEGY
+    )
     verdicts = generate_early_signal_verdicts(
         benchmark_tier=run.get("benchmark_tier", "smoke"),
         selection_caveat=run.get("selection_caveat", "smoke_only"),
         metrics_by_strategy=metrics,
         strategy_kinds=strategy_kinds,
         threshold_set=threshold_set,
+        operational_model_strategy=operational_model_strategy,
     )
     score = {
         "schema_version": "segmentation-benchmark-score.v1",
         "run_id": run["run_id"],
         "benchmark_tier": run.get("benchmark_tier"),
         "selection_caveat": run.get("selection_caveat"),
+        "operational_model_strategy": operational_model_strategy,
         "sample_plan": run.get("sample_plan"),
         "early_signal_thresholds": threshold_payload,
         "early_signal_verdicts": verdicts,

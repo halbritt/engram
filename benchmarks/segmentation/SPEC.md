@@ -175,6 +175,11 @@ If a stratum has fewer parents than its target quota, the sample plan takes all
 available parents from that stratum, records the actual stratum sizes and
 shortfall, and fails validation only if the total Tier 1 sample falls below 60
 parents.
+Tier 1 `run` requires `--sample-plan`; otherwise the run would not satisfy the
+stratification and shortfall audit contract.
+`dataset.revision` records the manifest's `local_path_sha256` when available.
+Run-time validation rejects a plan when both plan and manifest revisions are
+set and disagree.
 
 ## Fixture Schema
 
@@ -335,6 +340,7 @@ python3 -m benchmarks.segmentation.run_benchmark run \
   --benchmark-tier early_signal \
   --sample-plan .scratch/benchmarks/segmentation/sample-plans/superdialseg-tier1.json \
   --early-signal-thresholds benchmarks/segmentation/fixtures/early_signal_thresholds.example.json \
+  --operational-model-strategy qwen_35b_a3b_iq4_xs_d034 \
   --strategy fixed_token_windows \
   --strategy message_groups \
   --output-dir .scratch/benchmarks/segmentation
@@ -373,6 +379,7 @@ Current implemented `run.json` records:
 
 - git commit;
 - benchmark tier and selection caveat;
+- operational model strategy used for early-signal comparisons;
 - dataset manifest/schema version, dataset name/source/snapshot/version,
   preprocessing version, and license metadata;
 - fixture version/schema version and expected-claims schema version when
