@@ -12,12 +12,18 @@ from pathlib import Path
 from typing import Any
 
 from benchmarks.segmentation.datasets import PublicDataset, PublicDatasetManifest
+from benchmarks.segmentation.early_signal import (
+    EarlySignalThresholdSet,
+    generate_early_signal_verdicts,
+    threshold_set_from_dict,
+)
 from benchmarks.segmentation.fixtures import FixtureBundle
 from benchmarks.segmentation.scoring import (
     SCORING_IMPLEMENTATION_VERSION,
     MetricBundle,
     score_strategy_outputs,
 )
+from benchmarks.segmentation.sample_plan import SamplePlan
 from benchmarks.segmentation.strategies import (
     BenchmarkMessage,
     BenchmarkParent,
@@ -37,6 +43,10 @@ def write_run_results(
     strategy_outputs: dict[str, dict[str, StrategyOutput]],
     durations: dict[str, dict[str, float]],
     fixture_bundle: FixtureBundle | None = None,
+    benchmark_tier: str = "smoke",
+    selection_caveat: str = "smoke_only",
+    sample_plan: SamplePlan | None = None,
+    threshold_set: EarlySignalThresholdSet | None = None,
 ) -> Path:
     run_id = make_run_id(dataset.manifest.dataset_name)
     run_dir = Path(output_dir) / run_id
@@ -66,11 +76,27 @@ def write_run_results(
                 )
                 handle.write(json.dumps(record, sort_keys=True) + "\n")
 
+    metrics_payload = {name: metric_bundle_to_dict(bundle) for name, bundle in metrics.items()}
+    strategy_kinds = {
+        strategy_name: next(iter(outputs_by_parent.values())).strategy_kind
+        for strategy_name, outputs_by_parent in strategy_outputs.items()
+        if outputs_by_parent
+    }
+    verdicts = generate_early_signal_verdicts(
+        benchmark_tier=benchmark_tier,
+        selection_caveat=selection_caveat,
+        metrics_by_strategy=metrics_payload,
+        strategy_kinds=strategy_kinds,
+        threshold_set=threshold_set,
+    )
+
     run_json = {
         "schema_version": RESULT_SCHEMA_VERSION,
         "run_id": run_id,
         "created_at": utc_now(),
         "git_commit": git_commit(),
+        "benchmark_tier": benchmark_tier,
+        "selection_caveat": selection_caveat,
         "dataset": {
             "kind": "public",
             "name": dataset.manifest.dataset_name,
@@ -90,6 +116,9 @@ def write_run_results(
         "expected_claims_schema_version": (
             fixture_bundle.expected_claims_schema_version if fixture_bundle else None
         ),
+        "sample_plan": sample_plan.summary_dict() if sample_plan else None,
+        "early_signal_thresholds": threshold_set.to_dict() if threshold_set else None,
+        "early_signal_verdicts": verdicts,
         "strategy_results": [
             strategy_metadata(strategy_name, outputs_by_parent)
             for strategy_name, outputs_by_parent in strategy_outputs.items()
@@ -103,7 +132,7 @@ def write_run_results(
             "large GGUF files can materially extend a short benchmark run."
         ),
         "parents_path": "parents.jsonl",
-        "metrics": {name: metric_bundle_to_dict(bundle) for name, bundle in metrics.items()},
+        "metrics": metrics_payload,
     }
     run_path = run_dir / "run.json"
     run_path.write_text(json.dumps(run_json, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -142,9 +171,35 @@ def score_run_file(run_json_path: str | Path) -> dict[str, Any]:
         )
         for strategy_name, parents in parents_by_strategy.items()
     }
+    strategy_kinds = {
+        item.get("name"): item.get("kind")
+        for item in run.get("strategy_results", [])
+        if isinstance(item, dict) and item.get("name")
+    }
+    threshold_payload = run.get("early_signal_thresholds")
+    threshold_errors: list[str] = []
+    threshold_set = None
+    if isinstance(threshold_payload, dict):
+        threshold_set = threshold_set_from_dict(
+            threshold_payload, threshold_errors, "early_signal_thresholds"
+        )
+    if threshold_errors:
+        raise ValueError("; ".join(threshold_errors))
+    verdicts = generate_early_signal_verdicts(
+        benchmark_tier=run.get("benchmark_tier", "smoke"),
+        selection_caveat=run.get("selection_caveat", "smoke_only"),
+        metrics_by_strategy=metrics,
+        strategy_kinds=strategy_kinds,
+        threshold_set=threshold_set,
+    )
     score = {
         "schema_version": "segmentation-benchmark-score.v1",
         "run_id": run["run_id"],
+        "benchmark_tier": run.get("benchmark_tier"),
+        "selection_caveat": run.get("selection_caveat"),
+        "sample_plan": run.get("sample_plan"),
+        "early_signal_thresholds": threshold_payload,
+        "early_signal_verdicts": verdicts,
         "scoring_implementation_version": SCORING_IMPLEMENTATION_VERSION,
         "metrics": metrics,
     }
@@ -278,6 +333,7 @@ def metric_bundle_to_dict(bundle: MetricBundle) -> dict[str, Any]:
     return {
         "operational": bundle.operational,
         "segmentation": bundle.segmentation,
+        "fragmentation": bundle.fragmentation,
         "claim_utility": bundle.claim_utility,
         "denominators": bundle.denominators,
     }

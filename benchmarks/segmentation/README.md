@@ -29,8 +29,10 @@ only a fallback when a parent has no usable segmentation labels.
 
 ## Benchmark Tiers
 
-The tier model is specified by RFC 0008 / D042 and is pending runner support
-for Tier 1 sample plans and early-signal verdict fields.
+The tier model is specified by RFC 0008 / D042. Runner support exists for
+Tier 0 smoke metadata and Tier 1 early-signal sample plans, threshold-set
+metadata, fragmentation metrics, and structured verdicts. Tier 2 decision-grade
+model switching remains pending.
 
 - `smoke`: 10 labeled SuperDialseg validation parents. This validates the
   harness and a candidate model/profile only; reports must mark the run
@@ -58,8 +60,26 @@ python3 -m benchmarks.segmentation.run_benchmark validate-fixtures \
 
 python3 -m benchmarks.segmentation.run_benchmark list-strategies
 
+python3 -m benchmarks.segmentation.run_benchmark sample-plan \
+  --dataset-manifest .scratch/benchmarks/datasets/superdialseg/manifest.json \
+  --split validation \
+  --benchmark-tier early_signal \
+  --sample-seed 42 \
+  --target-size 80 \
+  --output .scratch/benchmarks/segmentation/sample-plans/superdialseg-tier1.json
+
 python3 -m benchmarks.segmentation.run_benchmark run \
   --dataset-manifest .scratch/benchmarks/datasets/superdialseg/manifest.json \
+  --benchmark-tier smoke \
+  --strategy fixed_token_windows \
+  --strategy message_groups \
+  --output-dir .scratch/benchmarks/segmentation
+
+python3 -m benchmarks.segmentation.run_benchmark run \
+  --dataset-manifest .scratch/benchmarks/datasets/superdialseg/manifest.json \
+  --benchmark-tier early_signal \
+  --sample-plan .scratch/benchmarks/segmentation/sample-plans/superdialseg-tier1.json \
+  --early-signal-thresholds benchmarks/segmentation/fixtures/early_signal_thresholds.example.json \
   --strategy fixed_token_windows \
   --strategy message_groups \
   --output-dir .scratch/benchmarks/segmentation
@@ -109,6 +129,8 @@ Runs write only under the caller's output directory:
 ```
 
 `run.json` records git commit, dataset manifest metadata, strategy config,
+benchmark tier, selection caveat, sample-plan summary when supplied,
+threshold-set metadata when supplied,
 scoring version, token estimator version, relevant `ENGRAM_SEGMENTER_*`
 environment variables, model metadata for local-model strategies, and explicit
 `not_run` model fields for deterministic runs. Empty environment capture is
@@ -117,11 +139,14 @@ Claim-utility metrics currently report `not_run` with denominators; no
 benchmark extractor is implemented in this pass. Deterministic strategies
 report schema validity as `not_applicable` because they do not exercise LLM
 JSON/schema parsing.
+Tier 1 `run.json` and `score.json` include `early_signal_verdicts` keyed by
+strategy. If thresholds are absent, verdict generation cannot emit
+`candidate`.
 
 `report` reads only the existing result artifacts. It writes strategy
-comparison tables, segment-length tables, backend error counts, and per-parent
-boundary diagrams. `--max-parents` bounds per-parent detail for large public
-snapshots.
+comparison tables, segment-length tables, fragmentation tables, early-signal
+verdict tables when present, backend error counts, and per-parent boundary
+diagrams. `--max-parents` bounds per-parent detail for large public snapshots.
 
 ## Fixtures
 
@@ -130,3 +155,6 @@ Expected segments include both `message_ids` and `embeddable_message_ids` so
 tool/null/image placeholders can remain provenance without becoming embedded
 text. Claim matching normalization is pinned to Unicode NFKC, `casefold()`,
 whitespace collapse, and no punctuation stripping.
+
+The committed threshold file is non-normative fixture/example data for tests.
+RFC 0008 Open Question 1 still owns real Engram threshold selection.

@@ -6,12 +6,20 @@ from pathlib import Path
 import pytest
 
 from benchmarks.segmentation.datasets import load_public_dataset, load_public_dataset_manifest
+from benchmarks.segmentation.early_signal import (
+    generate_early_signal_verdicts,
+    load_threshold_set,
+)
 from benchmarks.segmentation.fixtures import (
     BenchmarkValidationError,
     ExpectedClaim,
     load_fixtures,
 )
 from benchmarks.segmentation.results import relevant_segmenter_environment
+from benchmarks.segmentation.sample_plan import (
+    create_sample_plan,
+    write_sample_plan,
+)
 from benchmarks.segmentation.run_benchmark import main as benchmark_main
 from benchmarks.segmentation.scoring import (
     boundary_precision_recall_f1,
@@ -64,6 +72,58 @@ def write_manifest(
     }
     path = tmp_path / f"{dataset_name}.manifest.json"
     path.write_text(json.dumps(manifest), encoding="utf-8")
+    return path
+
+
+def write_superdialseg_sample(
+    tmp_path: Path,
+    *,
+    parent_count: int = 80,
+    split: str = "validation",
+    include_high_boundary: bool = True,
+) -> Path:
+    path = tmp_path / "superdialseg_many.synthetic.jsonl"
+    lines = [
+        json.dumps(
+            {
+                "record_type": "header",
+                "synthetic_shape_data": True,
+                "description": "not copied from SuperDialseg",
+            }
+        )
+    ]
+    for parent_index in range(parent_count):
+        message_count = 14 if parent_index % 7 == 0 else 8 if parent_index % 3 == 0 else 4
+        mode = parent_index % 4
+        if mode == 0:
+            boundary_positions: set[int] = set()
+        elif mode == 1:
+            boundary_positions = {2}
+        elif mode == 2:
+            boundary_positions = {2, 4}
+        elif include_high_boundary:
+            boundary_positions = {
+                position for position in range(2, message_count, 2)
+            }
+        else:
+            boundary_positions = {2, 4} if message_count > 4 else {2}
+        for turn in range(message_count):
+            lines.append(
+                json.dumps(
+                    {
+                        "dial_id": f"synthetic_dialog_{parent_index:03d}",
+                        "split": split,
+                        "turn_id": turn,
+                        "role": "user" if turn % 2 == 0 else "assistant",
+                        "utterance": f"dialog {parent_index} turn {turn}",
+                        "topic_id": f"topic-{sum(1 for p in boundary_positions if p <= turn)}",
+                        "segmentation_label": 1
+                        if (turn + 1) in boundary_positions and turn < message_count - 1
+                        else 0,
+                    }
+                )
+            )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
 
@@ -211,16 +271,174 @@ def test_lmsys_adapter_is_unlabeled_and_gated_license_is_explicit(tmp_path):
     assert metrics.segmentation["strict_boundary"] == "not_applicable"
 
 
+def test_sample_plan_is_deterministic_stratified_and_records_shortfalls(tmp_path, capsys):
+    sample = write_superdialseg_sample(
+        tmp_path, parent_count=65, include_high_boundary=False
+    )
+    manifest_path = write_manifest(tmp_path, local_path=str(sample))
+    dataset = load_public_dataset(manifest_path, split="validation")
+
+    plan_a = create_sample_plan(
+        dataset,
+        benchmark_tier="early_signal",
+        split="validation",
+        sample_seed=42,
+        target_sample_size=80,
+    )
+    plan_b = create_sample_plan(
+        dataset,
+        benchmark_tier="early_signal",
+        split="validation",
+        sample_seed=42,
+        target_sample_size=80,
+    )
+    plan_c = create_sample_plan(
+        dataset,
+        benchmark_tier="early_signal",
+        split="validation",
+        sample_seed=99,
+        target_sample_size=80,
+    )
+
+    first_n = tuple(parent.parent_id for parent in dataset.parents[: len(plan_a.selected_parent_ids)])
+    assert plan_a.selected_parent_ids == plan_b.selected_parent_ids
+    assert plan_a.selected_parent_ids != first_n
+    assert plan_a.selected_parent_ids != plan_c.selected_parent_ids
+    assert len(plan_a.selected_parent_ids) == 65
+    assert plan_a.stratum_shortfalls["high_boundary_count"] > 0
+    assert plan_a.stratum_actual_sizes["high_boundary_count"] == 0
+
+    output = tmp_path / "sample-plan.json"
+    assert benchmark_main(
+        [
+            "sample-plan",
+            "--dataset-manifest",
+            str(manifest_path),
+            "--split",
+            "validation",
+            "--benchmark-tier",
+            "early_signal",
+            "--sample-seed",
+            "42",
+            "--target-size",
+            "80",
+            "--output",
+            str(output),
+        ]
+    ) == 0
+    assert Path(capsys.readouterr().out.strip()) == output
+    saved = json.loads(output.read_text(encoding="utf-8"))
+    assert saved["schema_version"] == "segmentation-benchmark-sample-plan.v1"
+
+
+def test_tier1_sample_plan_validation_fails_below_minimum(tmp_path):
+    sample = write_superdialseg_sample(tmp_path, parent_count=12)
+    manifest_path = write_manifest(tmp_path, local_path=str(sample))
+    dataset = load_public_dataset(manifest_path, split="validation")
+
+    with pytest.raises(BenchmarkValidationError, match="minimum is 60"):
+        create_sample_plan(
+            dataset,
+            benchmark_tier="early_signal",
+            split="validation",
+            sample_seed=42,
+            target_sample_size=80,
+        )
+
+    lower_level_plan = create_sample_plan(
+        dataset,
+        benchmark_tier="early_signal",
+        split="validation",
+        sample_seed=42,
+        target_sample_size=80,
+        enforce_tier_minimum=False,
+    )
+    assert len(lower_level_plan.selected_parent_ids) == 12
+
+
+def test_run_with_sample_plan_respects_selected_parent_order(tmp_path, capsys):
+    sample = write_superdialseg_sample(tmp_path, parent_count=65)
+    manifest_path = write_manifest(tmp_path, local_path=str(sample))
+    dataset = load_public_dataset(manifest_path, split="validation")
+    plan = create_sample_plan(
+        dataset,
+        benchmark_tier="early_signal",
+        split="validation",
+        sample_seed=7,
+        target_sample_size=60,
+    )
+    plan_path = write_sample_plan(plan, tmp_path / "sample-plan.json")
+
+    output_dir = tmp_path / "results"
+    assert benchmark_main(
+        [
+            "run",
+            "--dataset-manifest",
+            str(manifest_path),
+            "--benchmark-tier",
+            "early_signal",
+            "--sample-plan",
+            str(plan_path),
+            "--early-signal-thresholds",
+            str(FIXTURES_DIR / "early_signal_thresholds.example.json"),
+            "--strategy",
+            "fixed_token_windows",
+            "--output-dir",
+            str(output_dir),
+        ]
+    ) == 0
+    run_path = Path(capsys.readouterr().out.strip())
+    records = [
+        json.loads(line)
+        for line in (run_path.parent / "parents.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [record["parent"]["parent_id"] for record in records] == list(
+        plan.selected_parent_ids
+    )
+    run_json = json.loads(run_path.read_text(encoding="utf-8"))
+    assert run_json["benchmark_tier"] == "early_signal"
+    assert run_json["selection_caveat"] == "early_signal_not_decision_grade"
+    assert run_json["sample_plan"]["selected_parent_count"] == 60
+    assert (
+        run_json["early_signal_thresholds"]["threshold_set_id"]
+        == "example-non-normative"
+    )
+    assert "fixed_token_windows" in run_json["early_signal_verdicts"]
+
+    assert benchmark_main(["score", "--results", str(run_path)]) == 0
+    capsys.readouterr()
+    score_json = json.loads((run_path.parent / "score.json").read_text(encoding="utf-8"))
+    assert (
+        score_json["early_signal_thresholds"]["threshold_set_id"]
+        == "example-non-normative"
+    )
+
+    assert benchmark_main(
+        ["report", "--results", str(run_path), "--format", "markdown"]
+    ) == 0
+    capsys.readouterr()
+    report_text = (run_path.parent / "report.md").read_text(encoding="utf-8")
+    assert "Early-Signal Verdicts" in report_text
+    assert "Fragmentation" in report_text
+    assert "early_signal_not_decision_grade" in report_text
+
+
 def test_fixture_and_expected_claim_validation():
     bundle = load_fixtures(
         FIXTURES_DIR / "synthetic_parents.example.jsonl",
         FIXTURES_DIR / "expected_claims.example.jsonl",
     )
 
-    assert len(bundle.parents) == 3
+    assert len(bundle.parents) >= 10
     tool_segment = bundle.expected_segments_by_fixture["tool_placeholder_mixed_privacy_001"][0]
     assert set(tool_segment.embeddable_message_ids) < set(tool_segment.message_ids)
-    assert sum(len(claims) for claims in bundle.expected_claims_by_fixture.values()) == 4
+    null_tool_segment = bundle.expected_segments_by_fixture[
+        "null_image_tool_only_messages_001"
+    ][0]
+    assert set(null_tool_segment.embeddable_message_ids) < set(
+        null_tool_segment.message_ids
+    )
+    assert sum(len(claims) for claims in bundle.expected_claims_by_fixture.values()) >= 9
 
 
 def test_fixture_validation_reports_multiple_errors(tmp_path):
@@ -429,6 +647,66 @@ def test_provenance_validation_classifies_unknown_cross_parent_and_unordered_ids
     } <= kinds
 
 
+def test_fragmentation_metrics_detect_false_splits_too_many_segments_and_duplicates():
+    parent = BenchmarkParent(
+        fixture_id=None,
+        source_kind="synthetic",
+        parent_id="no-boundary",
+        title=None,
+        privacy_tier=1,
+        messages=(
+            BenchmarkMessage("m1", 0, "user", "same topic one", 1),
+            BenchmarkMessage("m2", 1, "assistant", "same topic two", 1),
+            BenchmarkMessage("m3", 2, "user", "same topic three", 1),
+        ),
+        expected_boundaries=(),
+    )
+    output = StrategyOutput(
+        strategy_name="manual",
+        strategy_kind="fixed_window",
+        parent_id=parent.parent_id,
+        segments=(
+            SegmentProposal(("m1",), None, "duplicate tiny fragment"),
+            SegmentProposal(("m2",), None, "duplicate tiny fragment"),
+            SegmentProposal(("m3",), None, "duplicate tiny fragment"),
+        ),
+    )
+
+    metrics = score_strategy_outputs((parent,), {parent.parent_id: output})
+
+    assert metrics.fragmentation["no_boundary_false_split_count"] == 2
+    assert metrics.fragmentation["no_boundary_false_split_rate"] == 1.0
+    assert metrics.fragmentation["parents_more_than_twice_expected_count"] == 1
+    assert metrics.fragmentation["duplicate_adjacent_pair_count"] == 2
+    assert metrics.fragmentation["adjacent_tiny_fragment_rate"] == 1.0
+
+
+def test_fragmentation_label_dependent_metrics_are_not_applicable_for_unlabeled_parent():
+    parent = BenchmarkParent(
+        fixture_id=None,
+        source_kind="synthetic",
+        parent_id="unlabeled",
+        title=None,
+        privacy_tier=1,
+        messages=(BenchmarkMessage("m1", 0, "user", "one", 1),),
+        expected_boundaries=None,
+    )
+    output = StrategyOutput(
+        strategy_name="manual",
+        strategy_kind="fixed_window",
+        parent_id=parent.parent_id,
+        segments=(SegmentProposal(("m1",), None, "one", embeddable_message_ids=("m1",)),),
+    )
+
+    metrics = score_strategy_outputs((parent,), {parent.parent_id: output})
+
+    assert (
+        metrics.fragmentation["predicted_expected_segment_count_ratio_average"]
+        == "not_applicable"
+    )
+    assert metrics.fragmentation["sub_100_fragment_rate"] == 1.0
+
+
 def test_claim_normalization_is_nfkc_casefold_whitespace_without_punctuation_stripping():
     claim = ExpectedClaim(
         claim_id="c1",
@@ -459,6 +737,136 @@ def test_token_estimator_matches_production_default_and_empty_env_is_explicit(mo
     assert relevant_segmenter_environment() == {
         "ENGRAM_SEGMENTER_MODEL": "local-model.gguf"
     }
+
+
+def verdict_metric_payload(
+    *,
+    schema_valid_rate=1.0,
+    provenance_valid_rate=1.0,
+    strict_f1=0.5,
+    no_boundary_false_split_rate=0.0,
+):
+    return {
+        "operational": {
+            "schema_valid_rate": schema_valid_rate,
+            "provenance_valid_rate": provenance_valid_rate,
+            "backend_error_counts": {
+                "backend_wedge_post_smoke": 0,
+                "cuda_oom": 0,
+            },
+            "runaway_count": 0,
+        },
+        "segmentation": {"strict_boundary": {"f1": strict_f1}},
+        "fragmentation": {
+            "predicted_expected_segment_count_ratio_average": 1.0,
+            "no_boundary_false_split_rate": no_boundary_false_split_rate,
+            "sub_100_fragment_rate": 0.1,
+            "adjacent_tiny_fragment_rate": 0.0,
+            "duplicate_adjacent_rate": 0.0,
+        },
+    }
+
+
+def test_threshold_validation_and_structured_verdict_rules(tmp_path):
+    invalid = tmp_path / "bad-thresholds.json"
+    invalid.write_text(json.dumps({"schema_version": "wrong"}), encoding="utf-8")
+    with pytest.raises(BenchmarkValidationError, match="unsupported schema_version"):
+        load_threshold_set(invalid)
+
+    threshold_set = load_threshold_set(
+        FIXTURES_DIR / "early_signal_thresholds.example.json"
+    )
+    metrics = {
+        "fixed_token_windows": verdict_metric_payload(strict_f1=0.5),
+        "qwen_35b_a3b_iq4_xs_d034": verdict_metric_payload(strict_f1=0.6),
+        "challenger": verdict_metric_payload(schema_valid_rate=0.5, strict_f1=0.9),
+    }
+    kinds = {
+        "fixed_token_windows": "fixed_window",
+        "qwen_35b_a3b_iq4_xs_d034": "llm",
+        "challenger": "llm",
+    }
+    verdicts = generate_early_signal_verdicts(
+        benchmark_tier="early_signal",
+        selection_caveat="early_signal_not_decision_grade",
+        metrics_by_strategy=metrics,
+        strategy_kinds=kinds,
+        threshold_set=threshold_set,
+    )
+    challenger = verdicts["challenger"]
+    assert challenger["verdict"] == "reject"
+    assert challenger["blocking_failures"]
+    assert isinstance(challenger["metric_reasons"], dict)
+    assert challenger["metric_reasons"]["schema_valid_rate"]["passed"] is False
+
+    metrics["challenger"] = verdict_metric_payload(strict_f1=0.4)
+    verdicts = generate_early_signal_verdicts(
+        benchmark_tier="early_signal",
+        selection_caveat="early_signal_not_decision_grade",
+        metrics_by_strategy=metrics,
+        strategy_kinds=kinds,
+        threshold_set=threshold_set,
+    )
+    assert verdicts["challenger"]["verdict"] == "defer"
+
+    metrics["challenger"] = verdict_metric_payload(strict_f1=0.9)
+    metrics_without_operational = {
+        "fixed_token_windows": metrics["fixed_token_windows"],
+        "challenger": metrics["challenger"],
+    }
+    kinds_without_operational = {
+        "fixed_token_windows": "fixed_window",
+        "challenger": "llm",
+    }
+    verdicts = generate_early_signal_verdicts(
+        benchmark_tier="early_signal",
+        selection_caveat="early_signal_not_decision_grade",
+        metrics_by_strategy=metrics_without_operational,
+        strategy_kinds=kinds_without_operational,
+        threshold_set=threshold_set,
+    )
+    assert verdicts["challenger"]["verdict"] == "longer_run"
+    assert "comparison to operational model" in verdicts["challenger"]["hard_warnings"][0]
+
+    metrics["challenger"] = verdict_metric_payload(
+        strict_f1=0.9,
+        no_boundary_false_split_rate=0.9,
+    )
+    verdicts = generate_early_signal_verdicts(
+        benchmark_tier="early_signal",
+        selection_caveat="early_signal_not_decision_grade",
+        metrics_by_strategy=metrics,
+        strategy_kinds=kinds,
+        threshold_set=threshold_set,
+    )
+    assert verdicts["challenger"]["hard_warnings"]
+    assert verdicts["challenger"]["metric_reasons"]["no_boundary_false_split_rate"][
+        "passed"
+    ] is False
+
+
+def test_absent_thresholds_prevent_candidate_verdict():
+    metrics = {
+        "fixed_token_windows": verdict_metric_payload(strict_f1=0.5),
+        "qwen_35b_a3b_iq4_xs_d034": verdict_metric_payload(strict_f1=0.6),
+        "challenger": verdict_metric_payload(strict_f1=0.9),
+    }
+    kinds = {
+        "fixed_token_windows": "fixed_window",
+        "qwen_35b_a3b_iq4_xs_d034": "llm",
+        "challenger": "llm",
+    }
+
+    verdicts = generate_early_signal_verdicts(
+        benchmark_tier="early_signal",
+        selection_caveat="early_signal_not_decision_grade",
+        metrics_by_strategy=metrics,
+        strategy_kinds=kinds,
+        threshold_set=None,
+    )
+
+    assert verdicts["challenger"]["verdict"] == "longer_run"
+    assert verdicts["challenger"]["threshold_set"]["status"] == "missing"
 
 
 def test_cli_validate_list_run_and_score(tmp_path, capsys):
@@ -514,6 +922,9 @@ def test_cli_validate_list_run_and_score(tmp_path, capsys):
     run_path = Path(capsys.readouterr().out.strip())
     assert run_path.name == "run.json"
     assert (run_path.parent / "parents.jsonl").exists()
+    run_json = json.loads(run_path.read_text(encoding="utf-8"))
+    assert run_json["benchmark_tier"] == "smoke"
+    assert run_json["selection_caveat"] == "smoke_only"
 
     assert benchmark_main(["score", "--results", str(run_path)]) == 0
     score_output = capsys.readouterr().out
@@ -541,8 +952,26 @@ def test_cli_validate_list_run_and_score(tmp_path, capsys):
     report_text = report_md.read_text(encoding="utf-8")
     assert "Strategy Comparison" in report_text
     assert "Parent Boundary Diffs" in report_text
+    assert "Fragmentation" in report_text
+    assert "Benchmark tier" in report_text
     assert "positions:" in report_text
     assert "Showing 1 of 2 parents" in report_text
+
+    old_run = json.loads(run_path.read_text(encoding="utf-8"))
+    old_run.pop("benchmark_tier", None)
+    old_run.pop("selection_caveat", None)
+    old_run.pop("early_signal_verdicts", None)
+    old_run.pop("early_signal_thresholds", None)
+    for metrics in old_run["metrics"].values():
+        metrics.pop("fragmentation", None)
+    old_path = run_path.parent / "old-style-run.json"
+    old_path.write_text(json.dumps(old_run), encoding="utf-8")
+    assert benchmark_main(["score", "--results", str(old_path)]) == 0
+    capsys.readouterr()
+    assert benchmark_main(
+        ["report", "--results", str(old_path), "--format", "markdown"]
+    ) == 0
+    capsys.readouterr()
 
 
 class FakeLocalModelClient:

@@ -1,7 +1,7 @@
 # Segmentation Benchmark Specification
 
-Status: implemented offline deterministic harness; RFC 0008 early-signal
-revision specified, pending implementation
+Status: implemented offline deterministic harness with RFC 0008 Tier 0/Tier 1
+early-signal support; Tier 2 decision-grade support pending
 
 This benchmark is a local-only, scratch-only development tool for comparing
 segmentation strategies before changing production Phase 2 behavior. It does
@@ -22,8 +22,8 @@ fragmentation-aware.
 - Benchmark strategy names and `StrategyKind` values are benchmark-internal;
   they are not production `segments.window_strategy` values and do not land
   deferred P-FRAG schema values from D039.
-- Planned RFC 0008 / D042 Tier 1 and Tier 2 runs declare their benchmark tier
-  and selection caveat once that runner support is implemented.
+- RFC 0008 / D042 Tier 0 and Tier 1 runs declare their benchmark tier and
+  selection caveat. Tier 2 decision-grade runner support is pending.
 - Raw boundary metrics are audit data; model-selection recommendations use
   the tier-specific verdict rules below.
 
@@ -43,9 +43,10 @@ for tests only and is explicitly not copied from SuperDialseg.
 
 ## Benchmark Tiers
 
-Status: planned (RFC 0008 / D042). The current executable harness can produce
-Tier 0-style scratch runs, but it does not yet emit `benchmark_tier`,
-`selection_caveat`, sample-plan, or verdict fields.
+Status: implemented for `smoke` and `early_signal`; `decision` remains pending.
+New result artifacts emit `benchmark_tier`, `selection_caveat`, optional
+sample-plan metadata, optional threshold-set metadata, fragmentation metrics,
+and Tier 1 verdict fields. Existing scratch artifacts are not backfilled.
 
 Benchmark runs are classified by `benchmark_tier`.
 
@@ -77,9 +78,10 @@ Required shape:
 - current operational model/profile, active challenger models, and cheap
   deterministic baselines.
 
-Tier 1 produces an `early_signal_verdict` of `reject`, `defer`,
-`longer_run`, or `candidate`. A challenger does not become the operational
-choice from Tier 1 alone; `candidate` means schedule a Tier 2 decision run.
+Tier 1 produces `early_signal_verdicts` keyed by strategy, with each verdict
+set to `reject`, `defer`, `longer_run`, or `candidate`. A challenger does not
+become the operational choice from Tier 1 alone; `candidate` means schedule a
+Tier 2 decision run.
 
 ### Tier 2: `decision`
 
@@ -137,7 +139,8 @@ Adapters:
 
 ## Sample Plans
 
-Status: planned (RFC 0008 / D042).
+Status: implemented for SuperDialseg `smoke` and `early_signal` sample plans.
+Decision-grade sample plans are pending.
 
 Sample plan schema version: `segmentation-benchmark-sample-plan.v1`.
 
@@ -233,8 +236,8 @@ references.
 
 ## Engram Proxy Fixtures
 
-Status: planned (RFC 0008 / D042) beyond the current small example fixture
-set.
+Status: implemented as a small public synthetic fixture set. It remains a
+regression/proxy layer, not the primary benchmark substrate.
 
 Tier 1 and Tier 2 include the full synthetic fixture set. Fixtures remain
 small, public, and hand-authored; they are not a replacement for private
@@ -312,8 +315,26 @@ python3 -m benchmarks.segmentation.run_benchmark validate-fixtures \
 
 python3 -m benchmarks.segmentation.run_benchmark list-strategies
 
+python3 -m benchmarks.segmentation.run_benchmark sample-plan \
+  --dataset-manifest .scratch/benchmarks/datasets/superdialseg/manifest.json \
+  --split validation \
+  --benchmark-tier early_signal \
+  --sample-seed 42 \
+  --target-size 80 \
+  --output .scratch/benchmarks/segmentation/sample-plans/superdialseg-tier1.json
+
 python3 -m benchmarks.segmentation.run_benchmark run \
   --dataset-manifest .scratch/benchmarks/datasets/superdialseg/manifest.json \
+  --benchmark-tier smoke \
+  --strategy fixed_token_windows \
+  --strategy message_groups \
+  --output-dir .scratch/benchmarks/segmentation
+
+python3 -m benchmarks.segmentation.run_benchmark run \
+  --dataset-manifest .scratch/benchmarks/datasets/superdialseg/manifest.json \
+  --benchmark-tier early_signal \
+  --sample-plan .scratch/benchmarks/segmentation/sample-plans/superdialseg-tier1.json \
+  --early-signal-thresholds benchmarks/segmentation/fixtures/early_signal_thresholds.example.json \
   --strategy fixed_token_windows \
   --strategy message_groups \
   --output-dir .scratch/benchmarks/segmentation
@@ -351,10 +372,14 @@ Result schema version: `segmentation-benchmark-result.v1`.
 Current implemented `run.json` records:
 
 - git commit;
+- benchmark tier and selection caveat;
 - dataset manifest/schema version, dataset name/source/snapshot/version,
   preprocessing version, and license metadata;
 - fixture version/schema version and expected-claims schema version when
   fixtures are included;
+- sample plan summary when supplied;
+- early-signal threshold set when supplied;
+- early-signal verdicts for Tier 1 runs;
 - strategy name/kind/config/version;
 - scoring implementation version;
 - token estimator version;
@@ -363,12 +388,6 @@ Current implemented `run.json` records:
 - UTC creation timestamp;
 - explicit deterministic-run model fields with null or `not_run` values, or
   local model metadata for local-model strategies.
-
-Planned RFC 0008 / D042 result additions are:
-
-- benchmark tier and selection caveat;
-- sample plan schema/version/seed/path when applicable;
-- early-signal verdict when applicable.
 
 Existing scratch artifacts are not backfilled when planned fields are added.
 
@@ -382,22 +401,17 @@ Reports include:
 - run metadata;
 - strategy comparison table;
 - segment-length and sub-floor fragment table;
+- fragmentation quality table;
+- early-signal verdict table when present;
 - backend error count table;
 - per-parent boundary diagrams comparing expected and predicted boundaries.
-
-Planned RFC 0008 / D042 report additions are:
-
-- benchmark tier and selection caveat;
-- early-signal verdict table when applicable;
-- fragmentation quality table;
-- Engram proxy quality table when fixtures are included.
 
 `--max-parents` bounds per-parent detail so large public snapshots do not
 produce unreviewable reports by default.
 
 ## Scoring
 
-Scoring implementation version: `segmentation-benchmark-scoring.v1`.
+Scoring implementation version: `segmentation-benchmark-scoring.v2`.
 
 The early-signal revision is a semantic scoring change and must bump
 `SCORING_IMPLEMENTATION_VERSION` when implemented. The implementation may keep
@@ -440,8 +454,8 @@ Segmentation metrics:
 
 Fragmentation metrics:
 
-Status: planned (RFC 0008 / D042) except for already implemented segment-count,
-segment-token-length, sub-floor fragment, over-split, and under-split metrics.
+Status: implemented for public and fixture parents. Label-dependent metrics
+report `not_applicable` for unlabeled datasets.
 
 - predicted/expected segment-count ratio for labeled parents;
 - absolute segment-count distance from expected;
@@ -465,10 +479,12 @@ For unlabeled datasets such as LMSYS-Chat-1M, label-dependent metrics report
 
 ## Early-Signal Verdict
 
-Status: planned (RFC 0008 / D042).
+Status: implemented for Tier 1 early-signal verdicts. Threshold values remain
+explicit input via `--early-signal-thresholds`; the example threshold file is
+non-normative test/example data.
 
-Tier 1 `score.json` and `run.json` must include an `early_signal_verdict`
-object per strategy:
+Tier 1 `score.json` and `run.json` include an `early_signal_verdicts` object
+keyed by strategy. Each strategy value has this shape:
 
 ```json
 {

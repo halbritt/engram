@@ -17,7 +17,7 @@ from benchmarks.segmentation.strategies import (
 )
 
 
-SCORING_IMPLEMENTATION_VERSION = "segmentation-benchmark-scoring.v1"
+SCORING_IMPLEMENTATION_VERSION = "segmentation-benchmark-scoring.v2"
 BACKEND_ERROR_CLASSES = (
     "connect_refused",
     "read_timeout",
@@ -33,6 +33,7 @@ BACKEND_ERROR_CLASSES = (
 class MetricBundle:
     operational: dict[str, Any] = field(default_factory=dict)
     segmentation: dict[str, Any] = field(default_factory=dict)
+    fragmentation: dict[str, Any] = field(default_factory=dict)
     claim_utility: dict[str, Any] = field(default_factory=dict)
     denominators: dict[str, Any] = field(default_factory=dict)
 
@@ -56,6 +57,9 @@ def score_strategy_outputs(
     token_lengths: list[int] = []
     segment_counts: dict[str, int] = {}
     subfloor_counts = {50: 0, 100: 0, 200: 0}
+    adjacent_pair_count = 0
+    adjacent_tiny_pair_count = 0
+    duplicate_adjacent_pair_count = 0
     backend_error_counts = {kind: 0 for kind in BACKEND_ERROR_CLASSES}
     timeout_count = 0
     runaway_count = 0
@@ -70,6 +74,12 @@ def score_strategy_outputs(
     windowdiff_values: list[float] = []
     oversplit_total = 0
     undersplit_total = 0
+    no_boundary_parent_count = 0
+    no_boundary_false_split_parent_count = 0
+    no_boundary_false_split_count = 0
+    segment_count_ratios: list[float] = []
+    segment_count_distances: list[int] = []
+    parents_more_than_twice_expected_count = 0
     strategy_kind = first_strategy_kind(outputs_by_parent)
 
     for parent in parents:
@@ -102,6 +112,15 @@ def score_strategy_outputs(
             for floor in subfloor_counts:
                 if tokens < floor:
                     subfloor_counts[floor] += 1
+        for left, right in zip(segments, segments[1:]):
+            adjacent_pair_count += 1
+            if (
+                estimate_text_tokens(left.content_text) < 100
+                and estimate_text_tokens(right.content_text) < 100
+            ):
+                adjacent_tiny_pair_count += 1
+            if near_duplicate_text(left.content_text, right.content_text):
+                duplicate_adjacent_pair_count += 1
 
         expected_segments = ()
         if parent.fixture_id:
@@ -110,6 +129,21 @@ def score_strategy_outputs(
         if expected_boundaries is not None:
             labeled_parent_count += 1
             predicted_boundaries = predicted_boundaries_for_parent(parent, segments)
+            expected_segment_count = len(expected_boundaries) + 1
+            predicted_segment_count = len(segments)
+            segment_count_ratios.append(
+                safe_rate(predicted_segment_count, expected_segment_count)
+            )
+            segment_count_distances.append(
+                abs(predicted_segment_count - expected_segment_count)
+            )
+            if predicted_segment_count > (2 * expected_segment_count):
+                parents_more_than_twice_expected_count += 1
+            if len(expected_boundaries) == 0:
+                no_boundary_parent_count += 1
+                if predicted_segment_count > 1:
+                    no_boundary_false_split_parent_count += 1
+                    no_boundary_false_split_count += len(predicted_boundaries)
             strict = boundary_precision_recall_f1(
                 set(expected_boundaries), set(predicted_boundaries)
             )
@@ -177,6 +211,27 @@ def score_strategy_outputs(
             "boundary_over_split_count": oversplit_total,
             "boundary_under_split_count": undersplit_total,
         }
+        label_dependent_fragmentation: dict[str, Any] = {
+            "predicted_expected_segment_count_ratio_average": safe_average(
+                segment_count_ratios
+            ),
+            "predicted_expected_segment_count_ratio_max": (
+                max(segment_count_ratios) if segment_count_ratios else None
+            ),
+            "absolute_segment_count_distance_average": safe_average(
+                segment_count_distances
+            ),
+            "absolute_segment_count_distance_total": sum(segment_count_distances),
+            "no_boundary_parent_count": no_boundary_parent_count,
+            "no_boundary_false_split_parent_count": no_boundary_false_split_parent_count,
+            "no_boundary_false_split_count": no_boundary_false_split_count,
+            "no_boundary_false_split_rate": safe_rate(
+                no_boundary_false_split_parent_count, no_boundary_parent_count
+            ),
+            "parents_more_than_twice_expected_count": (
+                parents_more_than_twice_expected_count
+            ),
+        }
     else:
         segmentation = {
             "segment_count_by_parent": segment_counts,
@@ -191,6 +246,39 @@ def score_strategy_outputs(
             "boundary_over_split_count": "not_applicable",
             "boundary_under_split_count": "not_applicable",
         }
+        label_dependent_fragmentation = {
+            "predicted_expected_segment_count_ratio_average": "not_applicable",
+            "predicted_expected_segment_count_ratio_max": "not_applicable",
+            "absolute_segment_count_distance_average": "not_applicable",
+            "absolute_segment_count_distance_total": "not_applicable",
+            "no_boundary_parent_count": "not_applicable",
+            "no_boundary_false_split_parent_count": "not_applicable",
+            "no_boundary_false_split_count": "not_applicable",
+            "no_boundary_false_split_rate": "not_applicable",
+            "parents_more_than_twice_expected_count": "not_applicable",
+        }
+
+    total_segments = sum(segment_counts.values())
+    fragmentation = {
+        **label_dependent_fragmentation,
+        "sub_50_fragment_rate": safe_rate(subfloor_counts[50], total_segments),
+        "sub_100_fragment_rate": safe_rate(subfloor_counts[100], total_segments),
+        "sub_200_fragment_rate": safe_rate(subfloor_counts[200], total_segments),
+        "adjacent_tiny_fragment_token_floor": 100,
+        "adjacent_pair_count": adjacent_pair_count,
+        "adjacent_tiny_fragment_pair_count": adjacent_tiny_pair_count,
+        "adjacent_tiny_fragment_rate": safe_rate(
+            adjacent_tiny_pair_count, adjacent_pair_count
+        ),
+        "duplicate_adjacent_pair_count": duplicate_adjacent_pair_count,
+        "duplicate_adjacent_rate": safe_rate(
+            duplicate_adjacent_pair_count, adjacent_pair_count
+        ),
+        "duplicate_adjacent_normalization": (
+            "NFKC casefold, punctuation-to-space, whitespace collapse, "
+            "exact match or token-set Jaccard >= 0.90"
+        ),
+    }
 
     claim_utility = {
         "status": "not_run",
@@ -206,6 +294,7 @@ def score_strategy_outputs(
     return MetricBundle(
         operational=operational,
         segmentation=segmentation,
+        fragmentation=fragmentation,
         claim_utility=claim_utility,
         denominators={
             "parents": parent_count,
@@ -435,6 +524,26 @@ def claim_matches(expected_claim: ExpectedClaim, candidate_text: str) -> bool:
     normalized_candidate = normalize_claim_text(candidate_text)
     candidates = (expected_claim.claim_text, *expected_claim.match_aliases)
     return any(normalize_claim_text(candidate) == normalized_candidate for candidate in candidates)
+
+
+def near_duplicate_text(left: str, right: str) -> bool:
+    left_norm = normalize_fragment_text(left)
+    right_norm = normalize_fragment_text(right)
+    if not left_norm or not right_norm:
+        return False
+    if left_norm == right_norm:
+        return True
+    left_tokens = set(left_norm.split())
+    right_tokens = set(right_norm.split())
+    if not left_tokens or not right_tokens:
+        return False
+    return safe_rate(len(left_tokens & right_tokens), len(left_tokens | right_tokens)) >= 0.9
+
+
+def normalize_fragment_text(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", text).casefold()
+    normalized = re.sub(r"[^\w\s]+", " ", normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
 
 
 def macro_boundary_scores(scores: list[dict[str, float | int]]) -> dict[str, float]:

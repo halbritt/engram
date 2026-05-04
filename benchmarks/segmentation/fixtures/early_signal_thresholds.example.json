@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-05-04T00:00:00Z",
+  "fragmentation": {
+    "adjacent_tiny_fragment_rate_max": 0.35,
+    "duplicate_adjacent_rate_max": 0.10,
+    "no_boundary_false_split_rate_max": 0.25,
+    "segment_count_ratio_max": 2.00,
+    "sub_100_fragment_rate_max": 0.60
+  },
+  "hard_gates": {
+    "forbidden_backend_error_kinds": [
+      "backend_wedge_post_smoke",
+      "cuda_oom"
+    ],
+    "provenance_valid_rate_min": 1.0,
+    "schema_valid_rate_min": 1.0
+  },
+  "schema_version": "segmentation-benchmark-early-signal-thresholds.v1",
+  "source": "non-normative benchmark fixture example for tests",
+  "threshold_set_id": "example-non-normative"
+}

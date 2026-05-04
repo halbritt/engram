@@ -10,9 +10,21 @@ from dataclasses import replace
 from pathlib import Path
 
 from benchmarks.segmentation.datasets import PublicDataset, load_public_dataset
+from benchmarks.segmentation.early_signal import (
+    SUPPORTED_BENCHMARK_TIERS,
+    load_threshold_set,
+    selection_caveat_for_tier,
+)
 from benchmarks.segmentation.fixtures import BenchmarkValidationError, load_fixtures
 from benchmarks.segmentation.reporting import write_report_files
 from benchmarks.segmentation.results import score_run_file, write_run_results
+from benchmarks.segmentation.sample_plan import (
+    create_sample_plan,
+    load_sample_plan,
+    select_parents_from_plan,
+    validate_sample_plan_for_manifest,
+    write_sample_plan,
+)
 from benchmarks.segmentation.strategies import (
     DEFAULT_STRATEGIES,
     LOCAL_MODEL_DEFAULT_BASE_URL,
@@ -40,6 +52,18 @@ def build_parser() -> argparse.ArgumentParser:
     validate_fixtures.add_argument("--fixtures", required=True)
     validate_fixtures.add_argument("--expected-claims")
 
+    sample_plan = subparsers.add_parser("sample-plan")
+    sample_plan.add_argument("--dataset-manifest", required=True)
+    sample_plan.add_argument("--split")
+    sample_plan.add_argument(
+        "--benchmark-tier",
+        choices=SUPPORTED_BENCHMARK_TIERS,
+        required=True,
+    )
+    sample_plan.add_argument("--sample-seed", type=int, required=True)
+    sample_plan.add_argument("--target-size", type=positive_int, required=True)
+    sample_plan.add_argument("--output", required=True)
+
     subparsers.add_parser("list-strategies")
 
     run = subparsers.add_parser("run")
@@ -50,6 +74,14 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--output-dir", required=True)
     run.add_argument("--split")
     run.add_argument("--limit", type=positive_int)
+    run.add_argument(
+        "--benchmark-tier",
+        choices=SUPPORTED_BENCHMARK_TIERS,
+        default="smoke",
+    )
+    run.add_argument("--selection-caveat")
+    run.add_argument("--sample-plan")
+    run.add_argument("--early-signal-thresholds")
     run.add_argument("--target-tokens", type=positive_int, default=200)
     run.add_argument("--overlap-messages", type=non_negative_int, default=0)
     run.add_argument(
@@ -126,6 +158,22 @@ def main(argv: list[str] | None = None) -> int:
                 f"fixture_version={bundle.fixture_version} expected_claims={claim_count}"
             )
             return 0
+        if args.command == "sample-plan":
+            if args.benchmark_tier == "decision":
+                raise NotImplementedError(
+                    "decision benchmark tier sample plans are pending implementation"
+                )
+            dataset = load_public_dataset(args.dataset_manifest, split=args.split)
+            plan = create_sample_plan(
+                dataset,
+                benchmark_tier=args.benchmark_tier,
+                split=args.split,
+                sample_seed=args.sample_seed,
+                target_sample_size=args.target_size,
+            )
+            path = write_sample_plan(plan, args.output)
+            print(path)
+            return 0
         if args.command == "list-strategies":
             for name, strategy in sorted(DEFAULT_STRATEGIES.items()):
                 print(f"{name}\t{strategy.kind}")
@@ -158,11 +206,36 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def run_command(args: argparse.Namespace) -> int:
+    if args.benchmark_tier == "decision":
+        raise NotImplementedError("decision benchmark tier execution is pending implementation")
+    selection_caveat = args.selection_caveat or selection_caveat_for_tier(args.benchmark_tier)
+    if args.early_signal_thresholds and args.benchmark_tier != "early_signal":
+        raise ValueError("--early-signal-thresholds is only valid with --benchmark-tier early_signal")
+    threshold_set = (
+        load_threshold_set(args.early_signal_thresholds)
+        if args.early_signal_thresholds
+        else None
+    )
+    sample_plan = load_sample_plan(args.sample_plan) if args.sample_plan else None
+    if sample_plan and args.limit is not None:
+        raise ValueError("--sample-plan cannot be combined with --limit")
+    if sample_plan and sample_plan.benchmark_tier != args.benchmark_tier:
+        raise ValueError(
+            f"sample plan tier {sample_plan.benchmark_tier!r} does not match "
+            f"--benchmark-tier {args.benchmark_tier!r}"
+        )
+
     dataset = load_public_dataset(
         args.dataset_manifest,
-        split=args.split,
-        limit=args.limit,
+        split=(sample_plan.split if sample_plan else args.split),
+        limit=None if sample_plan else args.limit,
     )
+    if sample_plan:
+        validate_sample_plan_for_manifest(sample_plan, dataset.manifest, split=args.split)
+        dataset = PublicDataset(
+            manifest=dataset.manifest,
+            parents=select_parents_from_plan(dataset, sample_plan),
+        )
     fixture_bundle = None
     if args.fixtures:
         fixture_bundle = load_fixtures(args.fixtures, args.expected_claims)
@@ -219,6 +292,10 @@ def run_command(args: argparse.Namespace) -> int:
         strategy_outputs=strategy_outputs,
         durations=durations,
         fixture_bundle=fixture_bundle,
+        benchmark_tier=args.benchmark_tier,
+        selection_caveat=selection_caveat,
+        sample_plan=sample_plan,
+        threshold_set=threshold_set,
     )
     print(run_path)
     return 0

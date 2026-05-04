@@ -115,6 +115,10 @@ def generate_markdown_report(report_input: ReportInput, *, max_parents: int) -> 
         f"| Created | `{run.get('created_at')}` |",
         f"| Git commit | `{run.get('git_commit')}` |",
         f"| Dataset | `{dataset_label(run)}` |",
+        f"| Benchmark tier | `{run.get('benchmark_tier', 'unknown')}` |",
+        f"| Selection caveat | `{run.get('selection_caveat', 'unknown')}` |",
+        f"| Sample plan | `{sample_plan_label(run)}` |",
+        f"| Threshold set | `{threshold_set_label(run)}` |",
         f"| Scoring | `{run.get('scoring_implementation_version')}` |",
         f"| Token estimator | `{run.get('benchmark_token_estimator_version')}` |",
         "",
@@ -125,6 +129,14 @@ def generate_markdown_report(report_input: ReportInput, *, max_parents: int) -> 
         "## Segment Lengths",
         "",
         markdown_length_table(run),
+        "",
+        "## Fragmentation",
+        "",
+        markdown_fragmentation_table(run),
+        "",
+        "## Early-Signal Verdicts",
+        "",
+        markdown_verdict_table(run),
         "",
         "## Backend Errors",
         "",
@@ -285,6 +297,70 @@ def markdown_length_table(run: dict[str, Any]) -> str:
     return "\n".join(rows)
 
 
+def markdown_fragmentation_table(run: dict[str, Any]) -> str:
+    rows = [
+        "| Strategy | Ratio avg | Abs distance avg | No-boundary false split rate | <100 rate | Adjacent tiny rate | Duplicate adjacent rate | >2x expected parents |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for strategy_name in sorted(run.get("metrics", {})):
+        fragmentation = run["metrics"][strategy_name].get("fragmentation", {})
+        rows.append(
+            "| "
+            + " | ".join(
+                [
+                    f"`{strategy_name}`",
+                    format_metric(
+                        fragmentation.get(
+                            "predicted_expected_segment_count_ratio_average"
+                        )
+                    ),
+                    format_metric(
+                        fragmentation.get("absolute_segment_count_distance_average")
+                    ),
+                    format_percent(fragmentation.get("no_boundary_false_split_rate")),
+                    format_percent(fragmentation.get("sub_100_fragment_rate")),
+                    format_percent(fragmentation.get("adjacent_tiny_fragment_rate")),
+                    format_percent(fragmentation.get("duplicate_adjacent_rate")),
+                    format_metric(
+                        fragmentation.get("parents_more_than_twice_expected_count")
+                    ),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(rows)
+
+
+def markdown_verdict_table(run: dict[str, Any]) -> str:
+    verdicts = run.get("early_signal_verdicts") or {}
+    rows = [
+        "| Strategy | Verdict | Caveat | Hard warnings | Blocking failures | Summary |",
+        "|---|---|---|---:|---:|---|",
+    ]
+    if not isinstance(verdicts, dict) or not verdicts:
+        rows.append("| n/a | n/a | n/a | 0 | 0 | No early-signal verdicts in this result. |")
+        return "\n".join(rows)
+    for strategy_name in sorted(verdicts):
+        verdict = verdicts[strategy_name]
+        if not isinstance(verdict, dict):
+            continue
+        rows.append(
+            "| "
+            + " | ".join(
+                [
+                    f"`{strategy_name}`",
+                    str(verdict.get("verdict", "")),
+                    str(verdict.get("selection_caveat", "")),
+                    str(len(verdict.get("hard_warnings") or [])),
+                    str(len(verdict.get("blocking_failures") or [])),
+                    escape_table_text(str(verdict.get("summary", ""))),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(rows)
+
+
 def markdown_backend_errors(run: dict[str, Any]) -> str:
     rows = [
         "| Strategy | connect_refused | read_timeout | http_5xx | grammar_stack_empty | cuda_oom | backend_wedge_post_smoke | unknown |",
@@ -412,6 +488,24 @@ def dataset_label(run: dict[str, Any]) -> str:
     return f"{dataset.get('name')} {dataset.get('version')} ({dataset.get('source')})"
 
 
+def sample_plan_label(run: dict[str, Any]) -> str:
+    sample_plan = run.get("sample_plan")
+    if not isinstance(sample_plan, dict):
+        return "none"
+    return (
+        f"{sample_plan.get('benchmark_tier')} seed={sample_plan.get('sample_seed')} "
+        f"selected={sample_plan.get('selected_parent_count')}/"
+        f"{sample_plan.get('target_sample_size')}"
+    )
+
+
+def threshold_set_label(run: dict[str, Any]) -> str:
+    thresholds = run.get("early_signal_thresholds")
+    if not isinstance(thresholds, dict):
+        return "none"
+    return f"{thresholds.get('threshold_set_id')} ({thresholds.get('source')})"
+
+
 def nested_metric(value: Any, *keys: str) -> Any:
     for key in keys:
         if not isinstance(value, dict):
@@ -432,6 +526,10 @@ def format_percent(value: Any) -> str:
     if isinstance(value, (int, float)):
         return f"{float(value) * 100:.1f}%"
     return format_metric(value)
+
+
+def escape_table_text(value: str) -> str:
+    return value.replace("|", "\\|").replace("\n", " ")
 
 
 def format_boundaries(boundaries: tuple[int, ...]) -> str:
