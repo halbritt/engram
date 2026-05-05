@@ -233,12 +233,19 @@ gets in.
    (88..126) are sub-spans inside it. Same shape as `1ffd2141…` but
    smaller scale.
 
-7. **`e013fb48…` Harbor Freight dust collector — same shape, smaller still.**
+7. **`ce42c24a…` "Dust collector filter upgrade" — same shape, smaller still.**
    Seq 6 covers 59..112 (stored 54, model 24); seq 7 (85..93) and seq 8
    (91..112) are sub-spans inside it.
 
-8. **`ce42c24a…` PSU/build conversation — same shape.** Seq 3 covers
+8. **`e013fb48…` "PSU to CPU cable issue" — same shape.** Seq 3 covers
    70..134 (stored 65, model 22); seqs 4, 5, 6 cover sub-spans inside it.
+
+   *Correction note:* spot checks 7 and 8 originally swapped these UUIDs
+   relative to the live `conversations.title` (the topic descriptions
+   were written from the segment summaries but pinned to the wrong
+   conversation ids). The shapes and seq ranges are unchanged; only the
+   parent ids were corrected. Caught in
+   `PHASE_2_QWEN27B_UMBRELLA_AB_2026_05_05.md`.
 
 9. **Old-prompt stragglers.** 11 active segments across 3 conversations
    (`003a1e2c…`, `00454dfb…`, `0045e546…`) are still on

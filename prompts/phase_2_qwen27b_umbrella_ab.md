@@ -51,8 +51,8 @@ conversations by total span expansion" table.
 | `1ffd2141-04fb-48d6-8c0e-dc06a593ab8e` | LLM hosting options | umbrella seg covers 252 msgs, swallows 5 sub-segs |
 | `43651f99-93b0-4755-898b-41a4a71cfac9` | "Lexus" | duplicate-segment (seq 1 ≡ seq 2 byte-identical) |
 | `3f732fbc-5f7f-4570-962a-6d80fbf76259` | PG&E Smart Meter | partial umbrella (seq 2 swallows seqs 3, 4) |
-| `e013fb48-7998-4b9f-860b-c0b23e53feed` | Harbor Freight dust collector | partial umbrella |
-| `ce42c24a-a687-4e9e-a5f8-eda384dcda3d` | PSU build | partial umbrella |
+| `e013fb48-7998-4b9f-860b-c0b23e53feed` | PSU to CPU cable issue | partial umbrella |
+| `ce42c24a-a687-4e9e-a5f8-eda384dcda3d` | Dust collector filter upgrade | partial umbrella |
 
 ## Pre-Flight: Server Swap
 
@@ -107,8 +107,8 @@ CHALLENGE_PARENTS = [
     ("1ffd2141-04fb-48d6-8c0e-dc06a593ab8e", "LLM hosting options"),
     ("43651f99-93b0-4755-898b-41a4a71cfac9", "Lexus"),
     ("3f732fbc-5f7f-4570-962a-6d80fbf76259", "PG&E Smart Meter"),
-    ("e013fb48-7998-4b9f-860b-c0b23e53feed", "Harbor Freight dust collector"),
-    ("ce42c24a-a687-4e9e-a5f8-eda384dcda3d", "PSU build"),
+    ("e013fb48-7998-4b9f-860b-c0b23e53feed", "PSU to CPU cable issue"),
+    ("ce42c24a-a687-4e9e-a5f8-eda384dcda3d", "Dust collector filter upgrade"),
 ]
 
 # Pin model_version explicitly so the segment_generations row clearly
