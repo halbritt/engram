@@ -125,16 +125,15 @@ Pipe-mode start, for CLIs that accept prompts on stdin:
 export PHASE3_RUN_MODE=pipe
 export CLAUDE_CMD='claude --model opus --dangerously-skip-permissions'
 export CODEX_CMD='codex --model gpt-5.5 --yolo'
-export GEMINI_CMD='gemini --yolo'
+export GEMINI_CMD='gemini --model gemini-3.1-pro-preview --yolo'
 scripts/phase3_tmux_agents.sh start
 tmux attach -t engram-phase3
 ```
 
 These are also the script defaults in pipe mode. Claude is pinned to `opus` so
-it does not fall back to Sonnet, and Codex is pinned to `gpt-5.5`. Gemini
-assumes your CLI default or role setup already selects the intended model. If a
-CLI needs different explicit model selection, set the full command string
-yourself, for example:
+it does not fall back to Sonnet, Codex is pinned to `gpt-5.5`, and Gemini is
+pinned to `gemini-3.1-pro-preview`. If a CLI needs different explicit model
+selection, set the full command string yourself, for example:
 
 ```bash
 export CLAUDE_CMD='claude --model <your-opus-id> --dangerously-skip-permissions'
