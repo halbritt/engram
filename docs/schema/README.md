@@ -27,6 +27,8 @@ erDiagram
         TIMESTAMPTZ started_at
         TIMESTAMPTZ updated_at
         JSONB position
+        INT error_count
+        TEXT last_error
     }
     conversations {
         UUID id PK
@@ -39,6 +41,14 @@ erDiagram
         TEXT title
         TIMESTAMPTZ created_at
         TIMESTAMPTZ updated_at
+    }
+    embedding_cache {
+        UUID id PK
+        TEXT input_sha256
+        TEXT embedding_model_version
+        INT embedding_dimension
+        VECTOR embedding
+        TIMESTAMPTZ created_at
     }
     messages {
         UUID id PK
@@ -65,6 +75,53 @@ erDiagram
         TEXT content_text
         TIMESTAMPTZ created_at
         TIMESTAMPTZ updated_at
+        INT privacy_tier
+    }
+    segment_embeddings {
+        UUID segment_id PK
+        UUID generation_id
+        UUID embedding_cache_id
+        VECTOR embedding
+        TEXT embedding_model_version PK
+        INT embedding_dimension
+        BOOLEAN is_active
+        INT privacy_tier
+        TIMESTAMPTZ created_at
+    }
+    segment_generations {
+        UUID id PK
+        TEXT parent_kind
+        UUID parent_id
+        TEXT segmenter_prompt_version
+        TEXT segmenter_model_version
+        TEXT status
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ activated_at
+        TIMESTAMPTZ superseded_at
+        JSONB raw_payload
+    }
+    segments {
+        UUID id PK
+        UUID generation_id
+        UUID source_id
+        SOURCE_KIND source_kind
+        UUID conversation_id
+        UUID note_id
+        UUID capture_id
+        UUID[] message_ids
+        INT sequence_index
+        TEXT content_text
+        TEXT summary_text
+        TEXT window_strategy
+        INT window_index
+        TEXT segmenter_prompt_version
+        TEXT segmenter_model_version
+        BOOLEAN is_active
+        TIMESTAMPTZ invalidated_at
+        TEXT invalidation_reason
+        INT privacy_tier
+        TIMESTAMPTZ created_at
+        JSONB raw_payload
     }
     sources {
         UUID id PK
@@ -80,6 +137,14 @@ erDiagram
     messages }o--|| conversations : "conversation_id"
     messages }o--|| sources : "source_id"
     notes }o--|| sources : "source_id"
+    segment_embeddings }o--|| embedding_cache : "embedding_cache_id"
+    segment_embeddings }o--|| segment_generations : "generation_id"
+    segment_embeddings }o--|| segments : "segment_id"
+    segments }o--|| captures : "capture_id"
+    segments }o--|| conversations : "conversation_id"
+    segments }o--|| segment_generations : "generation_id"
+    segments }o--|| notes : "note_id"
+    segments }o--|| sources : "source_id"
 ```
 
 ## Tables
@@ -111,6 +176,8 @@ erDiagram
 | `started_at` | `TIMESTAMPTZ` | YES | `` |
 | `updated_at` | `TIMESTAMPTZ` | NO | `now()` |
 | `position` | `JSONB` | NO | `'{}'::jsonb` |
+| `error_count` | `INT` | NO | `0` |
+| `last_error` | `TEXT` | YES | `` |
 
 ## conversations
 
@@ -126,6 +193,17 @@ erDiagram
 | `title` | `TEXT` | YES | `` |
 | `created_at` | `TIMESTAMPTZ` | YES | `` |
 | `updated_at` | `TIMESTAMPTZ` | YES | `` |
+
+## embedding_cache
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `input_sha256` | `TEXT` | NO | `` |
+| `embedding_model_version` | `TEXT` | NO | `` |
+| `embedding_dimension` | `INT` | NO | `` |
+| `embedding` | `VECTOR` | NO | `` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
 
 ## messages
 
@@ -158,6 +236,62 @@ erDiagram
 | `content_text` | `TEXT` | YES | `` |
 | `created_at` | `TIMESTAMPTZ` | YES | `` |
 | `updated_at` | `TIMESTAMPTZ` | YES | `` |
+| `privacy_tier` | `INT` | NO | `1` |
+
+## segment_embeddings
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `segment_id` **PK** | `UUID` | NO | `` |
+| `generation_id` | `UUID` | NO | `` |
+| `embedding_cache_id` | `UUID` | NO | `` |
+| `embedding` | `VECTOR` | NO | `` |
+| `embedding_model_version` **PK** | `TEXT` | NO | `` |
+| `embedding_dimension` | `INT` | NO | `` |
+| `is_active` | `BOOLEAN` | NO | `false` |
+| `privacy_tier` | `INT` | NO | `` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+
+## segment_generations
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `parent_kind` | `TEXT` | NO | `` |
+| `parent_id` | `UUID` | NO | `` |
+| `segmenter_prompt_version` | `TEXT` | NO | `` |
+| `segmenter_model_version` | `TEXT` | NO | `` |
+| `status` | `TEXT` | NO | `` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `activated_at` | `TIMESTAMPTZ` | YES | `` |
+| `superseded_at` | `TIMESTAMPTZ` | YES | `` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+
+## segments
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `generation_id` | `UUID` | NO | `` |
+| `source_id` | `UUID` | NO | `` |
+| `source_kind` | `SOURCE_KIND` | NO | `` |
+| `conversation_id` | `UUID` | YES | `` |
+| `note_id` | `UUID` | YES | `` |
+| `capture_id` | `UUID` | YES | `` |
+| `message_ids` | `UUID[]` | NO | `` |
+| `sequence_index` | `INT` | NO | `` |
+| `content_text` | `TEXT` | NO | `` |
+| `summary_text` | `TEXT` | YES | `` |
+| `window_strategy` | `TEXT` | NO | `'whole'::text` |
+| `window_index` | `INT` | YES | `` |
+| `segmenter_prompt_version` | `TEXT` | NO | `` |
+| `segmenter_model_version` | `TEXT` | NO | `` |
+| `is_active` | `BOOLEAN` | NO | `false` |
+| `invalidated_at` | `TIMESTAMPTZ` | YES | `` |
+| `invalidation_reason` | `TEXT` | YES | `` |
+| `privacy_tier` | `INT` | NO | `1` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `raw_payload` | `JSONB` | NO | `` |
 
 ## sources
 
