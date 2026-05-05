@@ -19,11 +19,11 @@ Environment:
   PHASE3_RUN_MODE  print | pipe (default: print)
 
   CODEX_CMD        stdin-taking command for Codex GPT-5.5
-                   (default: codex --model gpt-5.5 --yolo)
+                   (default: codex --yolo)
   CLAUDE_CMD       stdin-taking command for Claude Opus 4.7
-                   (default: claude --model opus-4.7 --dangerously-skip-permissions)
+                   (default: claude --dangerously-skip-permissions)
   GEMINI_CMD       stdin-taking command for Gemini Pro 3.1
-                   (default: gemini --model gemini-pro-3.1 --yolo)
+                   (default: gemini --yolo)
 
 Modes:
   print  Wait for markers, then print the prompt/model/marker handoff.
@@ -74,9 +74,9 @@ wait_for_markers() {
 
 command_for_model() {
   case "$1" in
-    codex_gpt5_5) printf "%s" "${CODEX_CMD:-codex --model gpt-5.5 --yolo}" ;;
-    claude_opus_4_7) printf "%s" "${CLAUDE_CMD:-claude --model opus-4.7 --dangerously-skip-permissions}" ;;
-    gemini_pro_3_1) printf "%s" "${GEMINI_CMD:-gemini --model gemini-pro-3.1 --yolo}" ;;
+    codex_gpt5_5) printf "%s" "${CODEX_CMD:-codex --yolo}" ;;
+    claude_opus_4_7) printf "%s" "${CLAUDE_CMD:-claude --dangerously-skip-permissions}" ;;
+    gemini_pro_3_1) printf "%s" "${GEMINI_CMD:-gemini --yolo}" ;;
     *) return 1 ;;
   esac
 }
