@@ -1,7 +1,11 @@
 # Migrations
 
-Migrations are applied by lexicographically sorted filename, and the exact
-filename is recorded in `schema_migrations`.
+Migrations are applied by lexicographically sorted filename. The exact filename
+and a SHA-256 checksum of the SQL file are recorded in `schema_migrations`.
+
+If an applied migration file changes on disk after its checksum has been
+recorded, the migration runner raises an error instead of silently no-oping.
+Write a new forward migration for any post-apply change.
 
 The numeric prefix is a human ordering convention, not the migration identity
 after a file has been applied. Do not rename an applied migration to clean up

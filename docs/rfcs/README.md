@@ -18,3 +18,5 @@ or a phase prompt.
 | [0010](0010-segmenter-server-throughput-profile.md) | proposal | Segmenter server throughput profile |
 | [0011](0011-phase-3-claims-beliefs.md) | proposal | Phase 3 claims and bitemporal beliefs |
 | [0012](0012-python-agentic-coding-standard.md) | proposal | Python agentic coding standard |
+| [0013](0013-development-operational-issue-loop.md) | accepted | Development operational issue loop |
+| [0014](0014-operational-artifact-home.md) | proposal | Operational artifact home |

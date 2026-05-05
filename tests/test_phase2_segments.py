@@ -306,7 +306,7 @@ def test_segment_conversation_constrains_ik_llama_schema_to_window_ids(conn, mon
                     "message": {
                         "content": (
                             f'{{"segments":[{{"message_ids":["{message_ids[0]}"],'
-                            '"summary":null,"content_text":"hello","raw":{}}}]}'
+                            '"summary":null,"content_text":"hello","raw":{}}]}'
                         )
                     }
                 }
@@ -841,7 +841,7 @@ def test_segment_conversation_shrinks_windows_to_context_budget(conn, monkeypatc
                     "message": {
                         "content": (
                             f'{{"segments":[{{"message_ids":["{message_id}"],'
-                            '"summary":null,"content_text":"hello","raw":{}}}]}'
+                            '"summary":null,"content_text":"hello","raw":{}}]}'
                         )
                     }
                 }

@@ -360,8 +360,9 @@ def context_safe_window_char_budget(
         build_segmenter_prompt(MessageWindow(index=0, messages=[]), "windowed")
     )
     content_token_budget = max(0, prompt_token_budget - prompt_scaffold_tokens)
-    safe_budget = int(content_token_budget * max(CONTEXT_GUARD_CHARS_PER_TOKEN, 1.0))
-    safe_budget = max(MIN_CONTEXT_SAFE_WINDOW_CHAR_BUDGET, safe_budget)
+    safe_budget = int(content_token_budget * max(CONTEXT_GUARD_CHARS_PER_TOKEN, 1.0) * 0.6)
+    if safe_budget <= 0:
+        safe_budget = MIN_CONTEXT_SAFE_WINDOW_CHAR_BUDGET
     return min(configured_budget, safe_budget)
 
 
@@ -1100,28 +1101,17 @@ def should_adaptively_split_window(
 def split_message_window(window: MessageWindow) -> list[MessageWindow]:
     if len(window.messages) <= 1:
         return [window]
-    midpoint = max(1, len(window.messages) // 2)
-    left = window.messages[:midpoint]
-    right = window.messages[midpoint:]
     return [
         MessageWindow(
             index=window.index,
-            messages=left,
+            messages=[message],
             truncated_message_ids=[
                 message_id
                 for message_id in window.truncated_message_ids
-                if any(message.id == message_id for message in left)
+                if message.id == message_id
             ],
-        ),
-        MessageWindow(
-            index=window.index,
-            messages=right,
-            truncated_message_ids=[
-                message_id
-                for message_id in window.truncated_message_ids
-                if any(message.id == message_id for message in right)
-            ],
-        ),
+        )
+        for message in window.messages
     ]
 
 
@@ -1166,6 +1156,14 @@ def segment_window_with_retries(
         except SegmentationError as exc:
             decode_counts.append(decoded_token_count_from_exception(exc))
             attempt_errors.append(error_summary(exc))
+            if isinstance(exc, SegmenterContextBudgetError):
+                attach_attempt_diagnostics(
+                    exc,
+                    attempt_max_tokens=attempt_max_tokens_used,
+                    decode_counts=decode_counts,
+                    attempt_errors=attempt_errors,
+                )
+                raise
             if attempt >= retries:
                 attach_attempt_diagnostics(
                     exc,
@@ -1588,7 +1586,13 @@ def window_has_embeddable_text(window: MessageWindow) -> bool:
 
 
 def build_segmenter_prompt(window: MessageWindow, window_strategy: str) -> str:
-    messages = "\n".join(format_message_for_prompt(message) for message in window.messages)
+    messages = "\n".join(
+        format_message_for_prompt(
+            message,
+            truncated=message.id in set(window.truncated_message_ids),
+        )
+        for message in window.messages
+    )
     return f"""
 Segment the conversation window into topic-coherent segments.
 
@@ -1614,9 +1618,13 @@ window_index={window.index}
 """.strip()
 
 
-def format_message_for_prompt(message: ConversationMessage) -> str:
+def format_message_for_prompt(
+    message: ConversationMessage,
+    *,
+    truncated: bool = False,
+) -> str:
     content = prompt_content_for_message(message)
-    max_chars = max(4000, DEFAULT_WINDOW_CHAR_BUDGET // 2)
+    max_chars = 1000 if truncated else max(4000, DEFAULT_WINDOW_CHAR_BUDGET // 2)
     if len(content) > max_chars:
         content = content[:max_chars] + "\n[message truncated for bounded segmentation prompt]"
     role = message.role or "unknown"

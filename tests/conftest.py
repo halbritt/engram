@@ -20,6 +20,12 @@ def conn():
             """
             DROP TABLE IF EXISTS
                 schema_migrations,
+                contradictions,
+                belief_audit,
+                beliefs,
+                claims,
+                claim_extractions,
+                predicate_vocabulary,
                 segment_embeddings,
                 embedding_cache,
                 segments,
@@ -40,6 +46,14 @@ def conn():
         admin.execute(
             "DROP FUNCTION IF EXISTS validate_conversation_segment_message_ids() CASCADE"
         )
+        admin.execute("DROP FUNCTION IF EXISTS engram_normalize_subject(TEXT) CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS engram_normalize_group_object_value(TEXT) CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_claim_extractions_mutation_guard() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_claims_insert_prepare_validate() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_claims_insert_only() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_beliefs_prepare_validate() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_belief_audit_append_only() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_contradictions_mutation_guard() CASCADE")
         admin.execute("DROP TYPE IF EXISTS source_kind CASCADE")
         admin.execute("DROP TYPE IF EXISTS capture_type CASCADE")
         admin.execute("DROP TYPE IF EXISTS consolidation_status CASCADE")

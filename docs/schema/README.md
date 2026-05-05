@@ -6,6 +6,48 @@
 
 ```mermaid
 erDiagram
+    belief_audit {
+        UUID id PK
+        UUID belief_id
+        TEXT transition_kind
+        TEXT previous_status
+        TEXT new_status
+        TIMESTAMPTZ previous_valid_to
+        TIMESTAMPTZ new_valid_to
+        TEXT prompt_version
+        TEXT model_version
+        UUID[] input_claim_ids
+        UUID[] evidence_message_ids
+        JSONB score_breakdown
+        UUID request_uuid
+        TIMESTAMPTZ created_at
+    }
+    beliefs {
+        UUID id PK
+        TEXT subject_text
+        TEXT subject_normalized
+        TEXT predicate
+        TEXT cardinality_class
+        TEXT object_text
+        JSONB object_json
+        TEXT group_object_key
+        TIMESTAMPTZ valid_from
+        TIMESTAMPTZ valid_to
+        TIMESTAMPTZ closed_at
+        TIMESTAMPTZ observed_at
+        TIMESTAMPTZ recorded_at
+        TIMESTAMPTZ extracted_at
+        UUID superseded_by
+        TEXT status
+        TEXT stability_class
+        FLOAT confidence
+        UUID[] evidence_ids
+        UUID[] claim_ids
+        TEXT prompt_version
+        TEXT model_version
+        INT privacy_tier
+        JSONB raw_payload
+    }
     captures {
         UUID id PK
         UUID source_id
@@ -19,6 +61,40 @@ erDiagram
         TEXT content_text
         TIMESTAMPTZ observed_at
     }
+    claim_extractions {
+        UUID id PK
+        UUID segment_id
+        UUID generation_id
+        TEXT extraction_prompt_version
+        TEXT extraction_model_version
+        TEXT request_profile_version
+        TEXT status
+        INT claim_count
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ completed_at
+        JSONB raw_payload
+    }
+    claims {
+        UUID id PK
+        UUID segment_id
+        UUID generation_id
+        UUID conversation_id
+        UUID extraction_id
+        TEXT subject_text
+        TEXT subject_normalized
+        TEXT predicate
+        TEXT object_text
+        JSONB object_json
+        TEXT stability_class
+        FLOAT confidence
+        UUID[] evidence_message_ids
+        TEXT extraction_prompt_version
+        TEXT extraction_model_version
+        TEXT request_profile_version
+        INT privacy_tier
+        TIMESTAMPTZ extracted_at
+        JSONB raw_payload
+    }
     consolidation_progress {
         UUID id PK
         TEXT stage
@@ -29,6 +105,18 @@ erDiagram
         JSONB position
         INT error_count
         TEXT last_error
+    }
+    contradictions {
+        UUID id PK
+        UUID belief_a_id
+        UUID belief_b_id
+        TIMESTAMPTZ detected_at
+        TEXT detection_kind
+        TEXT resolution_status
+        TEXT resolution_kind
+        TIMESTAMPTZ resolved_at
+        INT privacy_tier
+        JSONB raw_payload
     }
     conversations {
         UUID id PK
@@ -76,6 +164,15 @@ erDiagram
         TIMESTAMPTZ created_at
         TIMESTAMPTZ updated_at
         INT privacy_tier
+    }
+    predicate_vocabulary {
+        TEXT predicate PK
+        TEXT stability_class
+        TEXT cardinality_class
+        TEXT object_kind
+        TEXT[] group_object_keys
+        TEXT[] required_object_keys
+        TEXT description
     }
     segment_embeddings {
         UUID segment_id PK
@@ -132,7 +229,19 @@ erDiagram
         TEXT content_hash
         JSONB raw_payload
     }
+    belief_audit }o--|| beliefs : "belief_id"
+    beliefs }o--|| predicate_vocabulary : "predicate"
+    beliefs }o--|| beliefs : "superseded_by"
     captures }o--|| sources : "source_id"
+    claim_extractions }o--|| segment_generations : "generation_id"
+    claim_extractions }o--|| segments : "segment_id"
+    claims }o--|| conversations : "conversation_id"
+    claims }o--|| claim_extractions : "extraction_id"
+    claims }o--|| segment_generations : "generation_id"
+    claims }o--|| predicate_vocabulary : "predicate"
+    claims }o--|| segments : "segment_id"
+    contradictions }o--|| beliefs : "belief_a_id"
+    contradictions }o--|| beliefs : "belief_b_id"
     conversations }o--|| sources : "source_id"
     messages }o--|| conversations : "conversation_id"
     messages }o--|| sources : "source_id"
@@ -148,6 +257,54 @@ erDiagram
 ```
 
 ## Tables
+
+## belief_audit
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `belief_id` | `UUID` | NO | `` |
+| `transition_kind` | `TEXT` | NO | `` |
+| `previous_status` | `TEXT` | YES | `` |
+| `new_status` | `TEXT` | NO | `` |
+| `previous_valid_to` | `TIMESTAMPTZ` | YES | `` |
+| `new_valid_to` | `TIMESTAMPTZ` | YES | `` |
+| `prompt_version` | `TEXT` | NO | `` |
+| `model_version` | `TEXT` | NO | `` |
+| `input_claim_ids` | `UUID[]` | YES | `` |
+| `evidence_message_ids` | `UUID[]` | NO | `'{}'::uuid[]` |
+| `score_breakdown` | `JSONB` | NO | `'{}'::jsonb` |
+| `request_uuid` | `UUID` | NO | `` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+
+## beliefs
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `subject_text` | `TEXT` | NO | `` |
+| `subject_normalized` | `TEXT` | NO | `` |
+| `predicate` | `TEXT` | NO | `` |
+| `cardinality_class` | `TEXT` | NO | `` |
+| `object_text` | `TEXT` | YES | `` |
+| `object_json` | `JSONB` | YES | `` |
+| `group_object_key` | `TEXT` | NO | `''::text` |
+| `valid_from` | `TIMESTAMPTZ` | NO | `` |
+| `valid_to` | `TIMESTAMPTZ` | YES | `` |
+| `closed_at` | `TIMESTAMPTZ` | YES | `` |
+| `observed_at` | `TIMESTAMPTZ` | NO | `` |
+| `recorded_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `extracted_at` | `TIMESTAMPTZ` | NO | `` |
+| `superseded_by` | `UUID` | YES | `` |
+| `status` | `TEXT` | NO | `` |
+| `stability_class` | `TEXT` | NO | `` |
+| `confidence` | `FLOAT` | NO | `` |
+| `evidence_ids` | `UUID[]` | NO | `` |
+| `claim_ids` | `UUID[]` | NO | `` |
+| `prompt_version` | `TEXT` | NO | `` |
+| `model_version` | `TEXT` | NO | `` |
+| `privacy_tier` | `INT` | NO | `` |
+| `raw_payload` | `JSONB` | NO | `` |
 
 ## captures
 
@@ -165,6 +322,46 @@ erDiagram
 | `content_text` | `TEXT` | YES | `` |
 | `observed_at` | `TIMESTAMPTZ` | YES | `` |
 
+## claim_extractions
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `segment_id` | `UUID` | NO | `` |
+| `generation_id` | `UUID` | NO | `` |
+| `extraction_prompt_version` | `TEXT` | NO | `` |
+| `extraction_model_version` | `TEXT` | NO | `` |
+| `request_profile_version` | `TEXT` | NO | `` |
+| `status` | `TEXT` | NO | `` |
+| `claim_count` | `INT` | NO | `0` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `completed_at` | `TIMESTAMPTZ` | YES | `` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+
+## claims
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `segment_id` | `UUID` | NO | `` |
+| `generation_id` | `UUID` | NO | `` |
+| `conversation_id` | `UUID` | YES | `` |
+| `extraction_id` | `UUID` | NO | `` |
+| `subject_text` | `TEXT` | NO | `` |
+| `subject_normalized` | `TEXT` | NO | `` |
+| `predicate` | `TEXT` | NO | `` |
+| `object_text` | `TEXT` | YES | `` |
+| `object_json` | `JSONB` | YES | `` |
+| `stability_class` | `TEXT` | NO | `` |
+| `confidence` | `FLOAT` | NO | `` |
+| `evidence_message_ids` | `UUID[]` | NO | `` |
+| `extraction_prompt_version` | `TEXT` | NO | `` |
+| `extraction_model_version` | `TEXT` | NO | `` |
+| `request_profile_version` | `TEXT` | NO | `` |
+| `privacy_tier` | `INT` | NO | `` |
+| `extracted_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `raw_payload` | `JSONB` | NO | `` |
+
 ## consolidation_progress
 
 | Column | Type | Nullable | Default |
@@ -178,6 +375,21 @@ erDiagram
 | `position` | `JSONB` | NO | `'{}'::jsonb` |
 | `error_count` | `INT` | NO | `0` |
 | `last_error` | `TEXT` | YES | `` |
+
+## contradictions
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `belief_a_id` | `UUID` | NO | `` |
+| `belief_b_id` | `UUID` | NO | `` |
+| `detected_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `detection_kind` | `TEXT` | NO | `` |
+| `resolution_status` | `TEXT` | NO | `'open'::text` |
+| `resolution_kind` | `TEXT` | YES | `` |
+| `resolved_at` | `TIMESTAMPTZ` | YES | `` |
+| `privacy_tier` | `INT` | NO | `` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
 
 ## conversations
 
@@ -237,6 +449,18 @@ erDiagram
 | `created_at` | `TIMESTAMPTZ` | YES | `` |
 | `updated_at` | `TIMESTAMPTZ` | YES | `` |
 | `privacy_tier` | `INT` | NO | `1` |
+
+## predicate_vocabulary
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `predicate` **PK** | `TEXT` | NO | `` |
+| `stability_class` | `TEXT` | NO | `` |
+| `cardinality_class` | `TEXT` | NO | `` |
+| `object_kind` | `TEXT` | NO | `` |
+| `group_object_keys` | `TEXT[]` | NO | `'{}'::text[]` |
+| `required_object_keys` | `TEXT[]` | NO | `'{}'::text[]` |
+| `description` | `TEXT` | NO | `` |
 
 ## segment_embeddings
 

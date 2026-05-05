@@ -15,6 +15,7 @@ Start with the root canonical docs when orienting on the current system:
 - [design/V1_ARCHITECTURE_DRAFT.md](design/V1_ARCHITECTURE_DRAFT.md) — working V1 architecture.
 - [schema/README.md](schema/README.md) — generated schema reference.
 - [segmentation.md](segmentation.md) — Phase 2 segmentation operations and behavior.
+- [claims_beliefs.md](claims_beliefs.md) — Phase 3 claim extraction and bitemporal belief consolidation contract.
 - [ingestion.md](ingestion.md) — ingestion behavior and source notes.
 
 ## Process
