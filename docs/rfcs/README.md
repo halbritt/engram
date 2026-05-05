@@ -20,3 +20,4 @@ or a phase prompt.
 | [0012](0012-python-agentic-coding-standard.md) | proposal | Python agentic coding standard |
 | [0013](0013-development-operational-issue-loop.md) | accepted | Development operational issue loop |
 | [0014](0014-operational-artifact-home.md) | proposal | Operational artifact home |
+| [0015](0015-test-coverage-improvements.md) | proposal | Test coverage improvements |
