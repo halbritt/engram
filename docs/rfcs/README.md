@@ -17,3 +17,4 @@ or a phase prompt.
 | [0009](0009-distributed-segmenter-work-leasing.md) | proposal | Distributed segmenter work leasing |
 | [0010](0010-segmenter-server-throughput-profile.md) | proposal | Segmenter server throughput profile |
 | [0011](0011-phase-3-claims-beliefs.md) | proposal | Phase 3 claims and bitemporal beliefs |
+| [0012](0012-test-coverage-improvements.md) | proposal | Test coverage improvements |
