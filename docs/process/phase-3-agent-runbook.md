@@ -97,6 +97,50 @@ The build prompt (`P028`) starts as a guarded target artifact. It should not be
 executed until `P025` drafts it from the accepted spec and `P027` applies build
 prompt review findings.
 
+## Tmux Automation
+
+The helper script:
+
+```text
+scripts/phase3_tmux_agents.sh
+```
+
+can create a tmux session with one window per step. Every window starts
+immediately, waits on its required marker files, then either prints the prompt
+to run or pipes the prompt into a configured model command.
+
+Print-mode start:
+
+```bash
+scripts/phase3_tmux_agents.sh start
+tmux attach -t engram-phase3
+```
+
+Print mode is safest when model CLIs are interactive. The ready pane shows the
+model slug, prompt path, and expected marker.
+
+Pipe-mode start, for CLIs that accept prompts on stdin:
+
+```bash
+export PHASE3_RUN_MODE=pipe
+export CLAUDE_CMD='claude --model opus-4.7'
+export CODEX_CMD='codex --model gpt-5.5'
+export GEMINI_CMD='gemini --model gemini-pro-3.1'
+scripts/phase3_tmux_agents.sh start
+tmux attach -t engram-phase3
+```
+
+Adjust command strings to the actual local launchers. The script appends a
+small coordinator injection containing the model slug, expected marker path,
+and worktree path.
+
+Progress checks:
+
+```bash
+scripts/phase3_tmux_agents.sh status
+scripts/phase3_tmux_agents.sh next
+```
+
 ## Human Checkpoints
 
 Pause for the owner before:
