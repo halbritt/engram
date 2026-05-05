@@ -15,15 +15,16 @@ retrieval-visible cutover was performed.
 
 ## Prompt Review Notes
 
-- The prompt's challenge-parent labels for the final two UUIDs are swapped
-  relative to the live database. `ce42c24a-a687-4e9e-a5f8-eda384dcda3d` is
-  `Dust collector filter upgrade`; `e013fb48-7998-4b9f-860b-c0b23e53feed` is
-  `PSU to CPU cable issue`. The script used the UUIDs as authoritative and
-  corrected only the log labels.
-- The decision criteria catch overlap, endpoint-pair shortcuts, and
-  over-fragmentation, but do not include an under-fragmentation / mega-segment
-  guard. That gap matters here: Qwen 27B produced one 232-message PSU/cable
-  segment even though it did not overlap with siblings.
+- The original prompt draft had the final two challenge-parent labels swapped
+  relative to the live database. The committed prompt now matches the live
+  titles: `ce42c24a-a687-4e9e-a5f8-eda384dcda3d` is `Dust collector filter
+  upgrade`; `e013fb48-7998-4b9f-860b-c0b23e53feed` is `PSU to CPU cable
+  issue`.
+- The original run prompt's decision criteria caught overlap, endpoint-pair
+  shortcuts, and over-fragmentation, but did not include an
+  under-fragmentation / mega-segment guard. That gap matters here: Qwen 27B
+  produced one 232-message PSU/cable segment even though it did not overlap
+  with siblings.
 - The restoration commands started `openclaw-gateway.service` even though it
   was already inactive before this run. The prompt was followed as written.
 
@@ -204,10 +205,10 @@ mechanism on this 5-parent slice:
 - comparable or better granularity on 4 of 5 parents
 
 However, the PSU/cable parent produced a 232-message mega-segment. That is a
-quality failure in the opposite direction and is not covered by the prompt's
-decision rubric. The evidence is strong enough to say the 35B umbrella pattern
-is likely model-side, not merely prompt-shape, but not strong enough to
-replace the 45 affected production parents with Qwen 27B output.
+quality failure in the opposite direction and was not covered by the original
+run prompt's decision rubric. The evidence is strong enough to say the 35B
+umbrella pattern is likely model-side, not merely prompt-shape, but not strong
+enough to replace the 45 affected production parents with Qwen 27B output.
 
 Recommended follow-up before any targeted 45-parent swap:
 

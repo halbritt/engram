@@ -11,7 +11,7 @@
 
 ## Read First
 
-1. `prompts/benchmark_segmentation_harness_spec.md` - original task.
+1. [P011_benchmark_segmentation_harness_spec.md](P011_benchmark_segmentation_harness_spec.md) - original task.
 2. `docs/rfcs/0006-segmentation-model-benchmark.md` - benchmark RFC.
 3. `DECISION_LOG.md`, especially D005, D034, D037, and D039.
 4. `docs/segmentation.md` - deployed Phase 2 contract.
@@ -35,7 +35,7 @@ Review the skeleton/specification work only:
 benchmarks/segmentation/
 ```
 
-Use `git diff master...HEAD -- benchmarks/segmentation prompts/review_benchmark_segmentation_harness.md`
+Use `git diff master...HEAD -- benchmarks/segmentation prompts/P012_review_benchmark_segmentation_harness.md`
 to orient yourself. The expected current shape is:
 
 ```text

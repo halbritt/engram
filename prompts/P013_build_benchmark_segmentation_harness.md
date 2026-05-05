@@ -23,7 +23,7 @@
 6. `SPEC.md`
 7. `docs/schema/README.md`
 8. `docs/rfcs/0006-segmentation-model-benchmark.md`
-9. `prompts/benchmark_segmentation_harness_spec.md`
+9. [P011_benchmark_segmentation_harness_spec.md](P011_benchmark_segmentation_harness_spec.md)
 10. `benchmarks/segmentation/README.md`
 11. `benchmarks/segmentation/SPEC.md`
 12. `docs/reviews/v1/BENCHMARK_SEGMENTATION_HARNESS_REVIEW.md`

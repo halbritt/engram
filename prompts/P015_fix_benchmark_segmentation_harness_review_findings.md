@@ -13,7 +13,7 @@
 
 1. `docs/reviews/v1/BENCHMARK_SEGMENTATION_HARNESS_IMPLEMENTATION_REVIEW.md`
 2. `docs/reviews/v1/BENCHMARK_SEGMENTATION_HARNESS_IMPLEMENTATION_SYNTHESIS_2026_05_03.md`
-3. `prompts/build_benchmark_segmentation_harness.md`
+3. [P013_build_benchmark_segmentation_harness.md](P013_build_benchmark_segmentation_harness.md)
 4. `docs/rfcs/0006-segmentation-model-benchmark.md`
 5. `DECISION_LOG.md`, especially D041.
 6. `benchmarks/segmentation/README.md`

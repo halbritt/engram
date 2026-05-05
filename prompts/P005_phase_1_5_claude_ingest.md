@@ -4,12 +4,12 @@
 
 > Hand this to a coding agent to add Claude.ai conversation export
 > ingestion under the same schema and conventions as Phase 1's
-> ChatGPT loader. Mirrors [phase_1_raw_ingest.md](phase_1_raw_ingest.md)
+> ChatGPT loader. Mirrors [P003_phase_1_raw_ingest.md](P003_phase_1_raw_ingest.md)
 > but scoped to a new source.
 
 ## Read first
 
-1. [prompts/phase_1_raw_ingest.md](phase_1_raw_ingest.md) — Phase 1's
+1. [P003_phase_1_raw_ingest.md](P003_phase_1_raw_ingest.md) — Phase 1's
    structure that this prompt mirrors.
 2. [src/engram/chatgpt_export.py](../src/engram/chatgpt_export.py) —
    the implementation pattern to mirror (dataclasses,
@@ -89,6 +89,6 @@ existing `raw_evidence` schema. Same shape as ChatGPT ingestion: parser
 - No schema changes (`raw_evidence` schema is source-agnostic;
   `source_kind` discriminates).
 - No Gemini ingestion. Same pattern, separate prompt
-  (`prompts/phase_1_5_gemini_ingest.md`).
+  ([P006_phase_1_5_gemini_ingest.md](P006_phase_1_5_gemini_ingest.md)).
 - No file-attachment blob ingestion. Mirror Phase 1's stance:
   metadata stays in `raw_payload`; blobs are out of scope for V1.

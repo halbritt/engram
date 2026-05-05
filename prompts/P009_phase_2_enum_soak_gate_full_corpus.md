@@ -159,7 +159,7 @@ findings, commit, push, and stop.
 If soak passes but leaves pending `segmented` / `embedding` generations, run
 embed-only before full AI-conversation corpus.
 
-Use `prompts/phase_2_embed_drain.md`.
+Use [P008_phase_2_embed_drain.md](P008_phase_2_embed_drain.md).
 
 Short form:
 

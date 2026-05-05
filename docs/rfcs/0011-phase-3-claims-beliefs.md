@@ -277,9 +277,10 @@ new `stage` values (`extractor`, `consolidator`).
   - **Existing belief, different value** → contradiction. Close the
     prior belief, insert a new belief at `status='candidate'`, insert
     a `contradictions` row at `resolution_status='open'`. Auto-resolve
-    by temporal ordering when both rows have non-overlapping
-    `observed_at`; record as `auto_resolved` with `resolution_kind`.
-    Pure disagreements stay `open` for the Phase 4 review queue.
+    only when the candidate validity intervals (`valid_from` / `valid_to`)
+    are non-overlapping under the settled `observed_at` derivation rule;
+    record as `auto_resolved` with `resolution_kind`. Pure disagreements
+    stay `open` for the Phase 4 review queue.
 - Every state transition writes a `belief_audit` row in the same
   transaction (D010).
 

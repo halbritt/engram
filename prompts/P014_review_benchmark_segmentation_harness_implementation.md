@@ -15,7 +15,7 @@
 2. `HUMAN_REQUIREMENTS.md`
 3. `DECISION_LOG.md`, especially D005, D034, D037, D038, D039, and D041.
 4. `docs/rfcs/0006-segmentation-model-benchmark.md`
-5. `prompts/build_benchmark_segmentation_harness.md`
+5. [P013_build_benchmark_segmentation_harness.md](P013_build_benchmark_segmentation_harness.md)
 6. `benchmarks/segmentation/README.md`
 7. `benchmarks/segmentation/SPEC.md`
 8. `docs/reviews/v1/BENCHMARK_SEGMENTATION_HARNESS_REVIEW.md`

@@ -13,7 +13,7 @@
    the findings driving items 1–3.
 2. [DECISION_LOG.md](../DECISION_LOG.md) D023 — the schema decision
    driving item 4.
-3. [prompts/phase_1_raw_ingest.md](phase_1_raw_ingest.md) — context
+3. [P003_phase_1_raw_ingest.md](P003_phase_1_raw_ingest.md) — context
    on what Phase 1 built.
 
 ## Tasks

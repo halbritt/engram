@@ -18,16 +18,18 @@ which are invisible to retrieval. No cloud / hosted services.
 
 Decide between three follow-ups for the 45 parents flagged in the audit:
 
-- **27B is clean on the worst offenders** → re-segment the 45 parents under
-  Qwen 27B Q5_K_M. Phase 3 reads the new generations after embedding +
-  cutover (D031). Tier 2 still gates a full-corpus model swap.
+- **27B is clean on the worst offenders** (no overlap, no endpoint-pair
+  shortcut, no over-fragmentation, no mega-segment under-fragmentation) →
+  re-segment the 45 parents under Qwen 27B Q5_K_M. Phase 3 reads the new
+  generations after embedding + cutover (D031). Tier 2 still gates a
+  full-corpus model swap.
 - **27B reproduces the umbrella pattern** → it is a prompt-shape issue. Bump
   `SEGMENTER_PROMPT_VERSION` with an explicit no-overlap clause and add a
   post-INSERT validator that rejects sibling segments with
   `message_ids && other.message_ids`. Re-run the 45 under the new prompt.
-- **27B over-fragments badly** (matches the benchmark's `longer_run` hint at
-  high `segs/expected`, low `endpoint_only_big`, many tiny adjacent segments
-  inside one parent) → defer to a wider Tier 2 slice before any change.
+- **27B fragments badly** (over-fragments with high `segs/expected`, low
+  `endpoint_only_big`, many tiny adjacent segments, or under-fragments into
+  giant multi-topic spans) → defer to a wider Tier 2 slice before any change.
 
 ## Read First
 
@@ -274,7 +276,7 @@ ORDER BY conversation_id;
 
 ## Decision Criteria
 
-For each parent, judge the 27B generation on three axes:
+For each parent, judge the 27B generation on four axes:
 
 1. **Overlap pairs (query C).**
    - Zero overlap pairs across all 5 parents → 27B does not reproduce the
@@ -294,6 +296,13 @@ For each parent, judge the 27B generation on three axes:
    - `segs_27b ≫ 2 × segs_35b` with many small `max_stored_27b` → matches the
      benchmark's over-fragmentation hint; widen Tier 2 before changing
      anything in production.
+
+4. **Under-fragmentation / mega-segments (query E + spot check).**
+   - `max_stored_27b <= max(100, 1.5 * max_stored_35b)` per parent, or a
+     manually reviewed exception with a coherent topic unit → acceptable.
+   - Any 27B segment that merges many unrelated topics into a single
+     100+ message span → do not swap the 45 parents; defer to Tier 2 or revise
+     the prompt/model profile.
 
 ## Restoration
 

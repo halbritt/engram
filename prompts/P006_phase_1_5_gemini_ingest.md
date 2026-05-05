@@ -4,12 +4,12 @@
 
 > Hand this to a coding agent to add Gemini Takeout ingestion under
 > the same schema and conventions as Phase 1's ChatGPT loader.
-> Mirrors [phase_1_raw_ingest.md](phase_1_raw_ingest.md) but scoped
+> Mirrors [P003_phase_1_raw_ingest.md](P003_phase_1_raw_ingest.md) but scoped
 > to a new source.
 
 ## Read first
 
-1. [prompts/phase_1_raw_ingest.md](phase_1_raw_ingest.md) — Phase 1's
+1. [P003_phase_1_raw_ingest.md](P003_phase_1_raw_ingest.md) — Phase 1's
    structure that this prompt mirrors.
 2. [src/engram/chatgpt_export.py](../src/engram/chatgpt_export.py) —
    the implementation pattern to mirror (dataclasses,
@@ -88,7 +88,7 @@ parser + ingest function + CLI subcommand + tests + docs.
 - No schema changes (`raw_evidence` schema is source-agnostic;
   `source_kind` discriminates).
 - No Claude ingestion. Same pattern, separate prompt
-  (`prompts/phase_1_5_claude_ingest.md`).
+  ([P005_phase_1_5_claude_ingest.md](P005_phase_1_5_claude_ingest.md)).
 - No ingestion of non-Gemini Takeout content (Search history, YouTube,
   Photos, etc.). If the Takeout archive contains those, ignore them
   in this phase. Other Takeout categories may be future ingestion
