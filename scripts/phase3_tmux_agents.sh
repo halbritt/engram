@@ -21,7 +21,7 @@ Environment:
   CODEX_CMD        stdin-taking command for Codex GPT-5.5
                    (default: codex --yolo)
   CLAUDE_CMD       stdin-taking command for Claude Opus 4.7
-                   (default: claude --dangerously-skip-permissions)
+                   (default: claude --model opus --dangerously-skip-permissions)
   GEMINI_CMD       stdin-taking command for Gemini Pro 3.1
                    (default: gemini --yolo)
 
@@ -75,7 +75,7 @@ wait_for_markers() {
 command_for_model() {
   case "$1" in
     codex_gpt5_5) printf "%s" "${CODEX_CMD:-codex --yolo}" ;;
-    claude_opus_4_7) printf "%s" "${CLAUDE_CMD:-claude --dangerously-skip-permissions}" ;;
+    claude_opus_4_7) printf "%s" "${CLAUDE_CMD:-claude --model opus --dangerously-skip-permissions}" ;;
     gemini_pro_3_1) printf "%s" "${GEMINI_CMD:-gemini --yolo}" ;;
     *) return 1 ;;
   esac
