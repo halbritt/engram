@@ -1,6 +1,6 @@
 # RFC: Decoupling Micro-Architecture in the Segmentation Pipeline
 
-**Status:** Proposed
+Status: proposal
 **Date:** 2026-05-02
 
 ## 1. Context

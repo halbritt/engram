@@ -1,5 +1,5 @@
 # RFC 0005: Supervisor Event Triggers and Queue Prioritization
-Status: proposed
+Status: proposal
 Date: 2026-05-02
 Context: Augments RFC 0001 (Supervisor Controller Loop)
 

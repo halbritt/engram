@@ -1,6 +1,6 @@
 # RFC 0004: Segmenter Worker Boundary (Augments RFC 0003)
 
-**Status:** Proposed
+Status: proposal
 **Date:** 2026-05-02
 **Augments:** RFC 0003 (Decoupling Micro-Architecture in the Segmentation Pipeline)
 **Relates to:** RFC 0001 (Supervisor Controller Loop)
