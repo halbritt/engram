@@ -123,16 +123,17 @@ Pipe-mode start, for CLIs that accept prompts on stdin:
 
 ```bash
 export PHASE3_RUN_MODE=pipe
-export CLAUDE_CMD='claude --model opus-4.7'
-export CODEX_CMD='codex --model gpt-5.5'
-export GEMINI_CMD='gemini --model gemini-pro-3.1'
+export CLAUDE_CMD='claude --model opus-4.7 --dangerously-skip-permissions'
+export CODEX_CMD='codex --model gpt-5.5 --yolo'
+export GEMINI_CMD='gemini --model gemini-pro-3.1 --yolo'
 scripts/phase3_tmux_agents.sh start
 tmux attach -t engram-phase3
 ```
 
-Adjust command strings to the actual local launchers. The script appends a
-small coordinator injection containing the model slug, expected marker path,
-and worktree path.
+These are also the script defaults in pipe mode. Adjust command strings to the
+actual local launchers if a CLI spells its permission flag differently. The
+script appends a small coordinator injection containing the model slug,
+expected marker path, and worktree path.
 
 Progress checks:
 
