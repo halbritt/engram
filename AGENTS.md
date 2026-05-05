@@ -54,6 +54,26 @@ Database migrations live under `migrations`.
 - Avoid broad refactors unless needed for the requested change.
 - Do not rewrite generated schema docs by hand; use `make schema-docs`.
 
+## Python Coding Standard
+
+Python under `src/engram` and `tests` follows the standard proposed in
+`docs/rfcs/0012-python-agentic-coding-standard.md`. Read that RFC before
+non-trivial Python changes. Highlights:
+
+- Type hints on all signatures; `from __future__ import annotations`; no
+  `Any` without a one-line reason.
+- No bare `except:`; per-stage exception families subclass a domain root
+  (see `SegmentationError` in `src/engram/segmenter.py`).
+- Tunables live behind `ENGRAM_`-prefixed environment variables read at
+  module top.
+- Workers follow the `(input_id, version) -> idempotent commit` contract
+  (RFC 0001); raw evidence tables stay append-only.
+- Tests are deterministic; no live LLM calls in unit tests; one behavior
+  per test.
+- Toolchain (when wired): `ruff` for lint and format, `pyright` for type
+  checking, `pytest` for tests. Adoption is green-on-touch, not bulk
+  reformat — see RFC 0012 § Adoption Plan.
+
 ## Multi-Agent Review
 
 For substantial artifacts that use one agent to create and another agent to
