@@ -275,7 +275,7 @@ separate phase prompt.
    - Qwen / ik-llama request contract (D034): use the OpenAI-compatible
      `POST http://127.0.0.1:8081/v1/chat/completions` endpoint with the
      exact probed model id. The current local probe returned
-     `/home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf`; do not
+     `~/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf`; do not
      hardcode that path without checking the running service. Set
      `stream=false`, `temperature=0`, `top_p=1`, and
      `chat_template_kwargs={"enable_thinking": false}`. Set bounded

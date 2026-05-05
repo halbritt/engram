@@ -48,8 +48,8 @@ The normal systemd services were inactive before the run:
 The 27B server was launched manually:
 
 ```bash
-/home/halbritt/git/ik_llama.cpp/build/bin/llama-server \
-  --model /home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf \
+~/git/ik_llama.cpp/build/bin/llama-server \
+  --model ~/models/Qwen3.6-27B-Q5_K_M.gguf \
   --host 127.0.0.1 \
   --port 8081 \
   --gpu-layers 99 \
@@ -68,8 +68,8 @@ Pre-run 27B checks passed:
 
 | Check | Result |
 | --- | --- |
-| `/v1/models` | `/home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf`, `max_model_len=49152` |
-| `/props` | `model_path=/home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf`, `n_ctx=49152` |
+| `/v1/models` | `~/models/Qwen3.6-27B-Q5_K_M.gguf`, `max_model_len=49152` |
+| `/props` | `model_path=~/models/Qwen3.6-27B-Q5_K_M.gguf`, `n_ctx=49152` |
 | JSON-schema smoke | `choices[0].message.content == {"ok":true}` |
 
 Post-run 27B smoke also passed with `choices[0].message.content == {"ok":true}`.
@@ -79,7 +79,7 @@ started. Restored 35B checks passed:
 
 | Check | Result |
 | --- | --- |
-| `/v1/models` | `/home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf`, `max_model_len=49152` |
+| `/v1/models` | `~/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf`, `max_model_len=49152` |
 | JSON-schema smoke | `choices[0].message.content == {"ok":true}` |
 | systemd services | `ik-llama-server.service`, `ik-llama-watchdog.timer`, and `openclaw-gateway.service` active |
 
@@ -264,11 +264,11 @@ sed -n '1360,1545p' src/engram/segmenter.py
 sed -n '1,320p' migrations/004_segments_embeddings.sql
 systemctl --user status ik-llama-server.service ik-llama-watchdog.timer openclaw-gateway.service --no-pager
 systemctl --user cat ik-llama-server.service --no-pager
-ls -l /home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf /home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf
+ls -l ~/models/Qwen3.6-27B-Q5_K_M.gguf ~/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf
 ss -ltnp '( sport = :8081 )'
 systemctl --user stop ik-llama-server.service ik-llama-watchdog.timer openclaw-gateway.service
 mkdir -p .scratch
-/home/halbritt/git/ik_llama.cpp/build/bin/llama-server --model /home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf --host 127.0.0.1 --port 8081 --gpu-layers 99 --ctx-size 49152 --flash-attn on --threads 8 --parallel 1 --batch-size 2048 --ubatch-size 256 --cache-type-k q8_0 --cache-type-v q8_0 --jinja 2>&1 | tee .scratch/ab_qwen27b_server.log
+~/git/ik_llama.cpp/build/bin/llama-server --model ~/models/Qwen3.6-27B-Q5_K_M.gguf --host 127.0.0.1 --port 8081 --gpu-layers 99 --ctx-size 49152 --flash-attn on --threads 8 --parallel 1 --batch-size 2048 --ubatch-size 256 --cache-type-k q8_0 --cache-type-v q8_0 --jinja 2>&1 | tee .scratch/ab_qwen27b_server.log
 curl -s http://127.0.0.1:8081/v1/models | tee .scratch/ab_qwen27b_models.json | python3 -m json.tool
 curl -s http://127.0.0.1:8081/props | tee .scratch/ab_qwen27b_props.json | python3 -m json.tool
 curl -s http://127.0.0.1:8081/v1/chat/completions -H 'content-type: application/json' -d '{"model":"any","messages":[{"role":"user","content":"reply with {\"ok\":true}"}],"stream":false,"temperature":0,"max_tokens":32,"chat_template_kwargs":{"enable_thinking":false},"response_format":{"type":"json_schema","json_schema":{"name":"Smoke","strict":true,"schema":{"type":"object","required":["ok"],"properties":{"ok":{"type":"boolean"}},"additionalProperties":false}}}}' | tee .scratch/ab_qwen27b_smoke_pre.json | python3 -m json.tool
@@ -286,7 +286,7 @@ SELECT g.id::text, g.parent_id::text, g.status, count(s.id) AS segs
 FROM segment_generations g
 LEFT JOIN segments s ON s.generation_id = g.id
 WHERE g.segmenter_prompt_version = 'segmenter.v2.d034.enum-ids.tool-placeholders'
-  AND g.segmenter_model_version = '/home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf'
+  AND g.segmenter_model_version = '~/models/Qwen3.6-27B-Q5_K_M.gguf'
 GROUP BY g.id, g.parent_id, g.status
 ORDER BY g.parent_id;
 
@@ -323,7 +323,7 @@ SELECT g.id::text, g.parent_id::text, g.status,
        (SELECT count(*) FROM segments s WHERE s.generation_id = g.id) AS segs
 FROM segment_generations g
 WHERE g.segmenter_prompt_version = 'segmenter.v2.d034.enum-ids.tool-placeholders'
-  AND g.segmenter_model_version  = '/home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf'
+  AND g.segmenter_model_version  = '~/models/Qwen3.6-27B-Q5_K_M.gguf'
   AND g.parent_id IN (
     '1ffd2141-04fb-48d6-8c0e-dc06a593ab8e',
     '43651f99-93b0-4755-898b-41a4a71cfac9',
@@ -346,7 +346,7 @@ SELECT s.conversation_id::text AS conv,
 FROM segments s
 JOIN segment_generations g ON g.id = s.generation_id
 WHERE g.segmenter_prompt_version = 'segmenter.v2.d034.enum-ids.tool-placeholders'
-  AND g.segmenter_model_version  = '/home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf'
+  AND g.segmenter_model_version  = '~/models/Qwen3.6-27B-Q5_K_M.gguf'
 ORDER BY s.conversation_id, s.sequence_index;
 
 -- Query C: overlap check.
@@ -355,7 +355,7 @@ WITH new_segs AS (
   FROM segments s
   JOIN segment_generations g ON g.id = s.generation_id
   WHERE g.segmenter_prompt_version = 'segmenter.v2.d034.enum-ids.tool-placeholders'
-    AND g.segmenter_model_version  = '/home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf'
+    AND g.segmenter_model_version  = '~/models/Qwen3.6-27B-Q5_K_M.gguf'
 ),
 pairs AS (
   SELECT a.conversation_id, a.sequence_index AS a_seq, b.sequence_index AS b_seq,
@@ -379,7 +379,7 @@ WITH new_ratios AS (
   FROM segments s
   JOIN segment_generations g ON g.id = s.generation_id
   WHERE g.segmenter_prompt_version = 'segmenter.v2.d034.enum-ids.tool-placeholders'
-    AND g.segmenter_model_version  = '/home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf'
+    AND g.segmenter_model_version  = '~/models/Qwen3.6-27B-Q5_K_M.gguf'
 )
 SELECT count(*) AS total_27b_segments,
        count(*) FILTER (WHERE model_count = 2 AND stored >= 10) AS endpoint_only_big_27b,
@@ -409,7 +409,7 @@ WITH per_parent AS (
   )
   AND (
     g.status = 'active'
-    OR g.segmenter_model_version = '/home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf'
+    OR g.segmenter_model_version = '~/models/Qwen3.6-27B-Q5_K_M.gguf'
   )
   GROUP BY s.conversation_id, g.segmenter_model_version
 )

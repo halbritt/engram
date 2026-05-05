@@ -28,7 +28,7 @@ For long unattended runs, pin the probed ik-llama model id so every batch does
 not need to call `/v1/models`:
 
 ```bash
-export ENGRAM_SEGMENTER_MODEL=/home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf
+export ENGRAM_SEGMENTER_MODEL=~/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf
 make pipeline
 ```
 
@@ -41,7 +41,7 @@ baseline, not as a substitute for probing the running local services before a
 long run:
 
 - ik-llama `GET /v1/models` exposed model id
-  `/home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf` with
+  `~/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf` with
   `max_model_len=262144`.
 - ik-llama `GET /props` reported `n_ctx=262144`. Endpoint defaults include
   streaming and non-zero temperature, so the client overrides them.
@@ -68,7 +68,7 @@ Before any long segmentation or soak run, run P-HEALTH:
 1. Pin the current ik-llama model id:
 
    ```bash
-   export ENGRAM_SEGMENTER_MODEL=/home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf
+   export ENGRAM_SEGMENTER_MODEL=~/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf
    ```
 
 2. Send a tiny D034-profile `POST /v1/chat/completions` that requires a

@@ -42,9 +42,9 @@ target. The selected ids were not the first 80 validation parents.
 
 | Strategy | Model path | Size bytes | SHA256 |
 | --- | --- | ---: | --- |
-| `qwen_35b_a3b_iq4_xs_d034` | `/home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf` | `18806446400` | not computed |
-| `qwen_27b_q5_k_m_d034` | `/home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf` | `19509790944` | not computed |
-| `gemma_26b_a4b_q4_k_m_d034` | `/home/halbritt/models/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-Q4_K_M.gguf` | `16796015136` | not computed |
+| `qwen_35b_a3b_iq4_xs_d034` | `~/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf` | `18806446400` | not computed |
+| `qwen_27b_q5_k_m_d034` | `~/models/Qwen3.6-27B-Q5_K_M.gguf` | `19509790944` | not computed |
+| `gemma_26b_a4b_q4_k_m_d034` | `~/models/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-Q4_K_M.gguf` | `16796015136` | not computed |
 
 The existing `ik-llama-server.service` was active on Qwen 35B at the start and
 was used for the operational-model run. It was then stopped so Qwen 27B and

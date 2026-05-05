@@ -60,9 +60,9 @@ Use the optional Docker database explicitly with:
 
 ```bash
 make migrate-docker
-make ingest-chatgpt-docker PATH=/home/halbritt/chatgpt-export
-make ingest-claude-docker PATH=/home/halbritt/Downloads/data-<uuid>-...-batch-0000.zip
-make ingest-gemini-docker PATH=/home/halbritt/Downloads/Takeout
+make ingest-chatgpt-docker PATH=~/chatgpt-export
+make ingest-claude-docker PATH=~/Downloads/data-<uuid>-...-batch-0000.zip
+make ingest-gemini-docker PATH=~/Downloads/Takeout
 make test-docker
 ```
 
@@ -71,7 +71,7 @@ make test-docker
 Ingest a local export:
 
 ```bash
-make ingest-chatgpt PATH=/home/halbritt/chatgpt-export
+make ingest-chatgpt PATH=~/chatgpt-export
 ```
 
 The importer accepts both known ChatGPT export shapes:
@@ -92,8 +92,8 @@ Claude.ai delivers each export as a zip archive, e.g.
 the zip directly or a directory the user has already extracted:
 
 ```bash
-make ingest-claude PATH=/home/halbritt/Downloads/data-<uuid>-...-batch-0000.zip
-make ingest-claude PATH=/home/halbritt/claude-export
+make ingest-claude PATH=~/Downloads/data-<uuid>-...-batch-0000.zip
+make ingest-claude PATH=~/claude-export
 ```
 
 The relevant payload files are `conversations.json`, `users.json`,
@@ -147,13 +147,13 @@ Takeout/My Activity/Gemini Apps/MyActivity.json
 Ingest the extracted Takeout directory:
 
 ```bash
-make ingest-gemini PATH=/home/halbritt/Downloads/Takeout
+make ingest-gemini PATH=~/Downloads/Takeout
 ```
 
 The CLI also accepts the subcommand form directly:
 
 ```bash
-engram ingest-gemini --path /home/halbritt/Downloads/Takeout
+engram ingest-gemini --path ~/Downloads/Takeout
 ```
 
 The importer intentionally ignores non-Gemini Takeout categories such as

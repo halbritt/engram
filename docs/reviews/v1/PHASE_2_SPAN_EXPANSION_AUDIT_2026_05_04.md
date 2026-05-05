@@ -23,7 +23,7 @@ was changed. All queries hit the local `engram` database only.
 | Commit | `822794dd055ccca6006cfc43a816e41d80adecf8` |
 | Working tree | clean |
 | Production segmenter prompt | `segmenter.v2.d034.enum-ids.tool-placeholders` |
-| Production segmenter model | `/home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf` |
+| Production segmenter model | `~/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf` |
 
 ## DB State Summary
 

@@ -49,12 +49,12 @@ computed for this short run.
 
 | Strategy | Model path | Size bytes | SHA256 |
 | --- | --- | ---: | --- |
-| `qwen_35b_a3b_iq4_xs_d034` | `/home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf` | `18806446400` | not computed |
-| `qwen_27b_q5_k_m_d034` | `/home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf` | `19509790944` | not computed |
-| `gemma_26b_a4b_q4_k_m_d034` | `/home/halbritt/models/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-Q4_K_M.gguf` | `16796015136` | not computed |
+| `qwen_35b_a3b_iq4_xs_d034` | `~/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf` | `18806446400` | not computed |
+| `qwen_27b_q5_k_m_d034` | `~/models/Qwen3.6-27B-Q5_K_M.gguf` | `19509790944` | not computed |
+| `gemma_26b_a4b_q4_k_m_d034` | `~/models/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-Q4_K_M.gguf` | `16796015136` | not computed |
 
 Server binary:
-`/home/halbritt/git/ik_llama.cpp/build/bin/llama-server`
+`~/git/ik_llama.cpp/build/bin/llama-server`
 (`8750288` bytes).
 
 Server args for each manual launch:
@@ -87,7 +87,7 @@ and were left in that prior state.
 Each model was launched manually on `127.0.0.1:8081`, checked with
 `/v1/models`, smoke-tested with a tiny D034 JSON-schema completion, benchmarked,
 and stopped. The normal `ik-llama-server.service` was restored afterward and
-confirmed serving `/home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf`.
+confirmed serving `~/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf`.
 
 Gemma's first smoke used `max_tokens=128` and returned truncated invalid JSON.
 The smoke was retried with bounded `max_tokens=512`, passed, and the benchmark

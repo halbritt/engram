@@ -68,9 +68,9 @@ Commands run successfully:
 
 ```bash
 make migrate
-make ingest-chatgpt PATH=/home/halbritt/chatgpt-export
-make ingest-claude PATH=/home/halbritt/Downloads/data-840f283f-c304-49fc-b413-ae09939ac048-1777360228-dd8e408f-batch-0000.zip
-make ingest-gemini PATH=/home/halbritt/Downloads/Takeout
+make ingest-chatgpt PATH=~/chatgpt-export
+make ingest-claude PATH=~/Downloads/data-840f283f-c304-49fc-b413-ae09939ac048-1777360228-dd8e408f-batch-0000.zip
+make ingest-gemini PATH=~/Downloads/Takeout
 make test
 ```
 

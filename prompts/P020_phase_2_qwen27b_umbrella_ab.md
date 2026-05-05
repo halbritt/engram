@@ -117,7 +117,7 @@ CHALLENGE_PARENTS = [
 
 # Pin model_version explicitly so the segment_generations row clearly
 # attributes its output to 27B regardless of what the ik-llama probe reports.
-MODEL_VERSION = "/home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf"
+MODEL_VERSION = "~/models/Qwen3.6-27B-Q5_K_M.gguf"
 
 
 def main() -> int:
@@ -172,7 +172,7 @@ SELECT g.id::text, g.parent_id::text, g.status,
        (SELECT count(*) FROM segments s WHERE s.generation_id = g.id) AS segs
 FROM segment_generations g
 WHERE g.segmenter_prompt_version = 'segmenter.v2.d034.enum-ids.tool-placeholders'
-  AND g.segmenter_model_version  = '/home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf'
+  AND g.segmenter_model_version  = '~/models/Qwen3.6-27B-Q5_K_M.gguf'
   AND g.parent_id IN (
     '1ffd2141-04fb-48d6-8c0e-dc06a593ab8e',
     '43651f99-93b0-4755-898b-41a4a71cfac9',
@@ -195,7 +195,7 @@ SELECT s.conversation_id::text AS conv,
 FROM segments s
 JOIN segment_generations g ON g.id = s.generation_id
 WHERE g.segmenter_prompt_version = 'segmenter.v2.d034.enum-ids.tool-placeholders'
-  AND g.segmenter_model_version  = '/home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf'
+  AND g.segmenter_model_version  = '~/models/Qwen3.6-27B-Q5_K_M.gguf'
 ORDER BY s.conversation_id, s.sequence_index;
 
 -- C. Overlap check on the new (27B) segments — same shape as the audit
@@ -204,7 +204,7 @@ WITH new_segs AS (
   FROM segments s
   JOIN segment_generations g ON g.id = s.generation_id
   WHERE g.segmenter_prompt_version = 'segmenter.v2.d034.enum-ids.tool-placeholders'
-    AND g.segmenter_model_version  = '/home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf'
+    AND g.segmenter_model_version  = '~/models/Qwen3.6-27B-Q5_K_M.gguf'
 ),
 pairs AS (
   SELECT a.conversation_id, a.sequence_index AS a_seq, b.sequence_index AS b_seq,
@@ -228,7 +228,7 @@ WITH new_ratios AS (
   FROM segments s
   JOIN segment_generations g ON g.id = s.generation_id
   WHERE g.segmenter_prompt_version = 'segmenter.v2.d034.enum-ids.tool-placeholders'
-    AND g.segmenter_model_version  = '/home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf'
+    AND g.segmenter_model_version  = '~/models/Qwen3.6-27B-Q5_K_M.gguf'
 )
 SELECT count(*) AS total_27b_segments,
        count(*) FILTER (WHERE model_count = 2 AND stored >= 10) AS endpoint_only_big_27b,
@@ -258,7 +258,7 @@ WITH per_parent AS (
   )
   AND (
     g.status = 'active'
-    OR g.segmenter_model_version = '/home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf'
+    OR g.segmenter_model_version = '~/models/Qwen3.6-27B-Q5_K_M.gguf'
   )
   GROUP BY s.conversation_id, g.segmenter_model_version
 )
@@ -335,7 +335,7 @@ UPDATE segment_generations
 SET status = 'failed',
     raw_payload = raw_payload || '{"failure_kind":"ab_test_discarded"}'::jsonb
 WHERE segmenter_prompt_version = 'segmenter.v2.d034.enum-ids.tool-placeholders'
-  AND segmenter_model_version  = '/home/halbritt/models/Qwen3.6-27B-Q5_K_M.gguf';
+  AND segmenter_model_version  = '~/models/Qwen3.6-27B-Q5_K_M.gguf';
 ```
 
 Do not `DELETE` — the migration 004 trigger forbids it. Marking the

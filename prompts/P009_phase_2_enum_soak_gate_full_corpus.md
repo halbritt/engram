@@ -35,7 +35,7 @@ curl -sS --max-time 10 \
   http://127.0.0.1:8081/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "/home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf",
+    "model": "~/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf",
     "stream": false,
     "temperature": 0,
     "top_p": 1,
@@ -204,7 +204,7 @@ systemctl --user stop openclaw-gateway.service 2>/dev/null || true
 systemctl --user stop ik-llama-watchdog.timer 2>/dev/null || true
 
 export ENGRAM_DATABASE_URL=postgresql:///engram
-export ENGRAM_SEGMENTER_MODEL=/home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf
+export ENGRAM_SEGMENTER_MODEL=~/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf
 export ENGRAM_SEGMENTER_MAX_TOKENS=16384
 export ENGRAM_SEGMENTER_RETRY_MAX_TOKENS=32768
 export ENGRAM_SEGMENTER_WINDOW_OVERLAP=0
