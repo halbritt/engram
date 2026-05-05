@@ -1,4 +1,6 @@
-# Run Short Public Segmentation Model Benchmark
+# P016: Run Short Public Segmentation Model Benchmark
+
+> Prompt ordinal: P016. Introduced: 2026-05-03T22:36:01+00:00. Source commit: c3bd353.
 
 > Hand this to an implementation/execution agent after the benchmark harness
 > implementation and second re-review have landed.

@@ -1,4 +1,6 @@
-# Synthesis Prompt
+# P001: Synthesis Prompt
+
+> Prompt ordinal: P001. Introduced: 2026-04-27T01:36:31+00:00. Source commit: c0aed3d.
 
 Use this prompt after collecting the initial design reviews. The goal is to turn
 multiple model opinions into a decision surface.

@@ -10,7 +10,7 @@ deltas don't fix.
 
 ### 1.1 Long-conversation context overflow has no plan
 
-**Decision / doc touched:** `prompts/phase_2_segments_embeddings.md` §3
+**Decision / doc touched:** `prompts/P007_phase_2_segments_embeddings.md` §3
 (Segmenter), `BUILD_PHASES.md` Phase 2, `DECISION_LOG.md` (new sub-decision
 under D005).
 
@@ -55,7 +55,7 @@ after consolidation runs.
 
 ### 1.2 No partial unique constraint on `(conversation_id, sequence_index) WHERE is_active`
 
-**Decision / doc touched:** `prompts/phase_2_segments_embeddings.md` §2
+**Decision / doc touched:** `prompts/P007_phase_2_segments_embeddings.md` §2
 (segments indexes), migration `004_segments_embeddings.sql`.
 
 **Failure mode.** The plan describes `(conversation_id, sequence_index)` as a
@@ -83,7 +83,7 @@ rendering that only manifest after re-segmentation.
 
 ### 1.3 Atomicity of "insert new generation, then deactivate prior" is under-specified
 
-**Decision / doc touched:** `prompts/phase_2_segments_embeddings.md` §3
+**Decision / doc touched:** `prompts/P007_phase_2_segments_embeddings.md` §3
 (Re-segmentation), `BUILD_PHASES.md` Phase 2 acceptance.
 
 **Failure mode.** The plan says "inserts new rows, then marks prior `segments`
@@ -122,7 +122,7 @@ regression in eval, attributed to the wrong cause.
 
 ### 1.4 `message_ids UUID[]` has no integrity guard
 
-**Decision / doc touched:** `prompts/phase_2_segments_embeddings.md` §2
+**Decision / doc touched:** `prompts/P007_phase_2_segments_embeddings.md` §2
 (segments schema), migration.
 
 **Failure mode.** PostgreSQL arrays don't enforce FKs. Nothing in the schema
@@ -158,7 +158,7 @@ is the worst kind of failure — looks correct on inspection.
 ### 1.5 D028 cascade scope is wrong: should be conversation/note/capture, not "source"
 
 **Decision / doc touched:** `DECISION_LOG.md` D028 wording,
-`prompts/phase_2_segments_embeddings.md` §3 (reclassification handling),
+`prompts/P007_phase_2_segments_embeddings.md` §3 (reclassification handling),
 `BUILD_PHASES.md` Phase 2 cross-cutting.
 
 **Failure mode.** D028 and the Phase 2 prompt both say "queue the parent
@@ -198,7 +198,7 @@ forever.
 
 ### 1.6 Privacy-tier inheritance must include `conversations.privacy_tier`, not only message tiers
 
-**Decision / doc touched:** `prompts/phase_2_segments_embeddings.md` §2
+**Decision / doc touched:** `prompts/P007_phase_2_segments_embeddings.md` §2
 (segments.privacy_tier), `DECISION_LOG.md` D019 (or D028 amendment).
 
 **Failure mode.** The plan says "max() across the message set if they diverge
@@ -234,7 +234,7 @@ reclassification.
 
 ### 1.7 `embedding_cache` UNIQUE conflict has no specified resolution
 
-**Decision / doc touched:** `prompts/phase_2_segments_embeddings.md` §4
+**Decision / doc touched:** `prompts/P007_phase_2_segments_embeddings.md` §4
 (Embedder), migration.
 
 **Failure mode.** The Phase-2 spec implies serial execution but the corpus is
@@ -267,7 +267,7 @@ longer.
 
 ### 1.8 `embedding vector(768)` hardcoded is incompatible with the stated multi-model story
 
-**Decision / doc touched:** `prompts/phase_2_segments_embeddings.md` §2,
+**Decision / doc touched:** `prompts/P007_phase_2_segments_embeddings.md` §2,
 `DECISION_LOG.md` D021 (consequences), `HUMAN_REQUIREMENTS.md` §"Embeddings
 are versioned, not replaced".
 
@@ -474,7 +474,7 @@ ALTER TABLE notes ADD COLUMN privacy_tier INT NOT NULL DEFAULT 1;
 
 ## 5. Concrete prompt / implementation-contract deltas
 
-In `prompts/phase_2_segments_embeddings.md`:
+In `prompts/P007_phase_2_segments_embeddings.md`:
 
 1. Insert a new "Long-conversation handling" section between current §3.1 and
    §3.2: define windowed strategy, intra-conversation cursor in
@@ -551,7 +551,7 @@ Items 1.2, 1.6, 1.7 are smaller but cheap to fix now and prohibitively
 expensive to retrofit (especially 1.6, which is a privacy contract).
 
 **Land items 4.1–4.6 in `migrations/004_segments_embeddings.sql`. Land prompt
-deltas 5.1–5.8 in `prompts/phase_2_segments_embeddings.md`. Add D029 (cutover
+deltas 5.1–5.8 in `prompts/P007_phase_2_segments_embeddings.md`. Add D029 (cutover
 atomicity policy) and D030 (D028 cascade scope correction) to
 `DECISION_LOG.md`. Run probes 6.1–6.5. Then proceed.**
 

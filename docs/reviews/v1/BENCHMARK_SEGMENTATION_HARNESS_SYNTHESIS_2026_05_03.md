@@ -4,7 +4,7 @@ Date: 2026-05-03
 Scope: `benchmarks/segmentation/` skeleton
 Inputs:
 - `docs/reviews/v1/BENCHMARK_SEGMENTATION_HARNESS_REVIEW.md`
-- `prompts/benchmark_segmentation_harness_spec.md`
+- `prompts/P011_benchmark_segmentation_harness_spec.md`
 - `docs/rfcs/0006-segmentation-model-benchmark.md`
 
 ## Executive Decision

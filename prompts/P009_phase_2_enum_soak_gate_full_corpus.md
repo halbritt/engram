@@ -1,4 +1,6 @@
-# Phase 2 Enum-ID Soak Gate To Full AI-Conversation Corpus
+# P009: Phase 2 Enum-ID Soak Gate To Full AI-Conversation Corpus
+
+> Prompt ordinal: P009. Introduced: 2026-05-02T16:57:55+00:00. Source commit: ef4c080.
 
 > Hand this to a coding agent on branch `phase-2-segments-embeddings`.
 > Goal: finish the current bounded Phase 2 soak, evaluate explicit gates, and

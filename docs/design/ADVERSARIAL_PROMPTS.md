@@ -73,7 +73,7 @@ Inputs:
 - docs/design/V1_ARCHITECTURE_DRAFT.md
 - docs/design/ARCHITECTURE_EVOLUTION_DELTA_2026_04_29.md
 - docs/design/GOLD_SET_TEMPLATE.md
-- prompts/phase_2_segments_embeddings.md, for the D026 pre-Phase-2 gate
+- prompts/P007_phase_2_segments_embeddings.md, for the D026 pre-Phase-2 gate
 - docs/reviews/v1/CONSENSUS_REVIEW.md, as historical synthesis context
 - Prior model reviews, if relevant
 

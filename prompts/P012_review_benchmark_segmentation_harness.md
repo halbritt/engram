@@ -1,4 +1,6 @@
-# Review Benchmark Segmentation Harness
+# P012: Review Benchmark Segmentation Harness
+
+> Prompt ordinal: P012. Introduced: 2026-05-03T18:33:36+00:00. Source commit: 49f09c7.
 
 > Hand this to another coding/review agent on the
 > `codex/benchmark-segmentation-harness` branch.

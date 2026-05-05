@@ -1,4 +1,6 @@
-# Targeted Qwen 27B A/B for the Umbrella-Overlap Pattern
+# P020: Targeted Qwen 27B A/B for the Umbrella-Overlap Pattern
+
+> Prompt ordinal: P020. Introduced: 2026-05-05T04:33:08+00:00. Source commit: 6f24fc9.
 
 You are running a small, read-mostly A/B segmentation experiment to decide
 whether the umbrella-over-sub-segments pattern surfaced in

@@ -1,4 +1,6 @@
-# Review Benchmark Segmentation Harness Implementation
+# P014: Review Benchmark Segmentation Harness Implementation
+
+> Prompt ordinal: P014. Introduced: 2026-05-03T19:57:04+00:00. Source commit: b23d400.
 
 > Hand this to another coding/review agent on the
 > `build-benchmark-segmentation-harness` branch.

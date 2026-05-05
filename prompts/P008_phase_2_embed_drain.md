@@ -1,4 +1,6 @@
-# Phase 2 Embed Drain
+# P008: Phase 2 Embed Drain
+
+> Prompt ordinal: P008. Introduced: 2026-05-02T16:57:55+00:00. Source commit: 77051b7.
 
 > Hand this to a coding agent on branch `phase-2-segments-embeddings`.
 > Goal: drain the Phase 2 embedding backlog only. Do not run segmentation.

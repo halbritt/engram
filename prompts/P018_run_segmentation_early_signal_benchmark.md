@@ -1,4 +1,6 @@
-# Run Segmentation Early-Signal Benchmark
+# P018: Run Segmentation Early-Signal Benchmark
+
+> Prompt ordinal: P018. Introduced: 2026-05-04T07:25:58+00:00. Source commit: 56c7237.
 
 > Hand this to a fresh execution agent after the RFC 0008 / D042 Tier 0 and
 > Tier 1 benchmark harness implementation and implementation-review fixes have

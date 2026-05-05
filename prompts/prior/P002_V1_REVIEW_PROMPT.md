@@ -1,4 +1,6 @@
-# V1 Review Prompt (Round 2 — Principle Re-pass)
+# P002: V1 Review Prompt (Round 2 — Principle Re-pass)
+
+> Prompt ordinal: P002. Introduced: 2026-04-27T11:57:09-07:00. Source commit: a6c1816.
 
 Use this prompt after the foundational principles have been named in
 HUMAN_REQUIREMENTS.md, before the gold-set adversarial round. Each model

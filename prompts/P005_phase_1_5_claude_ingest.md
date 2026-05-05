@@ -1,4 +1,6 @@
-# Phase 1.5 Prompt — Claude.ai Export Ingestion
+# P005: Phase 1.5 Prompt — Claude.ai Export Ingestion
+
+> Prompt ordinal: P005. Introduced: 2026-04-28T05:45:48+00:00. Source commit: 618b5bc.
 
 > Hand this to a coding agent to add Claude.ai conversation export
 > ingestion under the same schema and conventions as Phase 1's

@@ -1,4 +1,6 @@
-# Phase 1.5 Prompt — Phase 1 Cleanup
+# P004: Phase 1.5 Prompt — Phase 1 Cleanup
+
+> Prompt ordinal: P004. Introduced: 2026-04-28T05:19:06+00:00. Source commit: 1430f77.
 
 > Hand this to a coding agent (Claude Code, Codex, or equivalent) to
 > close the findings from [PHASE_1_REVIEW_FINDINGS.md](../docs/phases/PHASE_1_REVIEW_FINDINGS.md)

@@ -1,4 +1,6 @@
-# Implement Segmentation Benchmark Early Signal
+# P017: Implement Segmentation Benchmark Early Signal
+
+> Prompt ordinal: P017. Introduced: 2026-05-04T02:39:21+00:00. Source commit: 89d58f2.
 
 > Hand this to a fresh implementation agent after the early-signal spec review
 > synthesis has landed.

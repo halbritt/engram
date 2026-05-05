@@ -23,7 +23,7 @@ Active implementation target:
   [docs/reviews/v1/PRE_PHASE_2_ADVERSARIAL_SYNTHESIS_2026_04_30.md](docs/reviews/v1/PRE_PHASE_2_ADVERSARIAL_SYNTHESIS_2026_04_30.md).
 - Phase 2 — segmentation + embeddings.
 - Operational prompt:
-  [prompts/phase_2_segments_embeddings.md](prompts/phase_2_segments_embeddings.md).
+  [prompts/P007_phase_2_segments_embeddings.md](prompts/P007_phase_2_segments_embeddings.md).
 
 ## Already Landed
 

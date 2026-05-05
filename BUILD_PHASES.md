@@ -62,12 +62,12 @@ start. Per D024, having all three sources in raw before Phase 2
 later claim / belief extraction richer evidence to ground against.
 
 - **Cleanup** — completed in commit `58a5a4a`. See
-  [prompts/phase_1_5_cleanup.md](prompts/phase_1_5_cleanup.md).
+  [prompts/P004_phase_1_5_cleanup.md](prompts/P004_phase_1_5_cleanup.md).
 - **Claude.ai export ingestion** — see
-  [prompts/phase_1_5_claude_ingest.md](prompts/phase_1_5_claude_ingest.md).
+  [prompts/P005_phase_1_5_claude_ingest.md](prompts/P005_phase_1_5_claude_ingest.md).
   Completed before Phase 2 implementation.
 - **Gemini Takeout ingestion** — see
-  [prompts/phase_1_5_gemini_ingest.md](prompts/phase_1_5_gemini_ingest.md).
+  [prompts/P006_phase_1_5_gemini_ingest.md](prompts/P006_phase_1_5_gemini_ingest.md).
   Completed before Phase 2 implementation.
 
 ## Pre-Phase-2 adversarial gate (D026)
@@ -149,7 +149,7 @@ directly (with copied vector) per D027 / D033.
 **Leaves for next phase:** AI-conversation segments embedded and retrievable by
 similarity; ready for claim extraction.
 
-See [prompts/phase_2_segments_embeddings.md](prompts/phase_2_segments_embeddings.md)
+See [prompts/P007_phase_2_segments_embeddings.md](prompts/P007_phase_2_segments_embeddings.md)
 for the operational handoff.
 
 ## Phase 3 — Claim extraction + bitemporal beliefs
@@ -288,3 +288,4 @@ them as acceptance criteria.
   principles.
 - [ROADMAP.md](ROADMAP.md) — Step 4 sits in the broader sequence;
   Step 5 (gold set) follows once claims and beliefs exist.
+ and beliefs exist.

@@ -1,4 +1,6 @@
-# Build Benchmark Segmentation Harness
+# P013: Build Benchmark Segmentation Harness
+
+> Prompt ordinal: P013. Introduced: 2026-05-03T18:56:51+00:00. Source commit: 71efa23.
 
 > Hand this to a coding agent after the benchmark harness skeleton and review
 > synthesis have landed.

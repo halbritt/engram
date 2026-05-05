@@ -10,7 +10,7 @@
 the entire AI-conversation corpus: ChatGPT, Gemini, and Claude conversation
 history. This explicitly excludes Obsidian notes, live captures, and any other
 non-conversation source. See V1_ARCHITECTURE_DRAFT and
-[prompts/phase_2_segments_embeddings.md](prompts/phase_2_segments_embeddings.md)
+[prompts/P007_phase_2_segments_embeddings.md](prompts/P007_phase_2_segments_embeddings.md)
 for the operational path. Done when the conversation-derived segments are
 embedded, active, resumability-clean, and browsable.
 

@@ -1,4 +1,6 @@
-# Benchmark Segmentation Harness Spec Prompt
+# P011: Benchmark Segmentation Harness Spec Prompt
+
+> Prompt ordinal: P011. Introduced: 2026-05-03T17:53:24+00:00. Source commit: 85a1c9b.
 
 You are working in the Engram repo.
 

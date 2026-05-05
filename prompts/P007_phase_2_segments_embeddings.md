@@ -1,4 +1,6 @@
-# Phase 2 Prompt — Segmentation + Embeddings
+# P007: Phase 2 Prompt — Segmentation + Embeddings
+
+> Prompt ordinal: P007. Introduced: 2026-04-28T07:33:52+00:00. Source commit: 3e5d115.
 
 > Hand this to a coding agent (Claude Code, Codex, or equivalent) to
 > build Phase 2 per [BUILD_PHASES.md](../BUILD_PHASES.md). Read

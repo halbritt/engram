@@ -1,4 +1,6 @@
-# Fix Benchmark Segmentation Harness Review Findings
+# P015: Fix Benchmark Segmentation Harness Review Findings
+
+> Prompt ordinal: P015. Introduced: 2026-05-03T20:09:37+00:00. Source commit: 5aeb589.
 
 > Hand this to a coding agent on the
 > `build-benchmark-segmentation-harness` branch.

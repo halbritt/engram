@@ -1,4 +1,6 @@
-# Phase 1.5 Prompt — Gemini Takeout Ingestion
+# P006: Phase 1.5 Prompt — Gemini Takeout Ingestion
+
+> Prompt ordinal: P006. Introduced: 2026-04-28T05:45:48+00:00. Source commit: 618b5bc.
 
 > Hand this to a coding agent to add Gemini Takeout ingestion under
 > the same schema and conventions as Phase 1's ChatGPT loader.

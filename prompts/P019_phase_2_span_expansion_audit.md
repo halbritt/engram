@@ -1,4 +1,6 @@
-# Audit Phase 2 Span Expansion Before Claim Extraction
+# P019: Audit Phase 2 Span Expansion Before Claim Extraction
+
+> Prompt ordinal: P019. Introduced: 2026-05-04T12:22:41-07:00. Source commit: 6f39341.
 
 You are auditing the completed/current Phase 2 segmentation run for provenance
 precision after the Tier 1 benchmark rejected Qwen 35B on raw unordered

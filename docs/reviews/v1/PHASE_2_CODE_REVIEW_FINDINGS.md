@@ -17,7 +17,7 @@ use UTC ISO-8601 timestamps, not date-only headings.
 ## Code Review (`src/engram/segmenter.py`)
 
 ### 1. ~~Missing Schema for `segment_generations`~~ — not reproduced later
-The `segmenter.py` script heavily utilizes a `segment_generations` table (e.g., in `create_generation`, `find_existing_generation`, `mark_generation_failed`) to track the batch status of segmentation runs. It also inserts `generation_id` into the `segments` table. However, neither the `segment_generations` table nor the `generation_id` column on `segments` are defined in the `prompts/phase_2_segments_embeddings.md` schema. This discrepancy will cause immediate `UndefinedTable` and `UndefinedColumn` errors upon execution against a strict schema.
+The `segmenter.py` script heavily utilizes a `segment_generations` table (e.g., in `create_generation`, `find_existing_generation`, `mark_generation_failed`) to track the batch status of segmentation runs. It also inserts `generation_id` into the `segments` table. However, neither the `segment_generations` table nor the `generation_id` column on `segments` are defined in the `prompts/P007_phase_2_segments_embeddings.md` schema. This discrepancy will cause immediate `UndefinedTable` and `UndefinedColumn` errors upon execution against a strict schema.
 
 ### 2. Missing D027 Poison-Pill Avoidance Filter — narrowed later
 While `segment_conversation` correctly calls `upsert_progress(..., increment_error=True)` when encountering a `SegmenterRequestTimeout` or general `Exception`, the `fetch_pending_conversations` query does **not** filter out rows where `p.error_count >= 3`. As a result, ~~the `segment_pending` batcher will enter an infinite loop of retrying and failing on poison-pill conversations, entirely defeating the D027 fix~~ later verification narrowed the loop risk to `service_unavailable` and explicit `pending` requeue paths.
@@ -88,7 +88,7 @@ To stabilize the Phase 2 ingestion pipeline, the following fixes are critical:
 I cross-checked each finding against `migrations/004_segments_embeddings.sql`, `src/engram/segmenter.py`, `src/engram/embedder.py`, and `src/engram/cli.py`.
 
 ### Finding 1 — Missing Schema for `segment_generations`: **NOT REPRODUCED**
-Migration `004_segments_embeddings.sql:11-31` creates `segment_generations`, and `segments.generation_id UUID NOT NULL REFERENCES segment_generations(id)` is at line 47. The prompt file describes both (`prompts/phase_2_segments_embeddings.md:86, 104, 173, 270, 292`). The runtime will not raise `UndefinedTable` / `UndefinedColumn` against the migrated schema. Closing this finding as a documentation observation only.
+Migration `004_segments_embeddings.sql:11-31` creates `segment_generations`, and `segments.generation_id UUID NOT NULL REFERENCES segment_generations(id)` is at line 47. The prompt file describes both (`prompts/P007_phase_2_segments_embeddings.md:86, 104, 173, 270, 292`). The runtime will not raise `UndefinedTable` / `UndefinedColumn` against the migrated schema. Closing this finding as a documentation observation only.
 
 ### Finding 2 — Poison-Pill Filter: **PARTIALLY REPRODUCED — narrower scope than stated**
 `fetch_pending_conversations` (`segmenter.py:614-654`) does not gate on `error_count`, but for `segmenter_timeout` and `segmenter_error` the failed `segment_generations` row is created (`mark_generation_failed`, `segmenter.py:399, 411`) with `failure_kind != 'service_unavailable'`. The `NOT EXISTS` clause then excludes that conversation on subsequent batches — those conversations are *not* in an infinite loop.
@@ -149,7 +149,7 @@ All 15 "segmenter returned invalid JSON" rows are `json.JSONDecodeError: Untermi
 `segmenter_request_deadline` (`segmenter.py:728-749`) uses `signal.setitimer(ITIMER_REAL)`. Per CPython, signal handlers can only be installed from the main thread; `signal.signal` raises `ValueError` from worker threads. If the segmenter is ever invoked from a thread (e.g., a future supervisor with concurrent batches), the deadline is unenforceable. **Fix:** either document the main-thread requirement explicitly, or replace with a per-request `socket` timeout passed through `urllib.request.urlopen(timeout=...)` (already done — `segmenter.py:194` passes `SEGMENTER_REQUEST_TIMEOUT_SECONDS` to `http_json`). The `SIGALRM` wrapper is redundant once the urlopen timeout is set, and the redundancy is what makes the thread-safety hazard load-bearing.
 
 ### E. `expand_message_span` silently turns sparse citations into dense spans
-`segmenter.py:1060-1074` takes whatever `message_ids` the LLM cites, picks `min`/`max` sequence_index, and returns *every* message in `[min, max]`. The trigger `validate_conversation_segment_message_ids` accepts this because the expanded list is contiguous and ordered. Consequence: a segment whose `content_text` was generated from `[m1, m5, m10]` ends up associated with `m1..m10`. Privacy reclassification on `m3` invalidates this segment even though `m3` did not contribute to `content_text`; conversely, a future evidence-trace that expects `message_ids` to mean "messages that produced this content" is wrong. The behavior is asserted in `test_phase2_segments.py::test_privacy_tier_inherits_parent_and_covered_raw_rows`, so it appears intentional — but the semantic gap should be documented in the prompt and in `prompts/phase_2_segments_embeddings.md`.
+`segmenter.py:1060-1074` takes whatever `message_ids` the LLM cites, picks `min`/`max` sequence_index, and returns *every* message in `[min, max]`. The trigger `validate_conversation_segment_message_ids` accepts this because the expanded list is contiguous and ordered. Consequence: a segment whose `content_text` was generated from `[m1, m5, m10]` ends up associated with `m1..m10`. Privacy reclassification on `m3` invalidates this segment even though `m3` did not contribute to `content_text`; conversely, a future evidence-trace that expects `message_ids` to mean "messages that produced this content" is wrong. The behavior is asserted in `test_phase2_segments.py::test_privacy_tier_inherits_parent_and_covered_raw_rows`, so it appears intentional — but the semantic gap should be documented in the prompt and in `prompts/P007_phase_2_segments_embeddings.md`.
 
 ### F. Window overlap creates legitimate cross-segment `message_ids` collisions
 `WINDOW_OVERLAP_MESSAGES=1` (`segmenter.py:36`, `build_windows:995`). Two consecutive windows share their last/first message. Each window is segmented independently; both can produce a segment that cites the overlapping message. The partial unique indexes on `(conversation_id, sequence_index)` *do not* catch this — they constrain `sequence_index`, not `message_ids` membership. Result: the same raw message is cited by two active segments → double-counted in retrieval, double-invalidated under privacy reclassification. **Fix:** either deduplicate at activation time (drop one of the overlapping segments, or re-number `sequence_index` to leave a gap), or reduce overlap to zero and accept boundary-cut risk.
@@ -443,7 +443,7 @@ The conv 1 outlier is stage-2 information; it does not block phase-2 progress, b
 
 ## Phase 2 Bounded Soak (Opus 4.7 / coding agent, 2026-05-01 18:55–23:47 UTC)
 
-Bounded soak per `prompts/phase_2_soak_test.md`. Run was cut short by an ik-llama backend wedge unrelated to engram; surfaces below as Finding VII. The supervisor itself handled the wedge cleanly.
+Bounded soak per `prompts/P010_phase_2_soak_test.md`. Run was cut short by an ik-llama backend wedge unrelated to engram; surfaces below as Finding VII. The supervisor itself handled the wedge cleanly.
 
 ### Run setup
 
@@ -581,7 +581,7 @@ Implemented changes:
   `segment_generations.raw_payload` now records `failure_kind`, `last_error`,
   `attempts`, `attempt_max_tokens`, `decode_counts` when the endpoint exposes
   them, and `attempt_errors`.
-- P-HEALTH is added to `prompts/phase_2_segments_embeddings.md`: a tiny
+- P-HEALTH is added to `prompts/P007_phase_2_segments_embeddings.md`: a tiny
   D034-profile completion smoke before and after a 10-conversation preflight,
   with the instruction to stop the soak if either smoke fails.
 - D035 is added to `DECISION_LOG.md` to make inference-level health checks and
@@ -813,12 +813,12 @@ Implemented changes:
 - `segment_conversation()` passes the current window's message IDs to
   `IkLlamaSegmenterClient` while keeping test/stub `SegmenterClient`
   implementations source-compatible.
-- `prompts/phase_2_segments_embeddings.md` and `docs/segmentation.md` now
+- `prompts/P007_phase_2_segments_embeddings.md` and `docs/segmentation.md` now
   document the enum-constrained provenance contract.
 
 Expected next validation:
 
-1. Drain the current embed backlog with `prompts/phase_2_embed_drain.md`.
+1. Drain the current embed backlog with `prompts/P008_phase_2_embed_drain.md`.
 2. Run P-HEALTH.
 3. Re-run the bounded soak under `segmenter.v2.d034.enum-ids`.
 4. Confirm `unknown_message_id` drops below the 1% new-failure threshold,
@@ -826,7 +826,7 @@ Expected next validation:
 
 ## Phase 2 Embed Drain (Opus 4.7 / coding agent, 2026-05-02T07:53:45Z–07:53:56Z)
 
-Per `prompts/phase_2_embed_drain.md`. Single embed-only pass to drain the
+Per `prompts/P008_phase_2_embed_drain.md`. Single embed-only pass to drain the
 post-soak Round 2 backlog (211 `segmented` + 1 `embedding` generations
 left over because `pipeline --limit 300` capped the embed step at 300
 segments out of 477 created). Run while `openclaw-gateway.service` was
@@ -1008,7 +1008,7 @@ Possible mitigations (not implemented this run):
 Rate this run: 2/300 = 0.67 % (under the 1 % new-class FAIL threshold)
 and the class has a clear, classifiable signature.
 
-### PASS / FAIL (per `prompts/phase_2_enum_soak_gate_full_corpus.md`)
+### PASS / FAIL (per `prompts/P009_phase_2_enum_soak_gate_full_corpus.md`)
 
 PASS gates:
 - ✅ Soak completed without supervisor crash.
@@ -1039,7 +1039,7 @@ FAIL gates:
 
 ## Phase 2 Full Corpus Partial Run (Opus 4.7 / coding agent, 2026-05-02 11:11:20Z–~16:36Z UTC, paused at operator request)
 
-Per §5 of `prompts/phase_2_enum_soak_gate_full_corpus.md`. Started
+Per §5 of `prompts/P009_phase_2_enum_soak_gate_full_corpus.md`. Started
 immediately after the round 3 PASS verdict and the 170-row drain.
 
 ### Run setup

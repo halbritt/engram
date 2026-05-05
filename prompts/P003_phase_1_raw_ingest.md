@@ -1,4 +1,6 @@
-# Phase 1 Prompt — Raw Evidence Layer
+# P003: Phase 1 Prompt — Raw Evidence Layer
+
+> Prompt ordinal: P003. Introduced: 2026-04-28T03:55:54+00:00. Source commit: dfbd654.
 
 > Hand this to a coding agent (Claude Code, Codex, or equivalent) to
 > build Phase 1 per [BUILD_PHASES.md](../BUILD_PHASES.md). Read

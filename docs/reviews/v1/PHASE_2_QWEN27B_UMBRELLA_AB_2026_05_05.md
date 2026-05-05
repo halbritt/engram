@@ -3,7 +3,7 @@
 ## Scope
 
 Targeted 5-parent A/B run from
-`prompts/phase_2_qwen27b_umbrella_ab.md`. The run re-segmented five
+`prompts/P020_phase_2_qwen27b_umbrella_ab.md`. The run re-segmented five
 overlap-affected ChatGPT conversations with Qwen 27B Q5_K_M under the existing
 production prompt:
 

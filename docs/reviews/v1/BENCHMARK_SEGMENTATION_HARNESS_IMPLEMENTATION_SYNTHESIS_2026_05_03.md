@@ -4,7 +4,7 @@ Date: 2026-05-03
 Scope: public-first benchmark harness implementation
 Inputs:
 - `docs/reviews/v1/BENCHMARK_SEGMENTATION_HARNESS_IMPLEMENTATION_REVIEW.md`
-- `prompts/build_benchmark_segmentation_harness.md`
+- `prompts/P013_build_benchmark_segmentation_harness.md`
 - `docs/rfcs/0006-segmentation-model-benchmark.md`
 - `DECISION_LOG.md` D041
 

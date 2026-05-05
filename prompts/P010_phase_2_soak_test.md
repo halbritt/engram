@@ -1,4 +1,6 @@
-# Phase 2 Soak Test (2-hour bounded run)
+# P010: Phase 2 Soak Test (2-hour bounded run)
+
+> Prompt ordinal: P010. Introduced: 2026-05-02T16:57:55+00:00. Source commit: 64eb7e3.
 
 > Hand this to a coding agent on the `phase-2-segments-embeddings` branch.
 > Goal: a bounded operational soak of `segment` + `embed` over a real
