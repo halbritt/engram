@@ -26,6 +26,17 @@ This directory contains the LLM prompts and operational handoffs used to build a
 | **P018** | [Run Early Signal Benchmark](P018_run_segmentation_early_signal_benchmark.md) | 2026-05-04 | `56c7237` |
 | **P019** | [Phase 2 Span Expansion Audit](P019_phase_2_span_expansion_audit.md) | 2026-05-04 | `6f39341` |
 | **P020** | [Qwen 27B Umbrella A/B](P020_phase_2_qwen27b_umbrella_ab.md) | 2026-05-05 | `6f24fc9` |
+| **P021** | [Generate Phase 3 Claims And Beliefs Spec](P021_generate_phase_3_claims_beliefs_spec.md) | pending | `pending` |
+| **P022** | [Review Phase 3 Claims And Beliefs Spec](P022_review_phase_3_claims_beliefs_spec.md) | pending | `pending` |
+| **P023** | [Record Phase 3 Spec Findings](P023_record_phase_3_spec_findings.md) | pending | `pending` |
+| **P024** | [Synthesize Phase 3 Spec Findings](P024_synthesize_phase_3_spec_findings.md) | pending | `pending` |
+| **P025** | [Write Phase 3 Build Prompt](P025_write_phase_3_build_prompt.md) | pending | `pending` |
+| **P026** | [Review Phase 3 Build Prompt](P026_review_phase_3_build_prompt.md) | pending | `pending` |
+| **P027** | [Synthesize Phase 3 Build Prompt Findings](P027_synthesize_phase_3_build_prompt_findings.md) | pending | `pending` |
+| **P028** | [Build Phase 3 Claims And Beliefs](P028_build_phase_3_claims_beliefs.md) | pending | `pending` |
+| **P029** | [Review Phase 3 Build](P029_review_phase_3_build.md) | pending | `pending` |
+| **P030** | [Synthesize Phase 3 Build Review Findings](P030_synthesize_phase_3_build_review_findings.md) | pending | `pending` |
+| **P031** | [Begin Phase 3 Pipeline](P031_begin_phase_3_pipeline.md) | pending | `pending` |
 
 ## Ordinal Derivation
 

@@ -24,6 +24,8 @@ Start with the root canonical docs when orienting on the current system:
   fresh execution context.
 - [process/project-judgment.md](process/project-judgment.md) — coordinator
   guidance for scope control, model use, and attention management.
+- [process/phase-3-agent-runbook.md](process/phase-3-agent-runbook.md) —
+  tmux / marker-file coordination for the Phase 3 spec-to-pipeline chain.
 
 ## Proposals
 
@@ -33,6 +35,8 @@ Start with the root canonical docs when orienting on the current system:
 ## Reviews And History
 
 - [reviews/](reviews/) — adversarial reviews, syntheses, and review findings.
+- [reviews/phase3/](reviews/phase3/) — Phase 3 spec, build prompt,
+  implementation, and pipeline-start reviews.
 - [phases/](phases/) — phase-specific build status and review notes.
 - [design/BRAINSTORM.md](design/BRAINSTORM.md) — older brainstorm context.
 - [design/PRIOR_ART.md](design/PRIOR_ART.md) — prior-art background; context,
