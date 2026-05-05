@@ -160,26 +160,50 @@ bitemporal validity, supersession, audit, and contradictions.
 **LLM dependencies:** local extractor (same stack as Phase 2's
 segmenter, separate prompt).
 
-**Key tables / migrations:** `claims` (with extraction prompt/model
-versions per D021); `beliefs` (bitemporal: `valid_from`, `valid_to`,
+**Key tables / migrations:** `predicate_vocabulary` (D057);
+`claim_extractions` (lifecycle + raw_payload diagnostics, D058);
+`claims` (with extraction prompt/model versions per D021,
+`subject_normalized` mirror, FK to `predicate_vocabulary`);
+`beliefs` (bitemporal: `valid_from`, `valid_to`, `closed_at`,
 `observed_at`, `recorded_at`, `superseded_by`, `status`,
-`stability_class`, `confidence`, `evidence_ids` NOT NULL on accepted —
-per D003 / D004 / D008); `belief_audit` (per D010);
-`contradictions` (per D019; supports adversarial sweeps and
-consolidation-time conflicts).
+`cardinality_class`, `group_object_key`, `stability_class`,
+`confidence`, `evidence_ids` non-empty per D043, `subject_normalized`,
+UNIQUE partial index on `(subject_normalized, predicate,
+group_object_key) WHERE valid_to IS NULL AND status IN
+('candidate','provisional','accepted')` per D053);
+`belief_audit` (per D010, with `evidence_message_ids` and
+`request_uuid`); `contradictions` (per D019).
 
 **Acceptance criteria:**
 
-- `evidence_ids` NOT NULL on accepted beliefs (D003) — enforced at
+- `evidence_ids` non-empty on every belief (D043) — enforced at
   the constraint level.
-- Contradictions close prior belief's `valid_to` and insert a new row
-  (close-and-insert, never UPDATE in place).
-- `belief_audit` rows written on every state transition.
+- Contradiction supersession sets the prior's `valid_to =
+  MIN(messages.created_at)` over the new evidence and the new row's
+  `valid_from` to the same value (D048). Same-value supersession
+  leaves the prior `valid_to` untouched and uses
+  `closed_at` + `status` + `superseded_by` for lifecycle close.
+- Belief state changes flow through the Python transition API; direct
+  SQL UPDATE without the session GUC `engram.transition_in_progress`
+  is rejected (D052). Every UPDATE pairs with a `belief_audit` INSERT
+  carrying the same `request_uuid`.
+- Per-predicate cardinality classes are honored:
+  `single_current_per_object`, `multi_current`, and `event` predicates
+  extend the group key with `group_object_key` so multiple legitimate
+  objects do not collide, while scoped-current predicates still
+  contradict within the same object discriminator (D050).
+- Decision Rule 0 closes orphan beliefs whose `claim_ids` leave the
+  active claim set after re-extraction or reclassification (D049).
 - Supersession chain reconstructs "what was extracted, with which
-  model and prompt, at which time" without `original_*` columns
-  (per D021).
+  model and prompt, at which time" via the `superseded_by` chain plus
+  the `contradictions` lineage (per D021 / S-F015).
+- `consolidate --rebuild` produces a structurally equivalent active
+  belief set (D055), not an ID-stable no-op.
 - `consolidation_progress` checkpoints make extraction and
   consolidation resumable.
+
+See [docs/claims_beliefs.md](docs/claims_beliefs.md) for the full
+amended spec; the test suite there pins concrete acceptance tests.
 
 **Leaves for next phase:** beliefs ready for entity canonicalization
 and HITL review.
