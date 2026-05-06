@@ -65,6 +65,7 @@ def test_print_prompt_scopes_lane_to_single_output(tmp_path: Path) -> None:
     assert result.returncode == 0
     assert "Model slug: gemini_3_1_pro" in result.stdout
     assert "Required output artifact: docs/design/V1_MVP_DESIGN_INPUT_gemini.md" in result.stdout
+    assert "Do not create or switch branches." in result.stdout
     assert "Do not implement source code." in result.stdout
 
 
