@@ -574,7 +574,7 @@ def extract_claims_from_segment(
             "model_response": output.model_response,
             "parse_metadata": redact_parse_metadata_dropped_claims(output.parse_metadata),
             "dropped_claims": redact_dropped_claims(dropped),
-            "failure_kind": "trigger_violation",
+            "failure_kind": "local_validation_failed_post_repair",
             "last_error": "all extracted claims failed pre-validation",
         }
         copy_validation_repair_payload(payload, output)
