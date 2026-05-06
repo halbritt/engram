@@ -15,7 +15,7 @@ Canonical references:
 - [RFC 0011](rfcs/0011-phase-3-claims-beliefs.md)
 - [DECISION_LOG.md](../DECISION_LOG.md) — D002, D003, D004, D008, D010, D019,
   D020, D021, D028, D032, D034, D035, D040, D043, D044, D045, D046, D047,
-  D048, D049, D050, D051, D052, D053, D054, D055, D056, D057, D058
+  D048, D049, D050, D051, D052, D053, D054, D055, D056, D057, D058, D064
 - [BUILD_PHASES.md](../BUILD_PHASES.md) Phase 3 row
 - [docs/segmentation.md](segmentation.md) — Phase 2 contract Phase 3 inherits
 - [docs/reviews/v1/PHASE_2_SPAN_EXPANSION_AUDIT_2026_05_04.md](reviews/v1/PHASE_2_SPAN_EXPANSION_AUDIT_2026_05_04.md)
@@ -105,15 +105,23 @@ input. Phase 3 evaluation will quantify any cost.
 7. On any failure (HTTP, parse, schema, validation, context guard, retry
    budget exhausted) where **zero** claims survived salvage, set
    `claim_extractions.status='failed'` and persist D035 diagnostics in
-   `raw_payload`. If at least one claim survived, the extraction is
-   `status='extracted'` even when one or more claims were dropped; the
-   diagnostics for the dropped claims live alongside the success record in
-   `raw_payload.dropped_claims`.
+   `raw_payload`, except for D064's accounted-zero terminal state: fully
+   parsed, schema-valid outputs that remain all-invalid after validation
+   repair are `status='extracted'`, `claim_count=0`, and
+   `raw_payload.extraction_result_kind='accounted_zero'` only when every prior
+   and final drop is locally diagnosed, redacted, and counted. If at least one
+   claim survived, the extraction is `status='extracted'` even when one or
+   more claims were dropped; the diagnostics for the dropped claims live
+   alongside the success record in `raw_payload.dropped_claims`.
 
 Empty extraction is an explicit, recorded result: `status='extracted'` with
-`claim_count = 0`. Empty extraction is **not** a failure; it means the
-segment held no assertions the prompt was willing to commit to. Per
-S-F012 / M-F001, the raw model output is preserved on
+`claim_count = 0`. Clean empty extraction has
+`raw_payload.extraction_result_kind='clean_zero'`; accounted empty extraction
+has `raw_payload.extraction_result_kind='accounted_zero'`. Empty extraction is
+**not** a failure; clean zero means the segment held no assertions the prompt
+was willing to commit to, while accounted zero means invalid drafts were
+redacted and counted under D064. Per S-F012 / M-F001, the raw model output is
+preserved on
 `claim_extractions.raw_payload.model_response` for **every** completed
 extraction (success, empty, or failed) so recall debugging can inspect what
 the model produced.
@@ -776,6 +784,7 @@ extractor version) are explicitly allowed by the mutation guard.
 {
   "model_response": "...",
   "parse_metadata": {"prompt_tokens": 0, "completion_tokens": 0, ...},
+  "extraction_result_kind": "populated | clean_zero | accounted_zero",
   "dropped_claims": [
     {"reason": "trigger_violation", "claim": {...}, "error": "..."}
   ],
@@ -783,9 +792,44 @@ extractor version) are explicitly allowed by the mutation guard.
 }
 ```
 
+`extraction_result_kind` is required for `status='extracted'` rows:
+
+- `populated` when `claim_count > 0`, including mixed valid+invalid
+  extractions;
+- `clean_zero` when `claim_count = 0` and no prior/final drops are counted;
+- `accounted_zero` when `claim_count = 0` and validation-repair prior or final
+  drops were diagnosed, redacted, and counted.
+
 For failed extractions, `failure_kind` and the D035 attempt diagnostics
 are populated; `dropped_claims` may also be populated when partial
 salvage was attempted.
+
+D064 accounted-zero eligibility is intentionally narrow. Parse errors, schema
+rejections, repair parse/schema/service failures, missing drop arrays/counts,
+count mismatches, unknown drop reasons, unknown or unbounded local validation
+error classes, and unredacted diagnostics remain failed. The post-repair
+all-invalid hard-failure kind is `local_validation_failed_post_repair`, with a
+closed `accounting_failure_kind` such as `missing_diagnostics`,
+`count_mismatch`, `unknown_drop_reason`, `unknown_error_class`, or
+`unredacted_diagnostics`. `trigger_violation` remains the per-drop reason and
+database-backstop failure kind, not the post-repair all-invalid failure kind.
+
+Dropped-claim gate accounting uses the current-version latest extraction row
+per selected active segment:
+
+```text
+inserted_claims = claim_extractions.claim_count
+final_drops = validation_repair.final_dropped_count when present,
+              else len(raw_payload.dropped_claims)
+prior_drops = validation_repair.prior_dropped_count when present, else 0
+expanded_drops = prior_drops + final_drops
+expanded_dropped_claim_rate =
+  sum(expanded_drops) / (sum(inserted_claims) + sum(expanded_drops))
+```
+
+When the denominator is zero, the rate is defined as 0. The same-bound Phase 3
+gate remains 10%; accounted-zero rows can complete extraction/consolidation and
+still cause the same-bound run to block if the expanded rate exceeds that gate.
 
 ### `claims`
 
@@ -1072,8 +1116,9 @@ Extractor-level:
 13. D035 health smoke before and after a 10-segment preflight returns
     schema-valid JSON.
 14. Empty extraction produces a `claim_extractions` row at
-    `status='extracted'` with `claim_count=0` and zero `claims` rows. No
-    failure diagnostics are written.
+    `status='extracted'`, `claim_count=0`,
+    `raw_payload.extraction_result_kind='clean_zero'`, and zero `claims` rows.
+    No failure diagnostics are written.
 15. Extractor on a synthetic segment with one identity and one preference
     claim produces exactly two `claims` rows with the expected predicates,
     stability classes, evidence subsets, and version columns.
@@ -1083,20 +1128,33 @@ Extractor-level:
     full D035 diagnostics on exhaustion.
 18. Extractor JSON schema rejects a hallucinated `evidence_message_ids`
     entry; the trigger backstop also rejects it if the schema is bypassed.
+19. Fully diagnosed, redacted, all-invalid validation-repair `still_invalid`
+    rows produce `status='extracted'`, `claim_count=0`,
+    `failure_kind=null`, and
+    `raw_payload.extraction_result_kind='accounted_zero'`.
+20. Ineligible all-invalid validation-repair rows remain failed with
+    `failure_kind='local_validation_failed_post_repair'` and a closed
+    `accounting_failure_kind`; unknown reasons, unknown/unbounded error
+    classes, count mismatches, missing diagnostics, and unredacted diagnostics
+    are ineligible.
+21. Mixed valid+invalid extractions with inserted claims are
+    `extraction_result_kind='populated'`.
+22. Expanded dropped-claim gate accounting includes validation-repair prior
+    drops and final drops exactly once per model attempt phase.
 
 Consolidator-level:
 
-19. First pass on a conversation with one new claim group key inserts one
+1. First pass on a conversation with one new claim group key inserts one
     `belief` at `status='candidate'` and one `belief_audit` row at
     `transition_kind='insert'`. `score_breakdown` records mean / max /
     min / count / stddev for the contributing confidences (D056).
-20. Second pass introducing a same-value claim under the same group key
+2. Second pass introducing a same-value claim under the same group key
     closes the prior belief (`closed_at`, `status='superseded'`,
     `superseded_by`) and inserts a fresh row whose `valid_from` /
     `valid_to` are inherited from the prior fact-validity interval
     (D048 — the prior row's `valid_to` is **not** mutated by same-value
     supersession).
-21. Third pass introducing a different-value claim under the same
+3. Third pass introducing a different-value claim under the same
     `single_current` or `single_current_per_object` group key closes the
     prior with
     `valid_to = MIN(messages.created_at)` over the new evidence
@@ -1104,19 +1162,19 @@ Consolidator-level:
     `valid_from = MIN(messages.created_at)` over the new evidence, and
     inserts one `contradictions` row at `resolution_status='open'`,
     `detection_kind='same_subject_predicate'` (D048).
-22. When the two contradicting beliefs have non-overlapping
+4. When the two contradicting beliefs have non-overlapping
     `valid_from` / `valid_to` intervals (which the D048 close rule
     naturally produces from historical evidence), the contradiction
     auto-resolves to `resolution_status='auto_resolved'`,
     `resolution_kind='temporal_ordering'`.
-23. `engram consolidate --rebuild` closes the existing active beliefs and
+5. `engram consolidate --rebuild` closes the existing active beliefs and
     rebuilds a structurally equivalent active set (D055); running it
     twice in a row produces an active set with the same
     `(group_key, value, evidence_ids, claim_ids, valid_from, valid_to,
     status='candidate')` per row, but new IDs and `recorded_at` and
     additional audit rows. Test asserts structural equivalence, not
     ID-stable no-op.
-24. Privacy reclassification on a parent conversation invalidates affected
+6. Privacy reclassification on a parent conversation invalidates affected
     segments; the next consolidator pass applies D054's three-branch
     decision tree:
     - empty surviving set → `status='rejected'`,
@@ -1128,19 +1186,22 @@ Consolidator-level:
       `detection_kind='reclassification_recompute'`,
       `resolution_status='open'`.
     All three sub-cases must be exercised.
+7. Targeted consolidation over a conversation with clean-zero or
+   accounted-zero extraction rows completes normally; those rows contribute
+   zero claims and create no synthetic beliefs.
 
 Re-extraction and concurrency:
 
-27. **Re-extraction blast radius (D049).** A segment with v1 and v2
+1. **Re-extraction blast radius (D049).** A segment with v1 and v2
     `claim_extractions` rows at `status='extracted'` (after the
     automated v1→`superseded` transition) feeds only the v2 claim set
     into consolidation. v1 claims are present in `claims` but excluded
     from the active set.
-28. **Orphan rejection (Decision Rule 0).** A belief whose `claim_ids`
+2. **Orphan rejection (Decision Rule 0).** A belief whose `claim_ids`
     leave the active claim set (segment deactivation, re-extraction
     drop, reclassification empty surviving set) is closed via
     `transition_kind='reject'` on the next consolidator pass.
-29. **Scoped-current and multi-current non-conflict (D050).** Two
+3. **Scoped-current and multi-current non-conflict (D050).** Two
     `works_with` claims for different objects under the same subject
     create two distinct beliefs and zero `contradictions` rows. Two
     `relationship_with` claims with different `name` values do the same.
@@ -1148,47 +1209,48 @@ Re-extraction and concurrency:
     different `status` values do contradict. Two `project_status_is`
     claims for different `project` values do not collide; two statuses
     for the same project do contradict.
-30. **Concurrent consolidator pass (D053).** Two consolidator
+4. **Concurrent consolidator pass (D053).** Two consolidator
     invocations on different conversations, both producing a candidate
     for the same `(subject_normalized, predicate, group_object_key)`,
     converge to one active belief. The losing INSERT either retries
     cleanly into Rule 2 / Rule 3 or surfaces a recoverable conflict
     diagnostic.
-31. **Subject normalization parity (S-F007).** SQL
+5. **Subject normalization parity (S-F007).** SQL
     `engram_normalize_subject(text)` output matches Python
     `engram.consolidator.normalize_subject(text)` over a fixture set
     covering whitespace, punctuation, NFKC, and case variation.
-32. **Predicate vocabulary FK (D057).** Inserting a claim with a
+6. **Predicate vocabulary FK (D057).** Inserting a claim with a
     predicate not in `predicate_vocabulary` is rejected. Inserting an
     `object_json` claim missing a `required_object_keys` value is
     rejected. Predicate-stability mismatch is rejected.
-33. **Lineage traversal (S-F015).** Both `superseded_by` and
+7. **Lineage traversal (S-F015).** Both `superseded_by` and
     `contradictions.belief_{a,b}_id` paths reach the prior of any
     closed-then-replaced belief.
-34. **Tail-segment grammar preflight (S-F013).** The largest 1% of
+8. **Tail-segment grammar preflight (S-F013).** The largest 1% of
     active segments by `message_ids` cardinality complete extraction or
     fall back to a relaxed schema (predicate enum + UUID-pattern
     evidence ids + trigger backstop) without grammar-state errors.
-35. **Per-claim salvage (D058).** An extraction response with one
+9. **Per-claim salvage (D058 / D064).** An extraction response with one
     invalid claim and four valid claims commits four claims with
     `claim_extractions.status='extracted'`,
-    `claim_count=4`, and the dropped claim recorded in
-    `raw_payload.dropped_claims`. Zero valid claims with errors yields
-    `status='failed'`.
-36. **Empty extraction raw payload (M-F001).**
+    `claim_count=4`, `raw_payload.extraction_result_kind='populated'`, and
+    the dropped claim recorded in `raw_payload.dropped_claims`. Zero valid
+    claims with errors yields `accounted_zero` only when D064 eligibility is
+    satisfied; otherwise it remains `status='failed'`.
+10. **Empty extraction raw payload (M-F001).**
     `claim_extractions.raw_payload.model_response` is populated for an
     empty extraction.
-37. **Claim-count parity (M-F005).**
+11. **Claim-count parity (M-F005).**
     `claim_extractions.claim_count` equals
     `(SELECT count(*) FROM claims WHERE extraction_id = ...)`.
 
 End-to-end pilot (gate before full-corpus run):
 
-25. A 50-conversation slice end-to-end produces non-zero claims and
+1. A 50-conversation slice end-to-end produces non-zero claims and
     beliefs, no schema violations, no orphaned `extracting` rows after
     supervisor restart, and `consolidation_progress` reflecting completed
     state.
-26. Re-running the pilot is idempotent: no duplicate `claims` or `beliefs`
+2. Re-running the pilot is idempotent: no duplicate `claims` or `beliefs`
     rows under unchanged extractor and consolidator versions.
 
 The full-corpus Phase 3 run is gated on the owner per the runbook's Human
