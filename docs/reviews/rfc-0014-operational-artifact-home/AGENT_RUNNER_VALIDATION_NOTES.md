@@ -60,8 +60,11 @@ The review artifacts exist and are published in runner state:
 - `docs/reviews/rfc-0014-operational-artifact-home/RFC_0014_REVIEW_codex.md`
 - `docs/reviews/rfc-0014-operational-artifact-home/RFC_0014_REVIEW_gemini.md`
 
-No findings ledger, synthesis, or final review was produced because the root
-review gate blocked before downstream jobs became claimable.
+No runner-produced findings ledger, synthesis, or final review was produced
+because the root review gate blocked before downstream jobs became claimable.
+After the human follow-up, a manual post-block findings ledger was recorded at
+`docs/reviews/rfc-0014-operational-artifact-home/RFC_0014_FINDINGS_LEDGER.md`;
+it is not published through the blocked runner workflow.
 
 ## Verification
 

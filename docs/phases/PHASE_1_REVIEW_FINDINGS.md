@@ -8,7 +8,7 @@ Here are the review findings, ordered by severity.
 
 **1. Missing Test Coverage for Split Export Format (Low Severity)**
 - **File:** `tests/test_phase1_raw.py`
-- **Issue:** The test suite generates and verifies the "classic" `conversations.json` structure via the `write_export` helper, but it lacks coverage for the newer "split export" format (`conversation-index.json` + `json/*.json`). 
+- **Issue:** The test suite generates and verifies the "classic" `conversations.json` structure via the `write_export` helper, but it lacks coverage for the newer "split export" format (`conversation-index.json` + `json/*.json`).
 - **Risk:** Regressions in the `load_conversations` logic for the split format might not be caught by CI.
 
 **2. Missing Test Coverage for Internal Deduplication (Low Severity)**
@@ -22,10 +22,10 @@ Here are the review findings, ordered by severity.
 
 **4. Strict Immutability Implications (Observation)**
 - **File:** `migrations/001_raw_evidence.sql`, Line 92 (`prevent_raw_evidence_mutation`)
-- **Issue:** The trigger perfectly fulfills the requirement to "block UPDATE/DELETE on raw tables." However, be aware that this is a very strict implementation. It means that later phases or user interventions cannot alter *any* field on a raw row—including `privacy_tier` or redacting `content_text`—without first temporarily disabling the trigger (`ALTER TABLE ... DISABLE TRIGGER`) or executing as a superuser overriding constraints. 
+- **Issue:** The trigger perfectly fulfills the requirement to "block UPDATE/DELETE on raw tables." However, be aware that this is a very strict implementation. It means that later phases or user interventions cannot alter *any* field on a raw row—including `privacy_tier` or redacting `content_text`—without first temporarily disabling the trigger (`ALTER TABLE ... DISABLE TRIGGER`) or executing as a superuser overriding constraints.
 
 ### Conclusion
 
-**There are no blocking issues.** 
+**There are no blocking issues.**
 
 The codebase meets all the load-bearing requirements for Phase 1. The choice to use `path.expanduser().resolve()` for stable external paths, the robust DFS mapping traversal for conversation trees, and the clean usage of psycopg 3's `Jsonb` and `transaction()` blocks are all excellent operational choices.
