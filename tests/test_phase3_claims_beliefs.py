@@ -214,10 +214,31 @@ def test_predicate_vocabulary_and_extractor_schema_parity(conn):
         "properties"
     ]["claims"]["items"]["properties"]["predicate"]["enum"]
     assert sorted(schema_enum) == db_predicates
-    relaxed = extractor.extraction_json_schema(
+    strict_item = extractor.extraction_json_schema(
+        ["00000000-0000-0000-0000-000000000000"]
+    )["properties"]["claims"]["items"]
+    assert strict_item["oneOf"] == [
+        {
+            "required": ["object_text", "object_json"],
+            "properties": {
+                "object_text": {"type": "string", "minLength": 1},
+                "object_json": {"type": "null"},
+            },
+        },
+        {
+            "required": ["object_text", "object_json"],
+            "properties": {
+                "object_text": {"type": "null"},
+                "object_json": {"type": "object", "additionalProperties": True},
+            },
+        },
+    ]
+    relaxed_item = extractor.extraction_json_schema(
         ["00000000-0000-0000-0000-000000000000"],
         relaxed_schema=True,
-    )["properties"]["claims"]["items"]["properties"]
+    )["properties"]["claims"]["items"]
+    relaxed = relaxed_item["properties"]
+    assert "oneOf" not in relaxed_item
     assert sorted(relaxed["predicate"]["enum"]) == db_predicates
     assert "pattern" in relaxed["evidence_message_ids"]["items"]
     assert "enum" not in relaxed["evidence_message_ids"]["items"]
@@ -503,6 +524,10 @@ def test_extractor_request_shape_parse_rejections_and_salvage(conn, monkeypatch)
     assert payload["max_tokens"] == 8192
     assert payload["chat_template_kwargs"]["enable_thinking"] is False
     assert payload["response_format"]["type"] == "json_schema"
+    claim_item = payload["response_format"]["json_schema"]["schema"]["properties"]["claims"][
+        "items"
+    ]
+    assert "oneOf" in claim_item
 
     for response, match in [
         ({"choices": [{"message": {"content": "", "reasoning_content": "{}"}}]}, "reasoning_content"),
@@ -522,9 +547,28 @@ def test_extractor_request_shape_parse_rejections_and_salvage(conn, monkeypatch)
     extraction = extract_claims_from_segment(conn, seg_id, model_version="model-a", client=client)
     assert extraction.status == "extracted"
     assert extraction.claim_count == 1
-    raw = conn.execute("SELECT raw_payload FROM claim_extractions WHERE id = %s", (extraction.extraction_id,)).fetchone()[0]
+    row = conn.execute(
+        """
+        SELECT extraction_prompt_version, request_profile_version, raw_payload
+        FROM claim_extractions
+        WHERE id = %s
+        """,
+        (extraction.extraction_id,),
+    ).fetchone()
+    assert row[0] == EXTRACTION_PROMPT_VERSION
+    assert row[1] == EXTRACTION_REQUEST_PROFILE_VERSION
+    raw = row[2]
     assert raw["model_response"]
     assert len(raw["dropped_claims"]) == 1
+    claim_provenance = conn.execute(
+        """
+        SELECT extraction_prompt_version, request_profile_version
+        FROM claims
+        WHERE segment_id = %s
+        """,
+        (seg_id,),
+    ).fetchone()
+    assert claim_provenance == (EXTRACTION_PROMPT_VERSION, EXTRACTION_REQUEST_PROFILE_VERSION)
 
     conv2, gen2, seg2, msg2 = active_segment(conn, [("user", "I use SQLite", 1)])
     bad_shape = StaticExtractor(
@@ -626,7 +670,17 @@ def test_extractor_validation_repair_retry_can_produce_empty_success(conn):
     assert result.status == "extracted"
     assert result.claim_count == 0
     assert len(client.calls) == 2
-    assert "Validation repair retry" in client.calls[1]["args"][0]
+    repair_prompt = client.calls[1]["args"][0]
+    repair_feedback = repair_prompt.split("Segment summary:", maxsplit=1)[0]
+    assert "Validation repair retry" in repair_feedback
+    assert "Null-object repair diagnostics (full null-object sweep)" in repair_feedback
+    assert "total null-object drops: 1" in repair_feedback
+    assert "distinct predicate count: 1" in repair_feedback
+    assert "predicates: has_name" in repair_feedback
+    assert "object-shape class: object_text=null, object_json=null" in repair_feedback
+    assert msg_ids[0] not in repair_feedback
+    assert "user" not in repair_feedback
+    assert "missing object value" not in repair_feedback
     row = conn.execute(
         """
         SELECT claim_count, raw_payload
@@ -716,6 +770,58 @@ def test_extractor_validation_repair_preserves_prior_drops_when_valid_claims_sur
     assert raw["validation_repair"]["final_dropped_count"] == 0
 
 
+def test_extractor_validation_repair_feedback_includes_mixed_null_object_section():
+    drops = [
+        {
+            "reason": "trigger_violation",
+            "index": 0,
+            "error": "exactly one of object_text or object_json is required",
+            "claim": {
+                "subject_text": "private-subject",
+                "predicate": "uses_tool",
+                "object_text": None,
+                "object_json": None,
+                "stability_class": "preference",
+                "confidence": 0.8,
+                "evidence_message_ids": ["11111111-1111-1111-1111-111111111111"],
+                "rationale": "private rationale",
+            },
+        },
+        {
+            "reason": "trigger_violation",
+            "index": 1,
+            "error": "object_json missing required key: status",
+            "claim": {
+                "subject_text": "private-subject",
+                "predicate": "project_status_is",
+                "object_text": None,
+                "object_json": {"project": "private-object"},
+                "stability_class": "project_status",
+                "confidence": 0.8,
+                "evidence_message_ids": ["22222222-2222-2222-2222-222222222222"],
+                "rationale": "private rationale",
+            },
+        },
+    ]
+
+    feedback = extractor.build_validation_repair_feedback(drops)
+
+    assert "exactly one of object_text or object_json is required: 1" in feedback
+    assert "object_json missing required key: status: 1" in feedback
+    assert "Null-object repair diagnostics (mixed null-object drops)" in feedback
+    assert "total null-object drops: 1" in feedback
+    assert "distinct predicate count: 1" in feedback
+    assert "predicates: uses_tool" in feedback
+    assert "object-shape class: object_text=null, object_json=null" in feedback
+    assert "provide directly evidenced objects" in feedback
+    assert '{"claims":[]}' in feedback
+    assert "private-subject" not in feedback
+    assert "private-object" not in feedback
+    assert "private rationale" not in feedback
+    assert "11111111-1111-1111-1111-111111111111" not in feedback
+    assert "22222222-2222-2222-2222-222222222222" not in feedback
+
+
 def test_extractor_validation_repair_still_invalid_remains_failed(conn):
     conv_id, gen_id, seg_id, msg_ids = active_segment(conn, [("user", "call me by my handle", 1)])
     invalid = [
@@ -783,6 +889,11 @@ def test_extractor_validation_repair_uses_one_attempt_even_with_extra_retries(co
     ).fetchone()[0]
     assert raw["validation_repair"]["result"] == "failed"
     assert raw["validation_repair"]["prior_dropped_count"] == 1
+    assert raw["validation_repair"]["prior_dropped_claims"][0]["predicate"] == "has_name"
+    assert raw["validation_repair"]["prior_dropped_claims"][0]["object_text_type"] == "null"
+    assert raw["validation_repair"]["prior_dropped_claims"][0]["object_json_type"] == "null"
+    assert "subject_text" not in raw["validation_repair"]["prior_dropped_claims"][0]
+    assert "object_text" not in raw["validation_repair"]["prior_dropped_claims"][0]
     assert raw["validation_repair"]["last_error"] == "extractor returned invalid JSON"
 
 

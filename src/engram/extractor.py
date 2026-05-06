@@ -28,9 +28,9 @@ from engram.segmenter import (
 )
 
 
-EXTRACTION_PROMPT_VERSION = "extractor.v5.d063.validation-repair-audited"
+EXTRACTION_PROMPT_VERSION = "extractor.v6.d063.null-object-repair"
 EXTRACTION_REQUEST_PROFILE_VERSION = (
-    "ik-llama-json-schema.d034.v7.extractor-8192-validation-repair-audited"
+    "ik-llama-json-schema.d034.v8.extractor-8192-null-object-repair"
 )
 EXTRACTION_SYSTEM_PROMPT = (
     "You are a deterministic claim extractor for a local-first personal memory "
@@ -279,6 +279,54 @@ def extraction_json_schema(
                 "[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
             )
     predicate_schema: dict[str, Any] = {"type": "string", "enum": PREDICATE_ENUM}
+    claim_item: dict[str, Any] = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "subject_text",
+            "predicate",
+            "object_text",
+            "object_json",
+            "stability_class",
+            "confidence",
+            "evidence_message_ids",
+            "rationale",
+        ],
+        "properties": {
+            "subject_text": {"type": "string", "minLength": 1},
+            "predicate": predicate_schema,
+            "object_text": {"type": ["string", "null"], "minLength": 1},
+            "object_json": {"type": ["object", "null"], "additionalProperties": True},
+            "stability_class": {"type": "string", "enum": STABILITY_CLASSES},
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            "evidence_message_ids": {
+                "type": "array",
+                "minItems": 1,
+                "items": message_id_items,
+            },
+            "rationale": {"type": "string"},
+        },
+    }
+    if not relaxed_schema:
+        # The shared schema-construction fallback drops both the message-id enum
+        # and this oneOf branch; prompt rules plus Python validation remain
+        # authoritative in relaxed mode.
+        claim_item["oneOf"] = [
+            {
+                "required": ["object_text", "object_json"],
+                "properties": {
+                    "object_text": {"type": "string", "minLength": 1},
+                    "object_json": {"type": "null"},
+                },
+            },
+            {
+                "required": ["object_text", "object_json"],
+                "properties": {
+                    "object_text": {"type": "null"},
+                    "object_json": {"type": "object", "additionalProperties": True},
+                },
+            },
+        ]
     return {
         "type": "object",
         "additionalProperties": False,
@@ -286,34 +334,7 @@ def extraction_json_schema(
         "properties": {
             "claims": {
                 "type": "array",
-                "items": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": [
-                        "subject_text",
-                        "predicate",
-                        "object_text",
-                        "object_json",
-                        "stability_class",
-                        "confidence",
-                        "evidence_message_ids",
-                        "rationale",
-                    ],
-                    "properties": {
-                        "subject_text": {"type": "string", "minLength": 1},
-                        "predicate": predicate_schema,
-                        "object_text": {"type": ["string", "null"], "minLength": 1},
-                        "object_json": {"type": ["object", "null"], "additionalProperties": True},
-                        "stability_class": {"type": "string", "enum": STABILITY_CLASSES},
-                        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-                        "evidence_message_ids": {
-                            "type": "array",
-                            "minItems": 1,
-                            "items": message_id_items,
-                        },
-                        "rationale": {"type": "string"},
-                    },
-                },
+                "items": claim_item,
             }
         },
     }
@@ -895,11 +916,15 @@ def build_validation_repair_feedback(dropped: list[dict[str, Any]]) -> str:
     )
     if not rendered_counts:
         rendered_counts = "- unknown validation error: 1"
+    null_sweep_section = render_null_object_repair_feedback(dropped)
+    repair_details = rendered_counts
+    if null_sweep_section:
+        repair_details = f"{repair_details}\n{null_sweep_section}"
     return f"""
 Validation repair retry:
 The previous extraction response was schema-valid JSON but failed local
 pre-insert validation, so no claims survived. Error classes:
-{rendered_counts}
+{repair_details}
 
 Return a complete corrected extraction for the same segment. Do not copy invalid
 claims from the previous attempt. For text predicates, object_text must be a
@@ -908,6 +933,44 @@ predicates, object_text must be null and object_json must contain every required
 object key listed above. If the evidence does not support the required object
 value, omit that claim. If no valid claims remain, return exactly {{"claims":[]}}.
 """.strip()
+
+
+def render_null_object_repair_feedback(dropped: list[dict[str, Any]]) -> str:
+    redacted = redact_dropped_claims(dropped)
+    null_drops = [
+        drop
+        for drop in redacted
+        if drop.get("error") == "exactly one of object_text or object_json is required"
+        and drop.get("object_text_type") == "null"
+        and drop.get("object_json_type") == "null"
+    ]
+    if not null_drops:
+        return ""
+
+    predicates = sorted(
+        {
+            str(drop["predicate"])
+            for drop in null_drops
+            if isinstance(drop.get("predicate"), str)
+        }
+    )
+    predicate_list = ", ".join(predicates) if predicates else "(none)"
+    label = (
+        "full null-object sweep"
+        if len(null_drops) == len(redacted)
+        else "mixed null-object drops"
+    )
+    return f"""
+Null-object repair diagnostics ({label}):
+- total null-object drops: {len(null_drops)}
+- distinct predicate count: {len(predicates)}
+- predicates: {predicate_list}
+- object-shape class: object_text=null, object_json=null
+- repair instruction: provide directly evidenced objects for these claims or
+  omit them.
+- empty-output instruction: if no valid claims remain, return exactly
+  {{"claims":[]}}.
+""".rstrip()
 
 
 def dropped_error_counts(dropped: list[dict[str, Any]]) -> dict[str, int]:
@@ -1513,6 +1576,9 @@ Emission rules:
   or claims without direct evidence.
 - Tool and null messages may be cited if they are the evidence, even when their
   body is shown as a placeholder.
+- Do not enumerate the predicate vocabulary as output.
+- Do not create skeleton claims to show possible predicates.
+- If no valid claims remain, return exactly {{"claims":[]}}.
 {repair_section}
 
 Segment summary:
