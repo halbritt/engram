@@ -37,6 +37,15 @@ This directory contains the LLM prompts and operational handoffs used to build a
 | **P029** | [Review Phase 3 Build](P029_review_phase_3_build.md) | pending | `pending` |
 | **P030** | [Synthesize Phase 3 Build Review Findings](P030_synthesize_phase_3_build_review_findings.md) | pending | `pending` |
 | **P031** | [Begin Phase 3 Pipeline](P031_begin_phase_3_pipeline.md) | pending | `pending` |
+| **P032** | [Review Phase 3 Postbuild Changes](P032_review_phase_3_postbuild_changes.md) | pending | `pending` |
+| **P033** | [Review RFC 0013 Operational Issue Loop](P033_review_rfc_0013_operational_issue_loop.md) | pending | `pending` |
+| **P034** | [Re-review RFC 0013 Operational Issue Loop](P034_rereview_rfc_0013_operational_issue_loop_codex.md) | pending | `pending` |
+| **P035** | [Review Phase 3 Limit-10 Repair](P035_review_phase_3_limit10_repair.md) | pending | `pending` |
+| **P036** | [Re-review Phase 3 Limit-10 Repair](P036_rereview_phase_3_limit10_repair_codex.md) | pending | `pending` |
+| **P037** | [Review Phase 3 Limit-50 Validation Repair](P037_review_phase_3_limit50_validation_repair.md) | pending | `pending` |
+| **P038** | [Re-review Phase 3 Limit-50 Validation Repair](P038_rereview_phase_3_limit50_validation_repair_codex.md) | pending | `pending` |
+| **P039** | [Run Phase 3 Limit-500 Gate](P039_run_phase_3_limit500_gate.md) | pending | `pending` |
+| **P040** | [Run Phase 3 Full-Corpus Gate](P040_run_phase_3_full_corpus_gate.md) | pending | `pending` |
 
 ## Ordinal Derivation
 
