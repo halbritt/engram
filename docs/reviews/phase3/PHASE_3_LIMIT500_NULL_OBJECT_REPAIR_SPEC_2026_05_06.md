@@ -2,13 +2,15 @@
 
 Date: 2026-05-06
 
-Status: `draft_for_review`
+Status: `reviewed_and_amended`
 
 Related artifacts:
 
 - `docs/reviews/phase3/PHASE_3_POSTBUILD_RUN_LIMIT500_2026_05_06.md`
 - `docs/reviews/phase3/PHASE_3_LIMIT500_FAILURE_FINDINGS_2026_05_06.md`
 - `docs/reviews/phase3/postbuild/markers/20260506_limit500_run/01_RUN.blocked.md`
+- `docs/reviews/phase3/PHASE_3_LIMIT500_NULL_OBJECT_REPAIR_SPEC_REVIEW_claude_opus_4_7_2026_05_06.md`
+- `docs/reviews/phase3/PHASE_3_LIMIT500_NULL_OBJECT_REPAIR_SPEC_SYNTHESIS_2026_05_06.md`
 
 ## Redaction Boundary
 
@@ -101,7 +103,11 @@ v5/v7 rows remain audit history.
 The extraction JSON schema should enforce the exact-one object-channel shape at
 the claim object level if the local JSON-schema backend supports it.
 
-Required logical shape:
+The preferred construct is `oneOf` at the `properties.claims.items` level,
+branching on the object-channel fields while preserving the existing required
+fields.
+
+Required strict-schema logical shape:
 
 - text-object claim:
   - `object_text` is a non-empty string
@@ -113,25 +119,52 @@ Required logical shape:
 The schema change must preserve the existing predicate enum, required fields,
 evidence-id typing, and local validator behavior.
 
+Support detection must be explicit:
+
+- A unit test must assert that the non-relaxed generated schema contains the
+  chosen `oneOf` construct at the claim-item level.
+- A separate unit test must assert the exact expected relaxed-schema behavior.
+- A live smoke step must prove the local backend accepts the strict schema
+  before the implementation relies on schema-level exact-one enforcement.
+
 If the backend rejects or ignores the needed construct, the implementation must
 make that limitation explicit in tests or comments and must not silently weaken
 the rest of the schema. In that case, prompt rules plus local validation remain
 the authoritative enforcement path, and R3/R4 become mandatory compensating
 controls.
 
+The existing relaxed-schema fallback must not silently mask failures introduced
+by the new exact-one construct. The relaxed path currently exists for
+message-id enum pressure. The implementation must choose and test one of these
+behaviors:
+
+- strict-only exact-one schema: `oneOf` is present only when
+  `relaxed_schema=False`; relaxed mode deliberately drops the construct and
+  relies on prompt plus Python validation; or
+- separate fallback handling: exact-one schema rejection is detected as its own
+  backend limitation and does not reuse the message-id relaxed-schema fallback.
+
+In either case, relaxing message-id constraints must not accidentally remove
+predicate enum constraints, required fields, or local validation.
+
 ### R3 - Strengthen Prompt Emission Rules
 
-The extractor prompt should be revised to make objectless predicate sweeps
-unambiguously invalid. The revised rules must tell the model:
+The extractor prompt should be revised narrowly. Existing audited rules should
+be retained unless the implementation has a specific reason to alter them.
+
+Existing rules to retain:
 
 - Never emit a claim with both `object_text` and `object_json` null.
-- Do not enumerate the predicate vocabulary.
-- Do not create skeleton claims to show possible predicates.
 - Emit only directly evidenced claims with a stated object.
 - If the object cannot be stated, omit the claim.
 - For text predicates, use a non-empty `object_text` and null `object_json`.
 - For JSON predicates, use null `object_text` and a populated `object_json`
   with the predicate's required keys.
+
+New additive rules:
+
+- Do not enumerate the predicate vocabulary.
+- Do not create skeleton claims to show possible predicates.
 - If no valid claims remain, return exactly an empty claim list.
 
 The prompt may include synthetic shape examples, but it must not include raw
@@ -139,7 +172,7 @@ corpus text or values from the failed segment.
 
 ### R4 - Add Null-Object-Sweep Validation Feedback
 
-Validation repair should detect the null-object sweep pattern when all dropped
+Validation repair should detect the null-object pattern whenever any dropped
 claims from the first pass share:
 
 - error `exactly one of object_text or object_json is required`
@@ -155,6 +188,16 @@ for the model to understand the failure class:
 - object-shape class `object_text=null, object_json=null`
 - instruction to either provide directly evidenced objects or omit the claims
 - instruction to return an empty claim list if no valid claims remain
+
+If all dropped claims have the null/null exact-one shape, label the feedback as
+a full null-object sweep. If null/null drops are mixed with other validation
+errors, include a dedicated null-object subsection alongside the aggregate
+error counts. Do not fall back to aggregate counts alone when null/null drops
+are present.
+
+Predicate names are fixed vocabulary metadata, not corpus content. Listing
+predicate names in this redacted feedback is allowed, but subject values,
+object values, and evidence text remain prohibited.
 
 The feedback must not include subject values, object values, rationale text,
 raw evidence text, model output text, conversation titles, or any
@@ -214,33 +257,66 @@ If any manual requeue or progress-row cleanup is required for execution, it
 must be documented as a derived-state operational step. It must not modify raw
 evidence and must not erase the historical failed extraction row.
 
+### R8 - Pin the Superseding Marker
+
+If the same-bound rerun passes all gates, the repair report must create a
+superseding marker at:
+
+`docs/reviews/phase3/postbuild/markers/20260506_limit500_run/05_REPAIR_VERIFIED.ready.md`
+
+Required front matter:
+
+- `loop: postbuild`
+- `issue_id: 20260506_limit500_run`
+- `family: repair_verified`
+- `scope: phase3 pipeline-3 limit500 null-object repair`
+- `bound: limit500`
+- `state: ready`
+- `gate: ready_for_full_corpus_gate`
+- `supersedes: docs/reviews/phase3/postbuild/markers/20260506_limit500_run/01_RUN.blocked.md`
+- `corpus_content_included: none`
+
+Before relying on automation to treat the blocker as superseded, verify that
+`scripts/phase3_tmux_agents.sh` recognizes this marker family and supersedes
+relationship. If it does not, fix the automation or record a human checkpoint.
+
 ## Test Requirements
 
-Add focused tests before rerunning the live bound:
+Add focused tests before rerunning the live bound. Do not duplicate existing
+validation-repair tests; extend them where they already cover the behavior.
 
 1. Schema shape:
    - Assert the request schema enforces exact-one object channel when supported,
      or assert/document the backend limitation and verify the fallback does not
      remove existing schema constraints.
+   - Assert strict and relaxed schema variants separately, including whether
+     the exact-one construct is present or deliberately omitted.
 2. Null-object-sweep feedback:
    - Given redacted dropped claims with null/null object shapes across multiple
      predicates, feedback includes aggregate count, predicate names, and object
      shape class.
+   - Given mixed null/null and non-null-object validation errors, feedback still
+     includes the null-object subsection.
    - Feedback excludes subject values, object values, rationale text, raw
      evidence text, and evidence ids.
 3. Failed repair:
    - If the first pass is all-invalid and the repair returns invalid JSON, the
      extraction remains failed and records the redacted last error plus prior
-     drops.
+     drops. Extend the existing invalid-repair coverage rather than replacing
+     it.
 4. Accepted empty repair:
    - If repair returns a parseable empty claim list, the extraction can succeed
      with zero claims, but prior drops remain available for the expanded gate.
+     Extend the existing empty-repair coverage rather than replacing it.
 5. Salvage preservation:
    - Mixed valid and invalid claims still insert valid claims and drop invalid
-     siblings without invoking all-invalid failure behavior.
+     siblings without invoking all-invalid failure behavior. Preserve the
+     existing salvage tests.
 6. Provenance:
    - New prompt and request-profile versions are present in created extraction
      rows.
+   - Same-bound proof can attribute latest claims and beliefs to the superseding
+     extraction provenance.
 
 ## Verification Ladder
 
@@ -291,6 +367,9 @@ The repair may supersede the blocked limit-500 marker only when the same-bound
 rerun proves all of the following:
 
 - selected conversations: 500
+- selected-scope boundary is stable, proven by a no-ingestion assertion since
+  the blocked run and by recording the ordered first and last selected
+  conversation ids for the rerun;
 - latest selected-scope extraction failures: 0
 - missing latest selected-scope extractions: 0
 - selected-scope consolidation skips: 0
@@ -301,6 +380,10 @@ rerun proves all of the following:
 - report contains only RFC 0013-safe diagnostics
 - review findings, if any, are either resolved or explicitly routed to a human
   checkpoint
+
+If ingestion may have changed the first-500 active AI-conversation boundary
+between the blocked run and rerun, do not treat the result as a clean
+same-bound proof without a human checkpoint or an explicit frozen-scope proof.
 
 ## Open Risks
 
@@ -322,5 +405,5 @@ The Phase 3 full-corpus run remains blocked by:
 
 `docs/reviews/phase3/postbuild/markers/20260506_limit500_run/01_RUN.blocked.md`
 
-This spec does not supersede that marker. It only defines the proposed repair
-for review.
+This spec does not supersede that marker. It defines the reviewed repair for
+implementation.
