@@ -21,3 +21,5 @@ or a phase prompt.
 | [0013](0013-development-operational-issue-loop.md) | accepted | Development operational issue loop |
 | [0014](0014-operational-artifact-home.md) | proposal | Operational artifact home |
 | [0015](0015-test-coverage-improvements.md) | proposal | Test coverage improvements |
+| [0016](0016-context-lane-reranker-slot.md) | proposal | Context lane reranker slot |
+| [0017](0017-extraction-prompt-versioning.md) | proposal | Extraction prompt versioning and cross-corpus dry-run |
