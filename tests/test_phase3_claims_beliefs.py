@@ -1828,6 +1828,59 @@ def test_multi_current_and_scoped_current_grouping(conn):
     assert result2.contradictions == 1
 
 
+def test_json_null_group_key_matches_database_trigger(conn):
+    conv1, gen1, seg1, msg1 = active_segment(
+        conn,
+        [("user", "A relationship status exists without a named party", 1)],
+    )
+    insert_extracted_claim(
+        conn,
+        segment_id=seg1,
+        generation_id=gen1,
+        conversation_id=conv1,
+        evidence_ids=msg1,
+        predicate="relationship_with",
+        object_json={"name": None, "status": "close"},
+        prompt_version="null-group-1",
+    )
+
+    first = consolidate_beliefs(conn, batch_size=10, conversation_id=conv1)
+    assert first.created == 1
+    assert conn.execute(
+        "SELECT group_object_key FROM beliefs WHERE predicate = 'relationship_with'"
+    ).fetchone()[0] == ""
+
+    conv2, gen2, seg2, msg2 = active_segment(
+        conn,
+        [("user", "A second relationship status uses the same null group key", 1)],
+    )
+    insert_extracted_claim(
+        conn,
+        segment_id=seg2,
+        generation_id=gen2,
+        conversation_id=conv2,
+        evidence_ids=msg2,
+        predicate="relationship_with",
+        object_json={"name": None, "status": "close"},
+        prompt_version="null-group-2",
+    )
+
+    second = consolidate_beliefs(conn, batch_size=10, conversation_id=conv2)
+    assert second.created == 1
+    assert second.superseded == 1
+    assert second.contradictions == 0
+    assert conn.execute(
+        """
+        SELECT count(*)
+        FROM beliefs
+        WHERE predicate = 'relationship_with'
+          AND group_object_key = ''
+          AND valid_to IS NULL
+          AND status IN ('candidate', 'provisional', 'accepted')
+        """
+    ).fetchone()[0] == 1
+
+
 def test_decision_rule_0_rejects_orphan_and_reclassification_hook(conn):
     conv_id, gen_id, seg_id, msg_ids = active_segment(conn, [("user", "I use Python", 1)])
     extraction_id, claim_id = insert_extracted_claim(

@@ -824,10 +824,17 @@ def compute_group_object_key(claim: ClaimRow) -> str:
     if claim.object_text is not None:
         return normalize_subject(claim.object_text)
     values = [
-        normalize_group_object_value(str((claim.object_json or {}).get(key, "")))
+        normalize_group_object_value(json_group_object_value(claim.object_json, key))
         for key in claim.group_object_keys
     ]
     return UNIT_SEPARATOR.join(values)
+
+
+def json_group_object_value(object_json: dict[str, Any] | None, key: str) -> str:
+    value = (object_json or {}).get(key, "")
+    if value is None:
+        return ""
+    return str(value)
 
 
 def claim_value_signature(claim: ClaimRow) -> str:
