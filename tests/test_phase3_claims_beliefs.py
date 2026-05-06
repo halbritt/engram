@@ -201,6 +201,11 @@ def insert_extracted_claim(
 
 
 def test_predicate_vocabulary_and_extractor_schema_parity(conn):
+    assert EXTRACTION_PROMPT_VERSION == "extractor.v7.d063.schema-rejection-repair"
+    assert (
+        EXTRACTION_REQUEST_PROFILE_VERSION
+        == "ik-llama-json-schema.d034.v9.extractor-8192-schema-rejection-repair"
+    )
     db_predicates = [
         row[0]
         for row in conn.execute(
@@ -217,28 +222,30 @@ def test_predicate_vocabulary_and_extractor_schema_parity(conn):
     strict_item = extractor.extraction_json_schema(
         ["00000000-0000-0000-0000-000000000000"]
     )["properties"]["claims"]["items"]
-    assert strict_item["oneOf"] == [
-        {
-            "required": ["object_text", "object_json"],
-            "properties": {
-                "object_text": {"type": "string", "minLength": 1},
-                "object_json": {"type": "null"},
-            },
-        },
-        {
-            "required": ["object_text", "object_json"],
-            "properties": {
-                "object_text": {"type": "null"},
-                "object_json": {"type": "object", "additionalProperties": True},
-            },
-        },
-    ]
+    assert "oneOf" not in strict_item
+    assert "object_text" in strict_item["required"]
+    assert "object_json" in strict_item["required"]
+    assert strict_item["properties"]["object_text"] == {
+        "type": ["string", "null"],
+        "minLength": 1,
+    }
+    assert strict_item["properties"]["object_json"] == {
+        "type": ["object", "null"],
+        "additionalProperties": True,
+    }
     relaxed_item = extractor.extraction_json_schema(
         ["00000000-0000-0000-0000-000000000000"],
         relaxed_schema=True,
     )["properties"]["claims"]["items"]
     relaxed = relaxed_item["properties"]
     assert "oneOf" not in relaxed_item
+    strict_for_comparison = extractor.extraction_json_schema(
+        ["00000000-0000-0000-0000-000000000000"]
+    )["properties"]["claims"]["items"]
+    strict_for_comparison["properties"]["evidence_message_ids"]["items"] = relaxed[
+        "evidence_message_ids"
+    ]["items"]
+    assert relaxed_item == strict_for_comparison
     assert sorted(relaxed["predicate"]["enum"]) == db_predicates
     assert "pattern" in relaxed["evidence_message_ids"]["items"]
     assert "enum" not in relaxed["evidence_message_ids"]["items"]
@@ -527,7 +534,9 @@ def test_extractor_request_shape_parse_rejections_and_salvage(conn, monkeypatch)
     claim_item = payload["response_format"]["json_schema"]["schema"]["properties"]["claims"][
         "items"
     ]
-    assert "oneOf" in claim_item
+    assert "oneOf" not in claim_item
+    assert "object_text" in claim_item["required"]
+    assert "object_json" in claim_item["required"]
 
     for response, match in [
         ({"choices": [{"message": {"content": "", "reasoning_content": "{}"}}]}, "reasoning_content"),
@@ -647,20 +656,28 @@ def test_extractor_normalizes_vocab_derivable_claim_fields(conn):
 
 def test_extractor_validation_repair_retry_can_produce_empty_success(conn):
     conv_id, gen_id, seg_id, msg_ids = active_segment(conn, [("user", "call me by my handle", 1)])
+    null_object_output = parse_extraction_response(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"claims":[{"subject_text":"user","predicate":"has_name",'
+                            '"object_text":null,"object_json":null,'
+                            '"stability_class":"identity","confidence":0.8,'
+                            f'"evidence_message_ids":["{msg_ids[0]}"],'
+                            '"rationale":"missing object value"}]}'
+                        )
+                    }
+                }
+            ]
+        }
+    )
+    assert null_object_output.claims[0].object_text is None
+    assert null_object_output.claims[0].object_json is None
     client = SequenceExtractor(
         [
-            [
-                ClaimDraft(
-                    "user",
-                    "has_name",
-                    None,
-                    None,
-                    "identity",
-                    0.8,
-                    msg_ids,
-                    "missing object value",
-                )
-            ],
+            null_object_output,
             [],
         ]
     )

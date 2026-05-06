@@ -28,9 +28,9 @@ from engram.segmenter import (
 )
 
 
-EXTRACTION_PROMPT_VERSION = "extractor.v6.d063.null-object-repair"
+EXTRACTION_PROMPT_VERSION = "extractor.v7.d063.schema-rejection-repair"
 EXTRACTION_REQUEST_PROFILE_VERSION = (
-    "ik-llama-json-schema.d034.v8.extractor-8192-null-object-repair"
+    "ik-llama-json-schema.d034.v9.extractor-8192-schema-rejection-repair"
 )
 EXTRACTION_SYSTEM_PROMPT = (
     "You are a deterministic claim extractor for a local-first personal memory "
@@ -307,26 +307,6 @@ def extraction_json_schema(
             "rationale": {"type": "string"},
         },
     }
-    if not relaxed_schema:
-        # The shared schema-construction fallback drops both the message-id enum
-        # and this oneOf branch; prompt rules plus Python validation remain
-        # authoritative in relaxed mode.
-        claim_item["oneOf"] = [
-            {
-                "required": ["object_text", "object_json"],
-                "properties": {
-                    "object_text": {"type": "string", "minLength": 1},
-                    "object_json": {"type": "null"},
-                },
-            },
-            {
-                "required": ["object_text", "object_json"],
-                "properties": {
-                    "object_text": {"type": "null"},
-                    "object_json": {"type": "object", "additionalProperties": True},
-                },
-            },
-        ]
     return {
         "type": "object",
         "additionalProperties": False,
