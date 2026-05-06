@@ -53,6 +53,7 @@ This directory contains the LLM prompts and operational handoffs used to build a
 | **P045** | [Review Phase 3 Limit-500 Still-Invalid Problem](P045_review_phase_3_limit500_still_invalid_problem.md) | pending | `pending` |
 | **P046** | [Synthesize Phase 3 Limit-500 Still-Invalid Repair Spec](P046_synthesize_phase_3_limit500_still_invalid_repair_spec.md) | pending | `pending` |
 | **P047** | [Build Phase 3 Limit-500 Still-Invalid Repair](P047_build_phase_3_limit500_still_invalid_repair.md) | pending | `pending` |
+| **P048** | [Review Phase 3 Limit-500 Still-Invalid Repair](P048_review_phase_3_limit500_still_invalid_repair.md) | pending | `pending` |
 
 ## Ordinal Derivation
 
