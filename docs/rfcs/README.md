@@ -23,3 +23,4 @@ or a phase prompt.
 | [0015](0015-test-coverage-improvements.md) | proposal | Test coverage improvements |
 | [0016](0016-context-lane-reranker-slot.md) | proposal | Context lane reranker slot |
 | [0017](0017-extraction-prompt-versioning.md) | proposal | Extraction prompt versioning and cross-corpus dry-run |
+| [0018](0018-evidence-to-claim-audit-cascade.md) | proposal | Evidence-to-claim audit cascade |
