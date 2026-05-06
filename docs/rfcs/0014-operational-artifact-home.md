@@ -1,7 +1,8 @@
 # RFC 0014: Operational Artifact Home
 
-Status: proposal
+Status: accepted for implementation
 Date: 2026-05-05
+Accepted: 2026-05-06 by owner for Phase 3 implementation
 Spec handoff: `docs/process/operational-artifact-home-spec.md` on 2026-05-06
 Spec revision: flat legacy markers, marker privacy, human-checkpoint
 resolution, and malformed marker handling tightened on 2026-05-06
@@ -9,16 +10,17 @@ Context: D060, D062, D063, RFC 0013,
 `docs/process/multi-agent-review-loop.md`,
 `docs/process/phase-3-agent-runbook.md`
 
-This RFC proposes a clearer home for development operational artifacts. It is
-for later review. It does not move existing files and does not change the
-current RFC 0013 gate until accepted.
+This RFC defines the accepted implementation target for future development
+operational artifacts. Owner acceptance on 2026-05-06 authorizes Phase 3
+runbook and script updates, but it does not require rewriting or moving
+existing RFC 0013-era artifacts unless the owner explicitly requests history
+cleanup.
 
 The 2026-05-06 dogfood review showed that this RFC was still a proposal sketch:
 the layout choices needed to become explicit in a spec before implementation or
 final human disposition. The review-derived spec handoff is
-`docs/process/operational-artifact-home-spec.md`. That spec resolves the open
-layout questions for review and implementation planning, but it does not by
-itself accept this RFC or move any files.
+`docs/process/operational-artifact-home-spec.md`. Owner acceptance promotes the
+spec handoff into the Phase 3 runbook and script implementation scope.
 
 The spec handoff owns implementation-level details for flat legacy marker
 gates, marker private-content rejection, human-checkpoint resolution,

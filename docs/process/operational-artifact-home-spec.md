@@ -1,16 +1,17 @@
 # Operational Artifact Home Spec
 
-Status: draft implementation spec
+Status: accepted implementation spec
 Date: 2026-05-06
 Revised: 2026-05-06 after P004 package checkpoint
+Accepted: 2026-05-06 by owner for Phase 3 implementation
 author: coordinator-codex-gpt-5.5-001
 Source RFC: `docs/rfcs/0014-operational-artifact-home.md`
 Source reviews: `docs/reviews/rfc-0014-operational-artifact-home/`
 
 This spec turns RFC 0014 review findings into explicit implementation choices.
-It is a handoff artifact, not an accepted architecture decision by itself. It
-becomes binding only when promoted into the decision log, build phases, phase
-runbook, or an accepted implementation prompt.
+Owner acceptance on 2026-05-06 promotes these choices into the Phase 3 runbook
+and script implementation scope. Binding project history is recorded in
+`DECISION_LOG.md`; this spec remains the detailed handoff contract.
 
 ## Purpose
 
