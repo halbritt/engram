@@ -52,7 +52,7 @@ LOCAL_MODEL_SERVER_ARGS = (
     "--batch-size",
     "2048",
     "--ubatch-size",
-    "256",
+    "512",
     "--cache-type-k",
     "q8_0",
     "--cache-type-v",
@@ -948,6 +948,24 @@ def flatten_units(units: list[tuple[BenchmarkMessage, ...]]) -> list[BenchmarkMe
 
 
 DEFAULT_STRATEGIES: dict[str, SegmenterStrategy] = {
+    "qwen_35b_a3b_apex_i_compact_d034": LocalModelStrategy(
+        LocalModelProfile(
+            "qwen_35b_a3b_apex_i_compact_d034",
+            "~/models/Qwen3.6-35B-A3B-APEX-I-Compact.gguf",
+        )
+    ),
+    "qwen_35b_a3b_ud_iq4_xs_d034": LocalModelStrategy(
+        LocalModelProfile(
+            "qwen_35b_a3b_ud_iq4_xs_d034",
+            "~/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+        )
+    ),
+    "qwen_35b_a3b_ud_q3_k_m_d034": LocalModelStrategy(
+        LocalModelProfile(
+            "qwen_35b_a3b_ud_q3_k_m_d034",
+            "~/models/Qwen3.6-35B-A3B-UD-Q3_K_M.gguf",
+        )
+    ),
     "qwen_35b_a3b_iq4_xs_d034": LocalModelStrategy(
         LocalModelProfile(
             "qwen_35b_a3b_iq4_xs_d034",

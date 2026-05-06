@@ -17,6 +17,12 @@ from benchmarks.segmentation.early_signal import (
     selection_caveat_for_tier,
 )
 from benchmarks.segmentation.fixtures import BenchmarkValidationError, load_fixtures
+from benchmarks.segmentation.llama_bench import (
+    LlamaBenchConfig,
+    LlamaBenchError,
+    model_path_for_strategy,
+    run_llama_bench,
+)
 from benchmarks.segmentation.reporting import write_report_files
 from benchmarks.segmentation.results import score_run_file, write_run_results
 from benchmarks.segmentation.sample_plan import (
@@ -127,6 +133,38 @@ def build_parser() -> argparse.ArgumentParser:
         help="Compute local model file SHA256 values during local-model runs.",
     )
 
+    llama_bench = subparsers.add_parser("llama-bench")
+    model_source = llama_bench.add_mutually_exclusive_group(required=True)
+    model_source.add_argument("--strategy")
+    model_source.add_argument("--model")
+    llama_bench.add_argument("--llama-bench-bin", default="llama-bench")
+    llama_bench.add_argument("--output-dir", required=True)
+    llama_bench.add_argument("--prompt-tokens", type=positive_int, default=512)
+    llama_bench.add_argument("--generation-tokens", type=positive_int, default=128)
+    llama_bench.add_argument("--repetitions", type=positive_int, default=3)
+    llama_bench.add_argument("--gpu-layers", type=int, default=99)
+    llama_bench.add_argument("--threads", type=positive_int, default=8)
+    llama_bench.add_argument("--batch-size", type=positive_int, default=2048)
+    llama_bench.add_argument("--ubatch-size", type=positive_int, default=512)
+    llama_bench.add_argument("--ctx-size", type=positive_int, default=49152)
+    llama_bench.add_argument("--flash-attn", choices=("on", "off"), default="on")
+    llama_bench.add_argument("--cache-type-k", default="q8_0")
+    llama_bench.add_argument("--cache-type-v", default="q8_0")
+    llama_bench.add_argument(
+        "--min-generation-tps",
+        type=positive_float,
+        help=(
+            "Fail the smoke artifact if llama-bench generation throughput is "
+            "below this tokens/second value."
+        ),
+    )
+    llama_bench.add_argument(
+        "--extra-arg",
+        action="append",
+        default=[],
+        help="Additional raw argument to append to llama-bench; repeat as needed.",
+    )
+
     score = subparsers.add_parser("score")
     score.add_argument("--results", required=True)
 
@@ -189,6 +227,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "run":
             return run_command(args)
+        if args.command == "llama-bench":
+            return llama_bench_command(args)
         if args.command == "score":
             score = score_run_file(args.results)
             print(json.dumps(score, indent=2, sort_keys=True))
@@ -207,7 +247,7 @@ def main(argv: list[str] | None = None) -> int:
         for error in exc.errors:
             print(error, file=sys.stderr)
         return 2
-    except (StrategyUnavailable, NotImplementedError, ValueError) as exc:
+    except (StrategyUnavailable, LlamaBenchError, NotImplementedError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     parser.error(f"unknown command {args.command}")
@@ -313,6 +353,32 @@ def run_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def llama_bench_command(args: argparse.Namespace) -> int:
+    model_path = args.model or model_path_for_strategy(args.strategy)
+    config = LlamaBenchConfig(
+        llama_bench_bin=args.llama_bench_bin,
+        model_path=model_path,
+        output_dir=Path(args.output_dir),
+        strategy_name=args.strategy,
+        prompt_tokens=args.prompt_tokens,
+        generation_tokens=args.generation_tokens,
+        repetitions=args.repetitions,
+        gpu_layers=args.gpu_layers,
+        threads=args.threads,
+        batch_size=args.batch_size,
+        ubatch_size=args.ubatch_size,
+        ctx_size=args.ctx_size,
+        flash_attn=args.flash_attn,
+        cache_type_k=args.cache_type_k,
+        cache_type_v=args.cache_type_v,
+        min_generation_tps=args.min_generation_tps,
+        extra_args=tuple(args.extra_arg or ()),
+    )
+    output_path = run_llama_bench(config)
+    print(output_path)
+    return 0
+
+
 def positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
@@ -324,6 +390,13 @@ def non_negative_int(value: str) -> int:
     parsed = int(value)
     if parsed < 0:
         raise argparse.ArgumentTypeError("must be non-negative")
+    return parsed
+
+
+def positive_float(value: str) -> float:
+    parsed = float(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be positive")
     return parsed
 
 

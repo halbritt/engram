@@ -34,6 +34,11 @@ Tier 0 smoke metadata and Tier 1 early-signal sample plans, threshold-set
 metadata, fragmentation metrics, and structured verdicts. Tier 2 decision-grade
 model switching remains pending.
 
+- `llama-bench` smoke: first gate for any new local segmenter model or quant.
+  It verifies that the GGUF can load and emit measurable generation
+  tokens/second under the benchmark server-like flags. A model that cannot
+  produce `generation_tokens_per_second` here should not advance to
+  segmentation-quality runs.
 - `smoke`: 10 labeled SuperDialseg validation parents. This validates the
   harness and a candidate model/profile only; reports must mark the run
   `smoke_only`.
@@ -85,6 +90,12 @@ python3 -m benchmarks.segmentation.run_benchmark run \
   --strategy message_groups \
   --output-dir .scratch/benchmarks/segmentation
 
+python3 -m benchmarks.segmentation.run_benchmark llama-bench \
+  --strategy qwen_35b_a3b_ud_q3_k_m_d034 \
+  --llama-bench-bin /path/to/llama-bench \
+  --output-dir .scratch/benchmarks/segmentation/llama-bench \
+  --min-generation-tps 20
+
 python3 -m benchmarks.segmentation.run_benchmark score \
   --results .scratch/benchmarks/segmentation/<run_id>/run.json
 
@@ -98,6 +109,19 @@ python3 -m benchmarks.segmentation.run_benchmark report \
 strategies refuse to run without it and also refuse non-loopback base URLs.
 They use the benchmark-local D034 JSON-schema request profile against an
 operator-managed local OpenAI-compatible endpoint.
+`llama-bench` is the first smoke gate for a new local segmenter model. It shells
+out to a caller-supplied llama.cpp `llama-bench` binary, forces JSON output,
+writes a scratch `llama_bench.json` artifact, and extracts
+`generation_tokens_per_second` from the JSON result. The command fails if
+generation throughput cannot be extracted, and `--min-generation-tps` can set a
+run-specific floor. Paths are resolved on the host executing the benchmark,
+which for model smoke runs is expected to be the inference server with GPU,
+GGUFs, and llama.cpp tools installed, not necessarily the laptop used for
+editing. The default `--ubatch-size 512` reflects the observed inference-server
+smoke result where Qwen3.6 35B A3B UD-Q3_K_M reached roughly 210 generation
+tokens/second and materially improved prefill over 256. It does not start a
+server, call the segmentation endpoint, load a dataset, or write production
+state.
 `early_signal` runs require `--sample-plan`; the sample plan records the
 selected parent ids and validates dataset name/source/version/revision against
 the manifest before the run proceeds. `--operational-model-strategy` controls
@@ -111,11 +135,16 @@ comparisons and is recorded in result artifacts.
 - `message_groups`: deterministic contiguous role-turn grouping that keeps
   adjacent user/assistant turns together when possible.
 - `qwen_35b_a3b_iq4_xs_d034`,
+  `qwen_35b_a3b_ud_q3_k_m_d034`,
+  `qwen_35b_a3b_ud_iq4_xs_d034`,
+  `qwen_35b_a3b_apex_i_compact_d034`,
   `qwen_27b_q5_k_m_d034`,
   `gemma_26b_a4b_q4_k_m_d034`: local-model strategies for the public short
   benchmark. They require `--allow-local-models`, constrain `message_ids` to
   the current parent in the JSON schema, parse only
   `choices[0].message.content`, and record request/model metadata.
+  The APEX profile targets the I-Compact file as the closest-size comparison
+  point for the Unsloth UD-IQ4_XS quant.
 
 `StrategyKind` is benchmark-internal. It is not production
 `segments.window_strategy` and does not introduce deferred P-FRAG schema values
@@ -132,6 +161,9 @@ Runs write only under the caller's output directory:
   score.json   # written by the score command
   report.md    # written by the report command
   report.html  # written by the report command when requested
+
+<output-dir>/<llama_bench_run_id>/
+  llama_bench.json
 ```
 
 `run.json` records git commit, dataset manifest metadata, strategy config,

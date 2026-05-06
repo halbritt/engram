@@ -15,6 +15,7 @@ from benchmarks.segmentation.fixtures import (
     ExpectedClaim,
     load_fixtures,
 )
+from benchmarks.segmentation.llama_bench import extract_generation_tokens_per_second
 from benchmarks.segmentation.results import relevant_segmenter_environment
 from benchmarks.segmentation.sample_plan import (
     create_sample_plan,
@@ -521,6 +522,92 @@ def test_early_signal_run_requires_sample_plan(tmp_path, capsys):
         ]
     ) == 2
     assert "requires --sample-plan" in capsys.readouterr().err
+
+
+def test_llama_bench_command_writes_generation_tps(tmp_path, capsys):
+    llama_bench = tmp_path / "llama-bench"
+    llama_bench.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' '[{\"n_gen\":64,\"avg_ts\":42.5,\"n_prompt\":256}]'\n",
+        encoding="utf-8",
+    )
+    llama_bench.chmod(0o755)
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"tiny fake model")
+
+    assert benchmark_main(
+        [
+            "llama-bench",
+            "--model",
+            str(model_path),
+            "--llama-bench-bin",
+            str(llama_bench),
+            "--output-dir",
+            str(tmp_path / "results"),
+            "--prompt-tokens",
+            "256",
+            "--generation-tokens",
+            "64",
+            "--repetitions",
+            "2",
+            "--min-generation-tps",
+            "40",
+        ]
+    ) == 0
+
+    output_path = Path(capsys.readouterr().out.strip())
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    command = payload["llama_bench"]["command"]
+    assert payload["schema_version"] == "segmentation-llama-bench-result.v1"
+    assert payload["status"] == "ok"
+    assert payload["model"]["size_bytes"] == len(b"tiny fake model")
+    assert payload["metrics"]["generation_tokens_per_second"] == 42.5
+    assert payload["smoke"]["passed"] is True
+    assert payload["smoke"]["min_generation_tokens_per_second"] == 40
+    assert command[0] == str(llama_bench)
+    assert command[command.index("-n") + 1] == "64"
+    assert command[command.index("-ub") + 1] == "512"
+    assert command[command.index("-o") + 1] == "json"
+
+
+def test_llama_bench_smoke_fails_below_min_generation_tps(tmp_path, capsys):
+    llama_bench = tmp_path / "llama-bench"
+    llama_bench.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' '[{\"n_gen\":64,\"avg_ts\":12.0}]'\n",
+        encoding="utf-8",
+    )
+    llama_bench.chmod(0o755)
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"tiny fake model")
+
+    assert benchmark_main(
+        [
+            "llama-bench",
+            "--model",
+            str(model_path),
+            "--llama-bench-bin",
+            str(llama_bench),
+            "--output-dir",
+            str(tmp_path / "results"),
+            "--min-generation-tps",
+            "20",
+        ]
+    ) == 2
+
+    stderr = capsys.readouterr().err
+    assert "below_min_generation_tps" in stderr
+    artifact = Path(stderr.rsplit("artifact: ", 1)[1].strip())
+    payload = json.loads(artifact.read_text(encoding="utf-8"))
+    assert payload["status"] == "failed"
+    assert payload["smoke"]["passed"] is False
+    assert payload["smoke"]["failure_reasons"] == ["below_min_generation_tps"]
+
+
+def test_llama_bench_extracts_nested_generation_tps():
+    payload = {"results": [{"n_gen": 128, "avg_tps": "37.25"}]}
+
+    assert extract_generation_tokens_per_second(payload) == 37.25
 
 
 def test_fixture_and_expected_claim_validation():
@@ -1147,6 +1234,26 @@ def test_llm_strategy_refuses_without_local_model_opt_in():
 
     with pytest.raises(StrategyUnavailable):
         strategy.segment(parent, RunConfig(run_id="test"))
+
+
+def test_qwen_35b_variant_strategies_are_registered():
+    expected_paths = {
+        "qwen_35b_a3b_apex_i_compact_d034": (
+            "~/models/Qwen3.6-35B-A3B-APEX-I-Compact.gguf"
+        ),
+        "qwen_35b_a3b_ud_iq4_xs_d034": (
+            "~/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf"
+        ),
+        "qwen_35b_a3b_ud_q3_k_m_d034": (
+            "~/models/Qwen3.6-35B-A3B-UD-Q3_K_M.gguf"
+        ),
+    }
+
+    for strategy_name, model_path in expected_paths.items():
+        strategy = DEFAULT_STRATEGIES[strategy_name]
+
+        assert isinstance(strategy, LocalModelStrategy)
+        assert strategy.profile.model_path == model_path
 
 
 def test_llm_strategy_refuses_non_loopback_url(tmp_path):

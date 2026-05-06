@@ -43,12 +43,29 @@ for tests only and is explicitly not copied from SuperDialseg.
 
 ## Benchmark Tiers
 
-Status: implemented for `smoke` and `early_signal`; `decision` remains pending.
-New result artifacts emit `benchmark_tier`, `selection_caveat`, optional
-sample-plan metadata, optional threshold-set metadata, fragmentation metrics,
-and Tier 1 verdict fields. Existing scratch artifacts are not backfilled.
+Status: implemented for `llama-bench` smoke, `smoke`, and `early_signal`;
+`decision` remains pending. New result artifacts emit `benchmark_tier`,
+`selection_caveat`, optional sample-plan metadata, optional threshold-set
+metadata, fragmentation metrics, and Tier 1 verdict fields. Existing scratch
+artifacts are not backfilled.
 
 Benchmark runs are classified by `benchmark_tier`.
+
+### Raw model smoke: `llama-bench`
+
+Purpose: first gate for any new local segmenter model or quant.
+
+Required shape:
+
+- caller-supplied local llama.cpp `llama-bench` binary;
+- local GGUF selected by benchmark strategy or explicit path;
+- JSON output parsed successfully;
+- `generation_tokens_per_second` extracted;
+- optional `--min-generation-tps` floor passed when provided.
+
+A model that fails this gate should not advance to dataset-backed segmentation
+runs. This gate measures raw decode throughput only; it does not score
+segmentation quality.
 
 ### Tier 0: `smoke`
 
@@ -298,11 +315,15 @@ Token estimator version: `segmentation-benchmark-token-estimator.v2`.
   `content_text` only from embeddable messages.
 - `message_groups`: groups contiguous messages up to the target token budget
   while keeping adjacent user/assistant turns together when possible.
-- `qwen_35b_a3b_iq4_xs_d034`, `qwen_27b_q5_k_m_d034`,
+- `qwen_35b_a3b_iq4_xs_d034`, `qwen_35b_a3b_ud_q3_k_m_d034`,
+  `qwen_35b_a3b_ud_iq4_xs_d034`, `qwen_35b_a3b_apex_i_compact_d034`,
+  `qwen_27b_q5_k_m_d034`,
   `gemma_26b_a4b_q4_k_m_d034`: benchmark-local model strategies. They refuse
   to run unless `--allow-local-models` is provided, refuse non-loopback base
   URLs, and call the operator-managed local OpenAI-compatible endpoint with the
   D034 deterministic JSON-schema request profile.
+  The APEX strategy is pinned to the I-Compact file so the APEX-vs-UD run
+  compares similarly sized 35B-A3B quants.
 
 The estimator is deliberately local and simple; it does not import production
 segmenter code. It uses `ceil(chars / 2.5)`, matching production's default
@@ -345,6 +366,12 @@ python3 -m benchmarks.segmentation.run_benchmark run \
   --strategy message_groups \
   --output-dir .scratch/benchmarks/segmentation
 
+python3 -m benchmarks.segmentation.run_benchmark llama-bench \
+  --strategy qwen_35b_a3b_ud_q3_k_m_d034 \
+  --llama-bench-bin /path/to/llama-bench \
+  --output-dir .scratch/benchmarks/segmentation/llama-bench \
+  --min-generation-tps 20
+
 python3 -m benchmarks.segmentation.run_benchmark score \
   --results .scratch/benchmarks/segmentation/<run_id>/run.json
 
@@ -362,9 +389,24 @@ nonzero.
 `report` reads existing result files only. It does not load dataset snapshots,
 rerun strategies, call models, or touch production state.
 
+`llama-bench` is separate from segmentation quality scoring and is the first
+smoke gate for new segmenter models. It shells out to a local llama.cpp
+`llama-bench` binary with JSON output enabled and writes a scratch
+`llama_bench.json` artifact containing the command, raw stdout/stderr, parsed
+JSON, extracted `generation_tokens_per_second`, and smoke pass/fail reasons.
+The command fails when generation throughput cannot be extracted, and
+`--min-generation-tps` may enforce a run-specific floor. Binary and model paths
+are local to the host executing the benchmark; for model smoke runs, that host
+is expected to be the inference server with GPU, GGUFs, and llama.cpp tools
+installed. The default `--ubatch-size 512` records the inference-server smoke
+finding that Qwen3.6 35B A3B UD-Q3_K_M reached roughly 210 generation
+tokens/second and improved prefill materially over 256. It is intended for raw
+decode throughput comparisons such as APEX-vs-UD quant checks.
+
 ## Results
 
 Result schema version: `segmentation-benchmark-result.v1`.
+Llama-bench result schema version: `segmentation-llama-bench-result.v1`.
 
 ```text
 <output-dir>/<run_id>/
@@ -373,6 +415,9 @@ Result schema version: `segmentation-benchmark-result.v1`.
   score.json
   report.md
   report.html
+
+<output-dir>/<llama_bench_run_id>/
+  llama_bench.json
 ```
 
 Current implemented `run.json` records:
