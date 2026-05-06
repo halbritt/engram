@@ -67,9 +67,12 @@ inactive until the coordinator verifies a clean `--limit 500` report.
 For `--limit 500`:
 
 - report:
-  `docs/reviews/phase3/PHASE_3_POSTBUILD_RUN_LIMIT500_2026_05_05.md`
+  `docs/reviews/phase3/PHASE_3_POSTBUILD_RUN_LIMIT500_2026_05_06.md`
 - marker directory:
-  `docs/reviews/phase3/postbuild/markers/20260505_limit500_run/`
+  `docs/reviews/phase3/postbuild/markers/20260506_limit500_run/`
+
+The limit-500 run started after UTC midnight, so its actual run artifacts use
+the 2026-05-06 run date.
 
 For full corpus, if authorized after the `--limit 500` gate:
 
