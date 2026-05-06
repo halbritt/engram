@@ -171,6 +171,9 @@ here as historical state evidence rather than as a current-file hash.
 
 ## Runner Findings
 
+Follow-up product fixes are specified in
+`agent-runner/docs/RFC_0014_DOGFOOD_FIX_SPEC.md`.
+
 1. `status --json` did not surface the open blocker or next useful action.
    It reported only aggregate job counts and left the run in `running`, which
    is technically accurate but not enough for coordinator recovery.
