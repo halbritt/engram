@@ -28,9 +28,9 @@ from engram.segmenter import (
 )
 
 
-EXTRACTION_PROMPT_VERSION = "extractor.v7.d063.schema-rejection-repair"
+EXTRACTION_PROMPT_VERSION = "extractor.v8.d064.accounted-zero"
 EXTRACTION_REQUEST_PROFILE_VERSION = (
-    "ik-llama-json-schema.d034.v9.extractor-8192-schema-rejection-repair"
+    "ik-llama-json-schema.d034.v10.extractor-8192-accounted-zero"
 )
 EXTRACTION_SYSTEM_PROMPT = (
     "You are a deterministic claim extractor for a local-first personal memory "
@@ -103,6 +103,45 @@ PREDICATE_VOCABULARY: list[dict[str, Any]] = [
 ]
 PREDICATE_ENUM = [row["predicate"] for row in PREDICATE_VOCABULARY]
 PREDICATE_BY_NAME = {row["predicate"]: row for row in PREDICATE_VOCABULARY}
+ELIGIBLE_DROP_REASONS = frozenset({"trigger_violation"})
+ELIGIBLE_DROP_ERROR_CLASSES = frozenset(
+    {
+        "subject_text is empty",
+        "stability_class does not match predicate vocabulary",
+        "evidence_message_ids is empty",
+        "evidence_message_ids must be a subset of segment message_ids",
+        "evidence_message_ids must be a subset of chunk message_ids",
+        "exactly one of object_text or object_json is required",
+        "predicate requires non-empty object_text",
+        "predicate requires object_json",
+    }
+)
+REDACTED_DROP_KEYS = frozenset(
+    {
+        "reason",
+        "index",
+        "split_path",
+        "error",
+        "predicate",
+        "stability_class",
+        "object_text_type",
+        "object_json_type",
+        "object_json_keys",
+        "evidence_message_count",
+    }
+)
+REQUIRED_REDACTED_DROP_KEYS = frozenset(
+    {
+        "reason",
+        "error",
+        "object_text_type",
+        "object_json_type",
+        "evidence_message_count",
+    }
+)
+EXTRACTION_RESULT_POPULATED = "populated"
+EXTRACTION_RESULT_CLEAN_ZERO = "clean_zero"
+EXTRACTION_RESULT_ACCOUNTED_ZERO = "accounted_zero"
 
 
 class ExtractionError(RuntimeError):
@@ -177,6 +216,33 @@ class ExtractionBatchResult:
     created: int
     skipped: int
     failed: int
+
+
+@dataclass(frozen=True)
+class DroppedClaimAccounting:
+    inserted_claims: int
+    prior_drops: int
+    final_drops: int
+
+    @property
+    def expanded_drops(self) -> int:
+        return self.prior_drops + self.final_drops
+
+
+@dataclass(frozen=True)
+class DroppedClaimGateResult:
+    inserted_claims: int
+    prior_drops: int
+    final_drops: int
+    expanded_drops: int
+    denominator: int
+    rate: float
+
+
+@dataclass(frozen=True)
+class AccountedZeroEligibility:
+    eligible: bool
+    failure_kind: str | None = None
 
 
 class ExtractorClient(Protocol):
@@ -506,12 +572,71 @@ def extract_claims_from_segment(
     if not valid and dropped:
         payload = {
             "model_response": output.model_response,
-            "parse_metadata": output.parse_metadata,
-            "dropped_claims": dropped,
-            "failure_kind": "trigger_violation",
+            "parse_metadata": redact_parse_metadata_dropped_claims(output.parse_metadata),
+            "dropped_claims": redact_dropped_claims(dropped),
+            "failure_kind": "local_validation_failed_post_repair",
             "last_error": "all extracted claims failed pre-validation",
         }
         copy_validation_repair_payload(payload, output)
+        repair = validation_repair_payload(payload)
+        if repair and repair.get("result") == "still_invalid":
+            eligibility = accounted_zero_eligibility(repair)
+            if eligibility.eligible:
+                payload["failure_kind"] = None
+                payload["extraction_result_kind"] = EXTRACTION_RESULT_ACCOUNTED_ZERO
+                with conn.transaction():
+                    conn.execute(
+                        """
+                        UPDATE claim_extractions
+                        SET status = 'extracted',
+                            completed_at = now(),
+                            claim_count = 0,
+                            raw_payload = %s
+                        WHERE id = %s
+                        """,
+                        (Jsonb(payload), extraction_id),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE claim_extractions
+                        SET status = 'superseded',
+                            completed_at = COALESCE(completed_at, now()),
+                            raw_payload = raw_payload || jsonb_build_object(
+                                'superseded_by_extraction_id',
+                                %s::text
+                            )
+                        WHERE segment_id = %s
+                          AND id <> %s
+                          AND status = 'extracted'
+                        """,
+                        (extraction_id, segment.id, extraction_id),
+                    )
+                upsert_progress(
+                    conn,
+                    stage="extractor",
+                    scope=f"conversation:{segment.conversation_id}",
+                    status="completed",
+                    position={
+                        "conversation_id": segment.conversation_id,
+                        "segment_id": segment.id,
+                        "segment_index_within_conversation": segment_index_within_conversation(
+                            conn,
+                            segment.id,
+                        ),
+                    },
+                )
+                return ExtractionResult(
+                    extraction_id,
+                    segment_id,
+                    0,
+                    "extracted",
+                    dropped_count=extraction_drop_accounting(0, payload).expanded_drops,
+                )
+            payload["failure_kind"] = "local_validation_failed_post_repair"
+            payload["accounting_failure_kind"] = eligibility.failure_kind
+        elif repair and repair.get("result") == "failed":
+            payload["failure_kind"] = validation_repair_failure_kind(repair)
+        apply_failure_result_kind(payload)
         conn.execute(
             """
             UPDATE claim_extractions
@@ -549,6 +674,7 @@ def extract_claims_from_segment(
         "failure_kind": None,
     }
     copy_validation_repair_payload(raw_payload, output)
+    raw_payload["extraction_result_kind"] = extraction_result_kind(inserted, raw_payload)
     with conn.transaction():
         conn.execute(
             """
@@ -858,6 +984,9 @@ def retry_after_trigger_violation(
                         "prior_dropped_count": len(prior_dropped),
                         "prior_error_counts": dropped_error_counts(prior_dropped),
                         "prior_dropped_claims": redact_dropped_claims(prior_dropped),
+                        "final_dropped_count": 0,
+                        "final_error_counts": {},
+                        "final_dropped_claims": [],
                         "last_error": error_summary(exc),
                     },
                 },
@@ -881,6 +1010,7 @@ def retry_after_trigger_violation(
                     "prior_dropped_claims": redact_dropped_claims(prior_dropped),
                     "final_dropped_count": len(dropped),
                     "final_error_counts": dropped_error_counts(dropped),
+                    "final_dropped_claims": redact_dropped_claims(dropped),
                 },
             },
         ),
@@ -1023,6 +1153,164 @@ def copy_validation_repair_payload(
         raw_payload["validation_repair"] = repair
 
 
+def redact_parse_metadata_dropped_claims(value: Any) -> Any:
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for key, item in value.items():
+            if key == "chunk_dropped_claims" and isinstance(item, list):
+                redacted[key] = redact_dropped_claims(item)
+            else:
+                redacted[key] = redact_parse_metadata_dropped_claims(item)
+        return redacted
+    if isinstance(value, list):
+        return [redact_parse_metadata_dropped_claims(item) for item in value]
+    return value
+
+
+def validation_repair_payload(raw_payload: dict[str, Any]) -> dict[str, Any] | None:
+    repair = raw_payload.get("validation_repair")
+    return repair if isinstance(repair, dict) else None
+
+
+def extraction_drop_accounting(
+    claim_count: int,
+    raw_payload: dict[str, Any],
+) -> DroppedClaimAccounting:
+    repair = validation_repair_payload(raw_payload)
+    if repair is not None:
+        prior = repair.get("prior_dropped_count", 0)
+        final = repair.get("final_dropped_count", 0)
+        return DroppedClaimAccounting(
+            inserted_claims=max(0, int(claim_count)),
+            prior_drops=prior if isinstance(prior, int) and prior >= 0 else 0,
+            final_drops=final if isinstance(final, int) and final >= 0 else 0,
+        )
+
+    dropped = raw_payload.get("dropped_claims", [])
+    final_drops = len(dropped) if isinstance(dropped, list) else 0
+    return DroppedClaimAccounting(
+        inserted_claims=max(0, int(claim_count)),
+        prior_drops=0,
+        final_drops=final_drops,
+    )
+
+
+def dropped_claim_gate_result(
+    rows: list[DroppedClaimAccounting],
+) -> DroppedClaimGateResult:
+    inserted = sum(row.inserted_claims for row in rows)
+    prior = sum(row.prior_drops for row in rows)
+    final = sum(row.final_drops for row in rows)
+    expanded = prior + final
+    denominator = inserted + expanded
+    rate = 0.0 if denominator == 0 else expanded / denominator
+    return DroppedClaimGateResult(
+        inserted_claims=inserted,
+        prior_drops=prior,
+        final_drops=final,
+        expanded_drops=expanded,
+        denominator=denominator,
+        rate=rate,
+    )
+
+
+def extraction_result_kind(claim_count: int, raw_payload: dict[str, Any]) -> str:
+    accounting = extraction_drop_accounting(claim_count, raw_payload)
+    if accounting.inserted_claims > 0:
+        return EXTRACTION_RESULT_POPULATED
+    if accounting.expanded_drops > 0:
+        return EXTRACTION_RESULT_ACCOUNTED_ZERO
+    return EXTRACTION_RESULT_CLEAN_ZERO
+
+
+def apply_failure_result_kind(raw_payload: dict[str, Any]) -> None:
+    raw_payload.pop("extraction_result_kind", None)
+
+
+def accounted_zero_eligibility(repair: dict[str, Any]) -> AccountedZeroEligibility:
+    if repair.get("attempted") is not True or repair.get("result") != "still_invalid":
+        return AccountedZeroEligibility(False, "missing_diagnostics")
+    for key in (
+        "prior_dropped_count",
+        "final_dropped_count",
+        "prior_error_counts",
+        "final_error_counts",
+        "prior_dropped_claims",
+        "final_dropped_claims",
+    ):
+        if key not in repair:
+            return AccountedZeroEligibility(False, "missing_diagnostics")
+
+    prior_drops = repair["prior_dropped_claims"]
+    final_drops = repair["final_dropped_claims"]
+    if not isinstance(prior_drops, list) or not isinstance(final_drops, list):
+        return AccountedZeroEligibility(False, "missing_diagnostics")
+    prior_count = repair["prior_dropped_count"]
+    final_count = repair["final_dropped_count"]
+    if not isinstance(prior_count, int) or not isinstance(final_count, int):
+        return AccountedZeroEligibility(False, "missing_diagnostics")
+    if prior_count != len(prior_drops) or final_count != len(final_drops):
+        return AccountedZeroEligibility(False, "count_mismatch")
+    if prior_count == 0 or final_count == 0:
+        return AccountedZeroEligibility(False, "missing_diagnostics")
+    if repair["prior_error_counts"] != dropped_error_counts(prior_drops):
+        return AccountedZeroEligibility(False, "count_mismatch")
+    if repair["final_error_counts"] != dropped_error_counts(final_drops):
+        return AccountedZeroEligibility(False, "count_mismatch")
+
+    for drop in [*prior_drops, *final_drops]:
+        failure_kind = redacted_drop_accounting_failure_kind(drop)
+        if failure_kind is not None:
+            return AccountedZeroEligibility(False, failure_kind)
+    return AccountedZeroEligibility(True)
+
+
+def redacted_drop_accounting_failure_kind(drop: Any) -> str | None:
+    if not isinstance(drop, dict):
+        return "missing_diagnostics"
+    if set(drop) - REDACTED_DROP_KEYS:
+        return "unredacted_diagnostics"
+    if REQUIRED_REDACTED_DROP_KEYS - set(drop):
+        return "missing_diagnostics"
+    if drop.get("reason") not in ELIGIBLE_DROP_REASONS:
+        return "unknown_drop_reason"
+    error = drop.get("error")
+    if not isinstance(error, str) or not is_eligible_drop_error_class(error):
+        return "unknown_error_class"
+    return None
+
+
+def is_eligible_drop_error_class(error: str) -> bool:
+    if error in ELIGIBLE_DROP_ERROR_CLASSES:
+        return True
+    prefix = "object_json missing required key: "
+    if not error.startswith(prefix):
+        return False
+    key = error.removeprefix(prefix)
+    allowed_keys = {
+        str(required_key)
+        for row in PREDICATE_VOCABULARY
+        for required_key in row["required_object_keys"]
+    }
+    return key in allowed_keys
+
+
+def validation_repair_failure_kind(repair: dict[str, Any]) -> str:
+    last_error = str(repair.get("last_error") or "").lower()
+    if (
+        "json" in last_error
+        or "markdown" in last_error
+        or "empty" in last_error
+        or "reasoning_content" in last_error
+    ):
+        return "parse_error"
+    if "schema" in last_error or "payload" in last_error or "claim" in last_error:
+        return "schema_invalid"
+    if "timeout" in last_error or "unavailable" in last_error:
+        return "service_unavailable"
+    return "retry_exhausted"
+
+
 def validate_chunk_output(
     output: ExtractorModelOutput,
     chunk: SegmentPayload,
@@ -1131,6 +1419,8 @@ def failure_kind_for_exception(exc: BaseException) -> str:
         text = str(exc).lower()
         if "json" in text or "markdown" in text or "empty" in text or "reasoning_content" in text:
             return "parse_error"
+        return "schema_invalid"
+    if isinstance(exc, ExtractionError):
         return "schema_invalid"
     return "service_unavailable" if "unavailable" in str(exc).lower() else "retry_exhausted"
 

@@ -201,10 +201,10 @@ def insert_extracted_claim(
 
 
 def test_predicate_vocabulary_and_extractor_schema_parity(conn):
-    assert EXTRACTION_PROMPT_VERSION == "extractor.v7.d063.schema-rejection-repair"
+    assert EXTRACTION_PROMPT_VERSION == "extractor.v8.d064.accounted-zero"
     assert (
         EXTRACTION_REQUEST_PROFILE_VERSION
-        == "ik-llama-json-schema.d034.v9.extractor-8192-schema-rejection-repair"
+        == "ik-llama-json-schema.d034.v10.extractor-8192-accounted-zero"
     )
     db_predicates = [
         row[0]
@@ -568,6 +568,7 @@ def test_extractor_request_shape_parse_rejections_and_salvage(conn, monkeypatch)
     assert row[1] == EXTRACTION_REQUEST_PROFILE_VERSION
     raw = row[2]
     assert raw["model_response"]
+    assert raw["extraction_result_kind"] == "populated"
     assert len(raw["dropped_claims"]) == 1
     claim_provenance = conn.execute(
         """
@@ -595,14 +596,16 @@ def test_extractor_request_shape_parse_rejections_and_salvage(conn, monkeypatch)
         ]
     )
     failed = extract_claims_from_segment(conn, seg2, model_version="model-a", client=bad_shape)
-    assert failed.status == "failed"
+    assert failed.status == "extracted"
+    assert failed.claim_count == 0
     raw_failed = conn.execute(
         "SELECT raw_payload FROM claim_extractions WHERE id = %s",
         (failed.extraction_id,),
     ).fetchone()[0]
-    assert raw_failed["failure_kind"] == "trigger_violation"
+    assert raw_failed["failure_kind"] is None
+    assert raw_failed["extraction_result_kind"] == "accounted_zero"
     assert raw_failed["model_response"]
-    assert raw_failed["dropped_claims"][0]["error"] == "predicate requires non-empty object_text"
+    assert raw_failed["validation_repair"]["result"] == "still_invalid"
 
 
 def test_extractor_normalizes_vocab_derivable_claim_fields(conn):
@@ -632,7 +635,13 @@ def test_extractor_normalizes_vocab_derivable_claim_fields(conn):
         ]
     )
 
-    result = extract_claims_from_segment(conn, seg_id, model_version="model-a", client=client)
+    result = extract_claims_from_segment(
+        conn,
+        seg_id,
+        model_version="model-a",
+        client=client,
+        retries=0,
+    )
 
     assert result.status == "extracted"
     assert result.claim_count == 2
@@ -682,7 +691,13 @@ def test_extractor_validation_repair_retry_can_produce_empty_success(conn):
         ]
     )
 
-    result = extract_claims_from_segment(conn, seg_id, model_version="model-a", client=client)
+    result = extract_claims_from_segment(
+        conn,
+        seg_id,
+        model_version="model-a",
+        client=client,
+        retries=0,
+    )
 
     assert result.status == "extracted"
     assert result.claim_count == 0
@@ -708,6 +723,7 @@ def test_extractor_validation_repair_retry_can_produce_empty_success(conn):
     ).fetchone()
     assert row[0] == 0
     assert row[1]["failure_kind"] is None
+    assert row[1]["extraction_result_kind"] == "accounted_zero"
     repair = row[1]["validation_repair"]
     assert row[1]["dropped_claims"] == []
     assert row[1]["parse_metadata"]["validation_repair"] == repair
@@ -778,6 +794,7 @@ def test_extractor_validation_repair_preserves_prior_drops_when_valid_claims_sur
         "SELECT raw_payload FROM claim_extractions WHERE id = %s",
         (result.extraction_id,),
     ).fetchone()[0]
+    assert raw["extraction_result_kind"] == "populated"
     assert raw["dropped_claims"] == []
     assert raw["validation_repair"]["prior_dropped_count"] == 1
     assert raw["validation_repair"]["prior_dropped_claims"][0]["predicate"] == "uses_tool"
@@ -839,7 +856,106 @@ def test_extractor_validation_repair_feedback_includes_mixed_null_object_section
     assert "22222222-2222-2222-2222-222222222222" not in feedback
 
 
-def test_extractor_validation_repair_still_invalid_remains_failed(conn):
+def redacted_still_invalid_repair(
+    *,
+    prior_count: int = 1,
+    final_count: int = 1,
+    prior_error: str = "exactly one of object_text or object_json is required",
+    final_error: str = "exactly one of object_text or object_json is required",
+    reason: str = "trigger_violation",
+) -> dict:
+    prior_drop = {
+        "reason": reason,
+        "index": 0,
+        "error": prior_error,
+        "predicate": "has_name",
+        "stability_class": "identity",
+        "object_text_type": "null",
+        "object_json_type": "null",
+        "evidence_message_count": 1,
+    }
+    final_drop = {
+        "reason": reason,
+        "index": 0,
+        "error": final_error,
+        "predicate": "has_name",
+        "stability_class": "identity",
+        "object_text_type": "null",
+        "object_json_type": "null",
+        "evidence_message_count": 1,
+    }
+    return {
+        "attempted": True,
+        "result": "still_invalid",
+        "prior_dropped_count": prior_count,
+        "prior_error_counts": {prior_error: 1},
+        "prior_dropped_claims": [prior_drop],
+        "final_dropped_count": final_count,
+        "final_error_counts": {final_error: 1},
+        "final_dropped_claims": [final_drop],
+    }
+
+
+def test_accounted_zero_eligibility_rejects_unknown_reason_count_mismatch_and_unredacted():
+    unknown_reason = extractor.accounted_zero_eligibility(
+        redacted_still_invalid_repair(reason="unknown_reason")
+    )
+    assert unknown_reason == extractor.AccountedZeroEligibility(False, "unknown_drop_reason")
+
+    count_mismatch = extractor.accounted_zero_eligibility(
+        redacted_still_invalid_repair(final_count=2)
+    )
+    assert count_mismatch == extractor.AccountedZeroEligibility(False, "count_mismatch")
+
+    unredacted_repair = redacted_still_invalid_repair()
+    unredacted_repair["final_dropped_claims"][0]["claim"] = {"subject_text": "private"}
+    unredacted = extractor.accounted_zero_eligibility(unredacted_repair)
+    assert unredacted == extractor.AccountedZeroEligibility(False, "unredacted_diagnostics")
+
+    missing_counts = redacted_still_invalid_repair()
+    del missing_counts["final_dropped_count"]
+    missing = extractor.accounted_zero_eligibility(missing_counts)
+    assert missing == extractor.AccountedZeroEligibility(False, "missing_diagnostics")
+
+    missing_shape = redacted_still_invalid_repair()
+    del missing_shape["final_dropped_claims"][0]["object_text_type"]
+    missing_shape_result = extractor.accounted_zero_eligibility(missing_shape)
+    assert missing_shape_result == extractor.AccountedZeroEligibility(
+        False,
+        "missing_diagnostics",
+    )
+
+
+def test_dropped_claim_gate_helper_counts_prior_final_and_inserted_without_double_counting():
+    rows = [
+        extractor.extraction_drop_accounting(
+            2,
+            {
+                "dropped_claims": [{"error": "one"}],
+                "validation_repair": {
+                    "prior_dropped_count": 3,
+                    "final_dropped_count": 4,
+                },
+            },
+        ),
+        extractor.extraction_drop_accounting(
+            1,
+            {"dropped_claims": [{"error": "one"}, {"error": "two"}]},
+        ),
+        extractor.extraction_drop_accounting(0, {"dropped_claims": []}),
+    ]
+
+    result = extractor.dropped_claim_gate_result(rows)
+
+    assert result.inserted_claims == 3
+    assert result.prior_drops == 3
+    assert result.final_drops == 6
+    assert result.expanded_drops == 9
+    assert result.denominator == 12
+    assert result.rate == pytest.approx(0.75)
+
+
+def test_extractor_validation_repair_fully_diagnosed_still_invalid_is_accounted_zero(conn):
     conv_id, gen_id, seg_id, msg_ids = active_segment(conn, [("user", "call me by my handle", 1)])
     invalid = [
         ClaimDraft(
@@ -857,17 +973,60 @@ def test_extractor_validation_repair_still_invalid_remains_failed(conn):
 
     result = extract_claims_from_segment(conn, seg_id, model_version="model-a", client=client)
 
-    assert result.status == "failed"
+    assert result.status == "extracted"
+    assert result.claim_count == 0
     assert len(client.calls) == 2
     raw = conn.execute(
         "SELECT raw_payload FROM claim_extractions WHERE id = %s",
         (result.extraction_id,),
     ).fetchone()[0]
-    assert raw["failure_kind"] == "trigger_violation"
+    assert raw["failure_kind"] is None
+    assert raw["extraction_result_kind"] == "accounted_zero"
     assert raw["validation_repair"]["result"] == "still_invalid"
     assert raw["validation_repair"]["prior_dropped_count"] == 1
     assert raw["validation_repair"]["final_dropped_count"] == 1
+    assert len(raw["validation_repair"]["prior_dropped_claims"]) == 1
+    assert len(raw["validation_repair"]["final_dropped_claims"]) == 1
     assert len(raw["dropped_claims"]) == 1
+    assert "claim" not in raw["dropped_claims"][0]
+    assert "claim" not in raw["parse_metadata"]["chunk_dropped_claims"][0]
+    assert "subject_text" not in raw["parse_metadata"]["chunk_dropped_claims"][0]
+    assert conn.execute(
+        """
+        SELECT count(*)
+        FROM consolidation_progress
+        WHERE stage = 'extractor' AND status = 'failed'
+        """
+    ).fetchone()[0] == 0
+
+
+def test_extractor_validation_repair_still_invalid_remains_failed_for_unknown_error(conn):
+    conv_id, gen_id, seg_id, msg_ids = active_segment(conn, [("user", "I use a private tool", 1)])
+    invalid = [
+        ClaimDraft(
+            "user",
+            "private_predicate",
+            "private value",
+            None,
+            "preference",
+            0.8,
+            msg_ids,
+            "private rationale",
+        )
+    ]
+    client = SequenceExtractor([invalid, invalid])
+
+    result = extract_claims_from_segment(conn, seg_id, model_version="model-a", client=client)
+
+    assert result.status == "failed"
+    raw = conn.execute(
+        "SELECT raw_payload FROM claim_extractions WHERE id = %s",
+        (result.extraction_id,),
+    ).fetchone()[0]
+    assert raw["failure_kind"] == "local_validation_failed_post_repair"
+    assert raw["accounting_failure_kind"] == "unknown_error_class"
+    assert raw["validation_repair"]["result"] == "still_invalid"
+    assert "extraction_result_kind" not in raw
 
 
 def test_extractor_validation_repair_uses_one_attempt_even_with_extra_retries(conn):
@@ -912,6 +1071,45 @@ def test_extractor_validation_repair_uses_one_attempt_even_with_extra_retries(co
     assert "subject_text" not in raw["validation_repair"]["prior_dropped_claims"][0]
     assert "object_text" not in raw["validation_repair"]["prior_dropped_claims"][0]
     assert raw["validation_repair"]["last_error"] == "extractor returned invalid JSON"
+    assert raw["failure_kind"] == "parse_error"
+
+
+@pytest.mark.parametrize(
+    ("repair_error", "failure_kind"),
+    [
+        (ExtractorResponseError("claim 0 does not match the schema"), "schema_invalid"),
+        (RuntimeError("local model service unavailable"), "service_unavailable"),
+    ],
+)
+def test_extractor_validation_repair_schema_and_service_failure_remain_failed(
+    conn,
+    repair_error,
+    failure_kind,
+):
+    conv_id, gen_id, seg_id, msg_ids = active_segment(conn, [("user", "call me by my handle", 1)])
+    invalid = [
+        ClaimDraft(
+            "user",
+            "has_name",
+            None,
+            None,
+            "identity",
+            0.8,
+            msg_ids,
+            "missing object value",
+        )
+    ]
+    client = SequenceExtractor([invalid, repair_error])
+
+    result = extract_claims_from_segment(conn, seg_id, model_version="model-a", client=client)
+
+    assert result.status == "failed"
+    raw = conn.execute(
+        "SELECT raw_payload FROM claim_extractions WHERE id = %s",
+        (result.extraction_id,),
+    ).fetchone()[0]
+    assert raw["validation_repair"]["result"] == "failed"
+    assert raw["failure_kind"] == failure_kind
 
 
 def test_extractor_empty_failure_replacement_and_reaping(conn):
@@ -950,6 +1148,11 @@ def test_extractor_empty_failure_replacement_and_reaping(conn):
     )
     assert empty.status == "extracted"
     assert empty.claim_count == 0
+    empty_raw = conn.execute(
+        "SELECT raw_payload FROM claim_extractions WHERE id = %s",
+        (empty.extraction_id,),
+    ).fetchone()[0]
+    assert empty_raw["extraction_result_kind"] == "clean_zero"
     statuses = dict(conn.execute("SELECT extraction_prompt_version, status FROM claim_extractions").fetchall())
     assert statuses["old"] == "superseded"
     assert statuses["newer"] == "extracted"
@@ -1119,6 +1322,27 @@ def test_chunked_extraction_failure_writes_chunk_diagnostics_without_claims(conn
     assert raw["chunk_count"] == 2
 
 
+def test_initial_schema_rejection_remains_failed(conn):
+    conv_id, gen_id, seg_id, msg_ids = active_segment(conn, [("user", "x", 1)])
+    client = SequenceExtractor([ExtractorResponseError("claim 0 does not match the schema")])
+
+    result = extract_claims_from_segment(
+        conn,
+        seg_id,
+        model_version="model-a",
+        client=client,
+        retries=0,
+    )
+
+    assert result.status == "failed"
+    raw = conn.execute(
+        "SELECT raw_payload FROM claim_extractions WHERE id = %s",
+        (result.extraction_id,),
+    ).fetchone()[0]
+    assert raw["failure_kind"] == "schema_invalid"
+    assert "extraction_result_kind" not in raw
+
+
 def test_adaptive_chunk_split_recovers_from_oversized_chunk_parse_error(conn):
     messages = [("user", f"I use local tool {index}", 1) for index in range(13)]
     conv_id, gen_id, seg_id, msg_ids = active_segment(conn, messages)
@@ -1274,6 +1498,40 @@ def test_extract_pending_claims_stops_internal_batch_after_failure(monkeypatch):
     assert calls == ["seg-a"]
 
 
+def test_extract_pending_claims_does_not_count_accounted_zero_as_failed(conn):
+    conv_id, gen_id, seg_id, msg_ids = active_segment(conn, [("user", "call me by my handle", 1)])
+    invalid = [
+        ClaimDraft(
+            "user",
+            "has_name",
+            None,
+            None,
+            "identity",
+            0.8,
+            msg_ids,
+            "missing object value",
+        )
+    ]
+    client = SequenceExtractor([invalid, invalid])
+
+    result = extractor.extract_pending_claims(
+        conn,
+        batch_size=1,
+        model_version="model-a",
+        client=client,
+    )
+
+    assert result.processed == 1
+    assert result.created == 0
+    assert result.failed == 0
+    assert result.skipped == 0
+    raw = conn.execute(
+        "SELECT raw_payload FROM claim_extractions WHERE segment_id = %s",
+        (seg_id,),
+    ).fetchone()[0]
+    assert raw["extraction_result_kind"] == "accounted_zero"
+
+
 def test_extractor_health_smoke_uses_empty_claim_schema():
     client = StaticExtractor([])
 
@@ -1288,6 +1546,95 @@ def test_extractor_health_smoke_uses_empty_claim_schema():
             "relaxed_schema": False,
         }
     ]
+
+
+def test_targeted_consolidation_over_accounted_zero_rows_completes_with_zero_contribution(conn):
+    conv_id, gen_id, seg_id, msg_ids = active_segment(conn, [("user", "call me by my handle", 1)])
+    conn.execute(
+        """
+        INSERT INTO claim_extractions (
+            segment_id,
+            generation_id,
+            extraction_prompt_version,
+            extraction_model_version,
+            request_profile_version,
+            status,
+            claim_count,
+            completed_at,
+            raw_payload
+        )
+        VALUES (%s, %s, %s, 'model-a', %s, 'extracted', 0, now(), %s)
+        """,
+        (
+            seg_id,
+            gen_id,
+            EXTRACTION_PROMPT_VERSION,
+            EXTRACTION_REQUEST_PROFILE_VERSION,
+            Jsonb(
+                {
+                    "model_response": '{"claims":[]}',
+                    "dropped_claims": [
+                        {
+                            "reason": "trigger_violation",
+                            "index": 0,
+                            "error": "predicate requires non-empty object_text",
+                            "predicate": "uses_tool",
+                            "stability_class": "preference",
+                            "object_text_type": "null",
+                            "object_json_type": "null",
+                            "evidence_message_count": 1,
+                        }
+                    ],
+                    "failure_kind": None,
+                    "extraction_result_kind": "accounted_zero",
+                    "validation_repair": {
+                        "attempted": True,
+                        "result": "still_invalid",
+                        "prior_dropped_count": 1,
+                        "prior_error_counts": {
+                            "predicate requires non-empty object_text": 1,
+                        },
+                        "prior_dropped_claims": [
+                            {
+                                "reason": "trigger_violation",
+                                "index": 0,
+                                "error": "predicate requires non-empty object_text",
+                                "predicate": "uses_tool",
+                                "stability_class": "preference",
+                                "object_text_type": "null",
+                                "object_json_type": "null",
+                                "evidence_message_count": 1,
+                            }
+                        ],
+                        "final_dropped_count": 1,
+                        "final_error_counts": {
+                            "predicate requires non-empty object_text": 1,
+                        },
+                        "final_dropped_claims": [
+                            {
+                                "reason": "trigger_violation",
+                                "index": 0,
+                                "error": "predicate requires non-empty object_text",
+                                "predicate": "uses_tool",
+                                "stability_class": "preference",
+                                "object_text_type": "null",
+                                "object_json_type": "null",
+                                "evidence_message_count": 1,
+                            }
+                        ],
+                    },
+                }
+            ),
+        ),
+    )
+
+    result = consolidate_beliefs(conn, batch_size=10, conversation_id=conv_id)
+
+    assert result.processed == 1
+    assert result.created == 0
+    assert result.superseded == 0
+    assert result.contradictions == 0
+    assert conn.execute("SELECT count(*) FROM beliefs").fetchone()[0] == 0
 
 
 def test_consolidator_insert_same_value_and_contradiction(conn):
@@ -1835,6 +2182,44 @@ def test_pipeline3_skips_consolidation_after_extraction_failure(monkeypatch, cap
     assert progress_calls[0][1]["status"] == "failed"
     assert progress_calls[0][1]["scope"] == "conversation:conv-failed"
     assert "consolidate skipped conversation=conv-failed" in capsys.readouterr().err
+
+
+def test_pipeline3_does_not_skip_consolidation_for_accounted_zero_extract_result(monkeypatch):
+    calls = []
+
+    class DummyConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def commit(self):
+            calls.append(("commit",))
+
+    monkeypatch.setattr(cli, "connect", lambda: DummyConn())
+    monkeypatch.setattr(cli, "phase3_schema_preflight", lambda conn: None)
+    monkeypatch.setattr(cli, "apply_phase3_reclassification_invalidations", lambda conn: 0)
+    monkeypatch.setattr(cli, "active_beliefs_with_other_consolidator_version", lambda conn: 0)
+    monkeypatch.setattr(cli, "fetch_phase3_conversation_batch", lambda conn, limit: ["conv-zero"])
+    monkeypatch.setattr(cli, "default_extractor_model_id", lambda: "model-a")
+    monkeypatch.setattr(cli, "IkLlamaExtractorClient", lambda: object())
+    monkeypatch.setattr(cli, "run_extractor_health_smoke", lambda client, *, model_id: None)
+
+    def fake_extract(conn, *, conversation_id, **kwargs):
+        calls.append(("extract", conversation_id))
+        return SimpleNamespace(processed=1, created=0, skipped=0, failed=0)
+
+    def fake_consolidate(conn, *, conversation_id, **kwargs):
+        calls.append(("consolidate", conversation_id))
+        return SimpleNamespace(processed=1, created=0, superseded=0, contradictions=0)
+
+    monkeypatch.setattr(cli, "run_extract_batches", fake_extract)
+    monkeypatch.setattr(cli, "run_consolidate_batches", fake_consolidate)
+
+    assert cli.main(["pipeline-3", "--limit", "1"]) == 0
+    assert ("extract", "conv-zero") in calls
+    assert ("consolidate", "conv-zero") in calls
 
 
 def test_run_extract_batches_wraps_batch_in_health_smoke(monkeypatch):
