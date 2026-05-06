@@ -3,6 +3,8 @@
 Status: proposal
 Date: 2026-05-05
 Spec handoff: `docs/process/operational-artifact-home-spec.md` on 2026-05-06
+Spec revision: flat legacy markers, marker privacy, human-checkpoint
+resolution, and malformed marker handling tightened on 2026-05-06
 Context: D060, D062, D063, RFC 0013,
 `docs/process/multi-agent-review-loop.md`,
 `docs/process/phase-3-agent-runbook.md`
@@ -17,6 +19,10 @@ final human disposition. The review-derived spec handoff is
 `docs/process/operational-artifact-home-spec.md`. That spec resolves the open
 layout questions for review and implementation planning, but it does not by
 itself accept this RFC or move any files.
+
+The spec handoff owns implementation-level details for flat legacy marker
+gates, marker private-content rejection, human-checkpoint resolution,
+`created_at` parsing, and malformed front-matter handling.
 
 ## Problem
 
@@ -106,18 +112,10 @@ compatibility semantics, and `agent_runner` boundary.
 
 ## Artifact Rules
 
-Committed operational artifacts under `docs/operations/` follow the same
-redaction rules as RFC 0013:
-
-- allowed: command names, bounded arguments, row counts, IDs, timestamps, status
-  values, error classes, table/column/function names, and repository-relative
-  paths;
-- forbidden without explicit owner approval: raw message text, segment text,
-  prompt payloads, model completion payloads, extracted claim/belief values,
-  private names, exact conversation titles, corpus-derived prose summaries,
-  machine-specific absolute paths, and home-directory names.
-
-Markers should never contain private corpus content.
+Committed operational artifacts under `docs/operations/` follow RFC 0013
+Section 3 redaction rules unchanged. The spec handoff records the package-level
+tightening that marker files must never contain private corpus content, even
+when owner approval allows private detail in a tracked prose artifact.
 
 ## Migration Plan If Accepted
 
@@ -129,8 +127,8 @@ Markers should never contain private corpus content.
    add a deprecation cross-reference.
 3. Update `docs/process/phase-3-agent-runbook.md`.
 4. Update `scripts/phase3_tmux_agents.sh` to read blocked/ready markers from
-   the new operations root and legacy RFC 0013 marker roots as one logical
-   marker set.
+   the new operations root, legacy RFC 0013 per-loop marker roots, and flat
+   legacy marker files as one logical marker set.
 5. Preserve marker front matter and cross-root `supersedes` semantics from
    RFC 0013.
 6. Optionally add a historical index entry in `docs/operations/README.md`
@@ -162,5 +160,11 @@ This RFC is accepted only after review confirms:
 - old markers remain as audit provenance;
 - scripts can read both the new operations path and legacy RFC 0013 markers
   during transition;
+- flat legacy blocked and human-checkpoint markers remain gate-active until
+  explicitly superseded by exact path;
+- marker files never contain private corpus content;
+- human-checkpoint resolution requires exact-path supersession and linked
+  owner-decision evidence;
+- malformed or invalid marker front matter fails closed;
 - D060 path hygiene remains enforced;
 - the spec handoff has resolved open layout choices explicitly.

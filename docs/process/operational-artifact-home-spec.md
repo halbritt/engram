@@ -2,6 +2,7 @@
 
 Status: draft implementation spec
 Date: 2026-05-06
+Revised: 2026-05-06 after P004 package checkpoint
 author: coordinator-codex-gpt-5.5-001
 Source RFC: `docs/rfcs/0014-operational-artifact-home.md`
 Source reviews: `docs/reviews/rfc-0014-operational-artifact-home/`
@@ -65,6 +66,17 @@ are durable artifacts only.
 Rationale: RFC 0014 is useful as a validation fixture, but it must not teach
 the generic runner that marker files are queue truth.
 
+S010: Keep legacy flat blocked and human-checkpoint markers gate-active during
+the migration.
+Rationale: Existing flat files under `docs/reviews/phase3/postbuild/markers/`
+are imperfect historical artifacts, but treating them as audit-only would
+silently clear old blockers.
+
+S011: Markers are stricter than prose reports for private content.
+Rationale: Markers are small machine-readable gate records and should never
+carry private corpus content, even with owner approval. Private repair evidence
+belongs in ignored diagnostics, with only redacted summaries in tracked docs.
+
 ## Canonical Layout
 
 New committed operational loops use this shape:
@@ -110,31 +122,25 @@ logs/operational/<YYYYMMDD>_<run_slug>/
 
 ## Artifact Rules
 
-Committed operational artifacts under `docs/operations/` inherit RFC 0013's
-privacy and redaction rules.
+Committed operational artifacts under `docs/operations/` follow RFC 0013
+Section 3 privacy and redaction rules unchanged. That section is authoritative
+for the allow list, forbid list, ignored-diagnostics routing, and tracked
+artifact owner-approval exception.
 
-Allowed content includes command names, bounded arguments, row counts, IDs,
-timestamps, status values, error classes, table/column/function names, and
-repository-relative paths.
+Markers are stricter than prose reports. A marker must never contain private
+corpus content, even when the owner has approved private detail for a repair.
+If private content is needed, it goes in ignored local diagnostics such as
+`logs/operational/`; the tracked report may link only to a redacted summary.
 
-Forbidden content without explicit owner approval includes raw message text,
-segment text, prompt payloads, model completion payloads, extracted
-claim/belief values, private names, exact conversation titles, corpus-derived
-prose summaries, machine-specific absolute paths, and home-directory names.
-
-Markers should never contain private corpus content unless the owner explicitly
-approves a tracked-artifact exception. In that exceptional case, front matter
-must set:
-
-```yaml
-corpus_content_included: owner_approved
-```
-
-The normal value is:
+For markers, the required value is always:
 
 ```yaml
 corpus_content_included: none
 ```
+
+The `owner_approved` exception from RFC 0013 remains available only for
+tracked prose artifacts that explicitly need it and record the owner approval
+as RFC 0013 requires. It is not valid for marker files.
 
 D060 path hygiene applies. Tracked documentation and artifacts should use
 repository-relative paths, environment variables, or generalized `~/` paths
@@ -168,42 +174,74 @@ During transition, `linked_report` and `supersedes` may point to either new
 `docs/operations/...` paths or legacy RFC 0013 `docs/reviews/...` paths. All
 paths in marker front matter must be repository-relative POSIX-style paths.
 
+New and per-loop migrated markers must have parseable front matter with all
+fields shown above. Missing or invalid front matter in those markers is a
+schema failure and blocks as a human checkpoint until corrected or explicitly
+superseded. Front-matterless flat legacy markers are handled by the special
+legacy rules below; they are not a template for new markers.
+
 ## Compatibility Semantics
 
 During migration, scripts must treat new and legacy marker roots as one logical
 marker set for a given operational loop.
 
-For Phase 3 post-build migration, tooling scans both:
+For Phase 3 post-build migration, tooling scans all of:
 
 ```text
 docs/operations/phase3-postbuild/<loop_id>/markers/
 docs/reviews/phase3/postbuild/markers/<loop_id>/
+docs/reviews/phase3/postbuild/markers/*.md
 ```
 
 Existing flat legacy post-build markers under
-`docs/reviews/phase3/postbuild/markers/` remain historical provenance. Tooling
-may index them for audit, but new expansion gates should be represented by the
-per-loop legacy or operations-root marker directories above.
+`docs/reviews/phase3/postbuild/markers/*.md` remain historical provenance and
+gate inputs. New expansion gates should be represented by the per-loop legacy
+or operations-root marker directories above, but tooling must not ignore a flat
+legacy `.blocked.md` or `.human_checkpoint.md` file merely because it predates
+the RFC 0013 front-matter schema.
+
+Flat legacy marker rules:
+
+1. A flat legacy marker with parseable front matter participates in the normal
+   `(issue_id, family)` precedence rules.
+2. A flat legacy `.blocked.md` or `.human_checkpoint.md` marker without
+   parseable front matter is a root-scoped Phase 3 post-build blocker.
+3. Tooling must not infer `(issue_id, family)` from a front-matterless flat
+   filename. It may show a best-effort display label from the filename, but the
+   marker's normalized repository path is its only stable identity.
+4. A front-matterless flat blocker is resolved only by a later `ready` marker
+   whose `supersedes` field names the exact flat marker path and whose linked
+   redacted report explains why that historical blocker is obsolete.
+5. A front-matterless flat ready marker is audit provenance only. It does not
+   resolve a blocked or human-checkpoint marker unless it has parseable front
+   matter and satisfies the normal supersession rules.
 
 Precedence rules:
 
 1. Normalize every marker path as a repository-relative POSIX string.
-2. Group markers by `(issue_id, family)` across both roots.
-3. For each group, order markers by valid `created_at`, then by repository
-   path. A marker missing `created_at` sorts before a marker with a valid
-   timestamp.
-4. A `ready` marker resolves an older `blocked` marker only when it shares the
+2. Group schema-bearing markers by `(issue_id, family)` across all scanned
+   roots.
+3. For schema-bearing markers, `created_at` is required and must be a valid
+   ISO-8601 timestamp. Missing or invalid `created_at` is not an ordering hint;
+   it is a malformed marker and blocks as a human checkpoint.
+4. For each valid group, order markers by `created_at`, then by repository path.
+   File modification time may be used only for display ordering of
+   front-matterless flat legacy markers, not for resolving schema-bearing
+   precedence.
+5. A `ready` marker resolves an older `blocked` marker only when it shares the
    same `(issue_id, family)` and names the exact older repository-relative
    marker path in `supersedes`, even when the two markers live in different
    roots.
-5. A `human_checkpoint` marker remains blocking until a later marker explicitly
-   supersedes it and the linked report records the owner decision that resolved
-   the checkpoint.
-6. A newer unsuperseded `blocked` or `human_checkpoint` marker blocks
+6. A `human_checkpoint` marker remains blocking until a later `ready` marker
+   explicitly supersedes it by exact repository-relative path and the linked
+   redacted report records the owner decision that resolved the checkpoint.
+   Timestamp order, matching filenames, or a generic ready marker are not
+   enough to clear a human checkpoint.
+7. A newer unsuperseded `blocked` or `human_checkpoint` marker blocks
    expansion even if older ready markers exist.
-7. If marker front matter is malformed, ambiguous, or contradictory, tooling
-   must fail closed and surface a human checkpoint rather than assuming the loop
-   is ready.
+8. If schema-bearing marker front matter is malformed, missing required fields,
+   ambiguous, contradictory, or privately contaminated, tooling must fail
+   closed and surface a human checkpoint rather than assuming the loop is ready.
 
 Precedence is computed within a loop id. A ready marker in one
 `<area>/<loop_id>` must not resolve a blocked marker from another loop.
@@ -234,8 +272,8 @@ If this spec is accepted for implementation:
 3. Update `docs/process/phase-3-agent-runbook.md` so future committed
    operational reports and markers use `docs/operations/phase3-postbuild/`.
 4. Update `scripts/phase3_tmux_agents.sh` so status and gate commands scan the
-   new operations marker root and legacy RFC 0013 marker root as one logical
-   marker set.
+   new operations marker root, legacy RFC 0013 per-loop marker root, and flat
+   legacy marker files as one logical marker set.
 5. Preserve marker front matter unchanged. `linked_report` and `supersedes`
    may point to either new operations paths or legacy review-root paths during
    transition.
@@ -244,8 +282,8 @@ If this spec is accepted for implementation:
 7. Optionally add `docs/operations/README.md` as a redacted index of active and
    historical operational loops. Scripts must not depend on this index.
 8. Retire legacy-root scanning only after the owner confirms that no unresolved
-   `blocked` or `human_checkpoint` marker remains in the legacy path and no
-   active run depends on legacy marker provenance.
+   `blocked` or `human_checkpoint` marker remains in the per-loop or flat
+   legacy paths and no active run depends on legacy marker provenance.
 
 ## Implementation Fixtures
 
@@ -253,11 +291,16 @@ An implementation prompt should include deterministic fixtures for:
 
 - a legacy `blocked` marker plus new operations-root `ready` marker that
   supersedes it;
+- a front-matterless flat legacy `.blocked.md` marker that remains gate-active
+  until a later ready marker supersedes its exact path;
 - a new operations-root `ready` marker plus newer legacy `blocked` marker that
   remains blocking;
-- malformed or ambiguous marker front matter that fails closed;
-- a marker with forbidden private-content fields or hardcoded home-directory
-  path rejected by validation;
+- malformed, ambiguous, missing, or invalid `created_at` front matter that
+  fails closed;
+- a marker with forbidden private-content fields, `corpus_content_included:
+  owner_approved`, or hardcoded home-directory path rejected by validation;
+- a `human_checkpoint` marker that remains blocking until exact-path
+  supersession plus linked owner-decision report;
 - `linked_report` pointing to a legacy report path and to a new operations-root
   report path;
 - status output surfacing the newest blocking marker before older ready
@@ -271,9 +314,16 @@ The spec is implementation-ready when review confirms:
   private diagnostics;
 - reports and markers are separate artifact families with separate consumers;
 - RFC 0013 marker precedence works across the new operations root and legacy
-  review-root marker path;
+  per-loop and flat review-root marker paths;
 - old markers remain as audit provenance;
-- scripts can read both new and legacy marker paths during transition;
+- scripts can read operations-root, per-loop legacy, and flat legacy marker
+  paths during transition;
 - RFC 0013 marker front matter remains compatible;
+- flat legacy blocked and human-checkpoint markers remain gate-active until
+  explicitly superseded by exact path;
+- marker files reject private corpus content absolutely;
+- human-checkpoint markers require exact-path supersession and linked
+  owner-decision evidence;
+- malformed or invalid `created_at` front matter fails closed;
 - D060 path hygiene remains enforced;
 - the `agent_runner` live-state boundary remains explicit.
