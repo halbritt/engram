@@ -46,6 +46,7 @@ This directory contains the LLM prompts and operational handoffs used to build a
 | **P038** | [Re-review Phase 3 Limit-50 Validation Repair](P038_rereview_phase_3_limit50_validation_repair_codex.md) | pending | `pending` |
 | **P039** | [Run Phase 3 Limit-500 Gate](P039_run_phase_3_limit500_gate.md) | pending | `pending` |
 | **P040** | [Run Phase 3 Full-Corpus Gate](P040_run_phase_3_full_corpus_gate.md) | pending | `pending` |
+| **P041** | [Review Phase 3 Limit-500 Null-Object Repair Spec](P041_review_phase_3_limit500_null_object_repair_spec.md) | pending | `pending` |
 
 ## Ordinal Derivation
 
