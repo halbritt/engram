@@ -50,6 +50,7 @@ This directory contains the LLM prompts and operational handoffs used to build a
 | **P042** | [Review Phase 3 Limit-500 Null-Object Repair Implementation](P042_review_phase_3_limit500_null_object_repair.md) | pending | `pending` |
 | **P043** | [Fix Phase 3 Limit-500 Schema Rejection](P043_fix_phase_3_limit500_schema_rejection.md) | pending | `pending` |
 | **P044** | [Review Phase 3 Limit-500 Schema Rejection Repair](P044_review_phase_3_limit500_schema_rejection_repair.md) | pending | `pending` |
+| **P045** | [Review Phase 3 Limit-500 Still-Invalid Problem](P045_review_phase_3_limit500_still_invalid_problem.md) | pending | `pending` |
 
 ## Ordinal Derivation
 
