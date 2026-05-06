@@ -2,7 +2,12 @@
 
 RFCs are proposal documents for ideas that may become accepted decisions later.
 They are not binding until promoted into `DECISION_LOG.md`, `BUILD_PHASES.md`,
-or a phase prompt.
+a phase prompt, or an accepted spec named by a recorded project decision.
+
+When an RFC produces an accepted spec handoff, mark the RFC `promoted` or
+`superseded`, link to the accepted spec, and target future implementation work
+at the spec. The RFC remains provenance; it should not keep being reviewed as
+the implementation contract.
 
 | RFC | Status | Topic |
 |-----|--------|-------|
