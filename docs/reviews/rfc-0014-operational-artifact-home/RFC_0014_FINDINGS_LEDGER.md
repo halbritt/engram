@@ -1,6 +1,6 @@
 # RFC 0014 Findings Ledger
 
-Status: recorded
+Status: recorded; spec handoff created
 Date: 2026-05-06
 Target: `docs/rfcs/0014-operational-artifact-home.md`
 Run ID: `run_2970e12484aa4320a85084cb45e6e880`
@@ -35,6 +35,13 @@ disposition.
 - Claude: `accept_with_findings`
 - Codex: `needs_revision`
 - Gemini: `accept_with_findings`
+
+## Spec Handoff
+
+Coordinator follow-up on 2026-05-06 converted the unresolved RFC 0014 proposal
+choices into `docs/process/operational-artifact-home-spec.md`. The ledger still
+does not decide final disposition. The spec handoff gives RFC0014-F001 through
+RFC0014-F010 an explicit implementation target for review and owner decision.
 
 ## Notes
 

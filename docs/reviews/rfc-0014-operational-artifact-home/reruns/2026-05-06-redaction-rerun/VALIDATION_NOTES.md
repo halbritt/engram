@@ -92,6 +92,11 @@ enforced because transcripts are not published.
 
 ## RFC 0014 State
 
-RFC 0014 remains a proposal and needs revision before human disposition.
-Gemini identified blocking RFC-level issues around unresolved path layout
-choices and report/marker separation ambiguity.
+RFC 0014 remains a proposal until human disposition. Coordinator follow-up
+created `docs/process/operational-artifact-home-spec.md` to make the missing
+choices explicit in a spec handoff rather than silently treating the RFC as an
+implementation contract.
+
+The spec records explicit resolutions for Gemini's blocking RFC-level issues
+around path layout, report/marker separation, RFC 0013 supersession, legacy
+marker compatibility, and the `agent_runner` live-state boundary.
