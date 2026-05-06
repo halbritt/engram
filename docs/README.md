@@ -27,6 +27,8 @@ Start with the root canonical docs when orienting on the current system:
   guidance for scope control, model use, and attention management.
 - [process/phase-3-agent-runbook.md](process/phase-3-agent-runbook.md) —
   tmux / marker-file coordination for the Phase 3 spec-to-pipeline chain.
+- [../agent-runner/README.md](../agent-runner/README.md) — incubating
+  `agent_runner` project, split out after its MVP is designed and built.
 
 ## Proposals
 
