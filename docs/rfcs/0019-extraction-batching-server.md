@@ -6,7 +6,7 @@
 | RFC | 0019 |
 | Title | Continuous-Batching Inference Server for Phase 3 Claim Extraction |
 | Status | proposal |
-| Implementation | none |
+| Implementation | partial |
 | Date | 2026-05-07 |
 | Context | Phase 3 claim extraction; RFC 0010; RFC 0011 § Stage A; RFC 0017; D020 (local-only inference); D034 (JSON-schema response format); `src/engram/extractor.py:33` (`EXTRACTION_PROMPT_VERSION`); `src/engram/segmenter.py:23` (`IK_LLAMA_BASE_URL`); `src/engram/segmenter.py:1918` (`ensure_local_base_url`) |
 

@@ -37,7 +37,7 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0016](0016-context-lane-reranker-slot.md) | proposal | none | Context lane reranker slot |
 | [0017](0017-extraction-prompt-versioning.md) | proposal | partial | Extraction prompt versioning and cross-corpus dry-run |
 | [0018](0018-evidence-to-claim-audit-cascade.md) | proposal | none | Evidence-to-claim audit cascade |
-| [0019](0019-extraction-batching-server.md) | proposal | none | Continuous-batching inference server for Phase 3 claim extraction |
+| [0019](0019-extraction-batching-server.md) | proposal | partial | Continuous-batching inference server for Phase 3 claim extraction |
 | [0020](0020-segmentation-batching-server.md) | proposal | none | Continuous-batching inference server for Phase 2 segmentation |
 
 ## Implementation notes (2026-05-07 sweep)
@@ -95,3 +95,9 @@ prescriptive — a `none` here is not a TODO unless promoted via
   (`EXTRACTION_PROMPT_VERSION = "extractor.v8.d064.accounted-zero"` in
   `src/engram/extractor.py`); Part 2 (`engram re-extract` CLI) and Part 3
   (cross-corpus dry-run gate) are unbuilt.
+- **0019** — benchmark-only extraction backend harness lives in
+  `benchmarks/extraction/`. It can create fixed active-segment slices, smoke a
+  loopback OpenAI-compatible endpoint, run concurrent scratch-only extraction
+  requests, and compare control/candidate artifacts. Production extraction
+  remains on the current request profile until benchmark evidence is promoted
+  through `DECISION_LOG.md` and RFC 0017 re-extraction handling.
