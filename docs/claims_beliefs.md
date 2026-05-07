@@ -15,7 +15,8 @@ Canonical references:
 - [RFC 0011](rfcs/0011-phase-3-claims-beliefs.md)
 - [DECISION_LOG.md](../DECISION_LOG.md) — D002, D003, D004, D008, D010, D019,
   D020, D021, D028, D032, D034, D035, D040, D043, D044, D045, D046, D047,
-  D048, D049, D050, D051, D052, D053, D054, D055, D056, D057, D058, D064
+  D048, D049, D050, D051, D052, D053, D054, D055, D056, D057, D058, D064,
+  D075
 - [BUILD_PHASES.md](../BUILD_PHASES.md) Phase 3 row
 - [docs/segmentation.md](segmentation.md) — Phase 2 contract Phase 3 inherits
 - [docs/reviews/v1/PHASE_2_SPAN_EXPANSION_AUDIT_2026_05_04.md](reviews/v1/PHASE_2_SPAN_EXPANSION_AUDIT_2026_05_04.md)
@@ -105,11 +106,14 @@ input. Phase 3 evaluation will quantify any cost.
 7. On any failure (HTTP, parse, schema, validation, context guard, retry
    budget exhausted) where **zero** claims survived salvage, set
    `claim_extractions.status='failed'` and persist D035 diagnostics in
-   `raw_payload`, except for D064's accounted-zero terminal state: fully
-   parsed, schema-valid outputs that remain all-invalid after validation
+   `raw_payload`, except for the D064/D075 accounted-zero terminal states:
+   fully parsed, schema-valid outputs that remain all-invalid after validation
    repair are `status='extracted'`, `claim_count=0`, and
    `raw_payload.extraction_result_kind='accounted_zero'` only when every prior
-   and final drop is locally diagnosed, redacted, and counted. If at least one
+   and final drop is locally diagnosed, redacted, and counted. A repair parse
+   failure can also become accounted-zero only when the original all-invalid
+   drop set is fully redacted, counted, and eligible under D064; final repair
+   drops must be empty because no repaired claim set parsed. If at least one
    claim survived, the extraction is `status='extracted'` even when one or
    more claims were dropped; the diagnostics for the dropped claims live
    alongside the success record in `raw_payload.dropped_claims`.
@@ -797,22 +801,26 @@ extractor version) are explicitly allowed by the mutation guard.
 - `populated` when `claim_count > 0`, including mixed valid+invalid
   extractions;
 - `clean_zero` when `claim_count = 0` and no prior/final drops are counted;
-- `accounted_zero` when `claim_count = 0` and validation-repair prior or final
-  drops were diagnosed, redacted, and counted.
+- `accounted_zero` when `claim_count = 0` and validation-repair prior/final
+  drops were diagnosed, redacted, and counted, or when D075 allows a
+  repair-parse failure to rely on a fully diagnosed eligible prior drop set.
 
 For failed extractions, `failure_kind` and the D035 attempt diagnostics
 are populated; `dropped_claims` may also be populated when partial
 salvage was attempted.
 
-D064 accounted-zero eligibility is intentionally narrow. Parse errors, schema
-rejections, repair parse/schema/service failures, missing drop arrays/counts,
-count mismatches, unknown drop reasons, unknown or unbounded local validation
-error classes, and unredacted diagnostics remain failed. The post-repair
+D064/D075 accounted-zero eligibility is intentionally narrow. Initial parse
+errors, schema rejections, repair schema/service failures, missing drop
+arrays/counts, count mismatches, unknown drop reasons, unknown or unbounded
+local validation error classes, and unredacted diagnostics remain failed.
+Repair parse failures are eligible only under D075 when the prior all-invalid
+drop set is fully redacted, counted, and locally eligible. The post-repair
 all-invalid hard-failure kind is `local_validation_failed_post_repair`, with a
 closed `accounting_failure_kind` such as `missing_diagnostics`,
-`count_mismatch`, `unknown_drop_reason`, `unknown_error_class`, or
-`unredacted_diagnostics`. `trigger_violation` remains the per-drop reason and
-database-backstop failure kind, not the post-repair all-invalid failure kind.
+`count_mismatch`, `repair_failed`, `unknown_drop_reason`,
+`unknown_error_class`, or `unredacted_diagnostics`. `trigger_violation` remains
+the per-drop reason and database-backstop failure kind, not the post-repair
+all-invalid failure kind.
 
 Dropped-claim gate accounting uses the current-version latest extraction row
 per selected active segment:
@@ -1132,14 +1140,17 @@ Extractor-level:
     rows produce `status='extracted'`, `claim_count=0`,
     `failure_kind=null`, and
     `raw_payload.extraction_result_kind='accounted_zero'`.
-20. Ineligible all-invalid validation-repair rows remain failed with
+20. Fully diagnosed, redacted all-invalid prior drops followed by a validation
+    repair parse failure can produce the same accounted-zero terminal state
+    under D075.
+21. Ineligible all-invalid validation-repair rows remain failed with
     `failure_kind='local_validation_failed_post_repair'` and a closed
     `accounting_failure_kind`; unknown reasons, unknown/unbounded error
     classes, count mismatches, missing diagnostics, and unredacted diagnostics
     are ineligible.
-21. Mixed valid+invalid extractions with inserted claims are
+22. Mixed valid+invalid extractions with inserted claims are
     `extraction_result_kind='populated'`.
-22. Expanded dropped-claim gate accounting includes validation-repair prior
+23. Expanded dropped-claim gate accounting includes validation-repair prior
     drops and final drops exactly once per model attempt phase.
 
 Consolidator-level:

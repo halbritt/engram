@@ -584,7 +584,8 @@ def extract_claims_from_segment(
         }
         copy_validation_repair_payload(payload, output)
         repair = validation_repair_payload(payload)
-        if repair and repair.get("result") == "still_invalid":
+        repair_result = repair.get("result") if repair else None
+        if repair and repair_result in {"still_invalid", "failed"}:
             eligibility = accounted_zero_eligibility(repair)
             if eligibility.eligible:
                 payload["failure_kind"] = None
@@ -637,10 +638,12 @@ def extract_claims_from_segment(
                     "extracted",
                     dropped_count=extraction_drop_accounting(0, payload).expanded_drops,
                 )
-            payload["failure_kind"] = "local_validation_failed_post_repair"
-            payload["accounting_failure_kind"] = eligibility.failure_kind
-        elif repair and repair.get("result") == "failed":
-            payload["failure_kind"] = validation_repair_failure_kind(repair)
+            if repair_result == "still_invalid":
+                payload["failure_kind"] = "local_validation_failed_post_repair"
+                payload["accounting_failure_kind"] = eligibility.failure_kind
+            else:
+                payload["failure_kind"] = validation_repair_failure_kind(repair)
+                payload["accounting_failure_kind"] = eligibility.failure_kind
         apply_failure_result_kind(payload)
         conn.execute(
             """
@@ -1233,7 +1236,10 @@ def apply_failure_result_kind(raw_payload: dict[str, Any]) -> None:
 
 
 def accounted_zero_eligibility(repair: dict[str, Any]) -> AccountedZeroEligibility:
-    if repair.get("attempted") is not True or repair.get("result") != "still_invalid":
+    if repair.get("attempted") is not True:
+        return AccountedZeroEligibility(False, "missing_diagnostics")
+    result = repair.get("result")
+    if result not in {"still_invalid", "failed"}:
         return AccountedZeroEligibility(False, "missing_diagnostics")
     for key in (
         "prior_dropped_count",
@@ -1256,14 +1262,25 @@ def accounted_zero_eligibility(repair: dict[str, Any]) -> AccountedZeroEligibili
         return AccountedZeroEligibility(False, "missing_diagnostics")
     if prior_count != len(prior_drops) or final_count != len(final_drops):
         return AccountedZeroEligibility(False, "count_mismatch")
-    if prior_count == 0 or final_count == 0:
-        return AccountedZeroEligibility(False, "missing_diagnostics")
     if repair["prior_error_counts"] != dropped_error_counts(prior_drops):
         return AccountedZeroEligibility(False, "count_mismatch")
     if repair["final_error_counts"] != dropped_error_counts(final_drops):
         return AccountedZeroEligibility(False, "count_mismatch")
 
-    for drop in [*prior_drops, *final_drops]:
+    if result == "still_invalid":
+        if prior_count == 0 or final_count == 0:
+            return AccountedZeroEligibility(False, "missing_diagnostics")
+        drops_to_validate = [*prior_drops, *final_drops]
+    else:
+        if validation_repair_failure_kind(repair) != "parse_error":
+            return AccountedZeroEligibility(False, "repair_failed")
+        if prior_count == 0:
+            return AccountedZeroEligibility(False, "missing_diagnostics")
+        if final_count != 0 or final_drops or repair["final_error_counts"]:
+            return AccountedZeroEligibility(False, "count_mismatch")
+        drops_to_validate = prior_drops
+
+    for drop in drops_to_validate:
         failure_kind = redacted_drop_accounting_failure_kind(drop)
         if failure_kind is not None:
             return AccountedZeroEligibility(False, failure_kind)

@@ -7,7 +7,7 @@ Date: 2026-05-06
 RFC refs:
   - RFC-0013
 Decision refs:
-  - none
+  - D075
 Phase refs:
   - PHASE-0003
 
@@ -324,3 +324,49 @@ Final progress state after targeted reruns:
 
 Next repair should focus on the repeated validation-repair failure shape rather
 than further split-depth tuning.
+
+## Validation-Repair Disposition Outcome
+
+Update: `2026-05-07`.
+
+D075 was accepted to cover the remaining repeated validation-repair parse
+failure shape. Under D075, a repair parse failure can be accounted as a
+zero-claim extraction only when the original all-invalid dropped set is fully
+redacted, counted, and locally eligible under D064. Non-parse repair failures,
+missing diagnostics, count mismatches, unknown local error classes, and
+unredacted diagnostics remain failed.
+
+Targeted reruns were then run for the two remaining validation-repair-shaped
+conversations:
+
+```bash
+.venv/bin/python -m engram.cli extract --conversation-id <conversation_id> --batch-size 5
+.venv/bin/python -m engram.cli consolidate --conversation-id <conversation_id> --batch-size 5 --limit 1
+```
+
+Outcome:
+
+- `conversation:82dbc95d-76a4-4972-82d9-47477fa066b0` completed as
+  `extracted`, `claim_count=0`, `extraction_result_kind=accounted_zero`;
+  `validation_repair.result=failed`, prior dropped count `48`, final dropped
+  count `0`. Consolidation completed with `0` beliefs created.
+- `conversation:ba53064d-53f3-44a7-8998-e38eead0b260` completed as
+  `extracted`, `claim_count=0`, `extraction_result_kind=accounted_zero`;
+  `validation_repair.result=failed`, prior dropped count `54`, final dropped
+  count `0`. Consolidation completed with `0` beliefs created.
+
+Final acceptance checks after the targeted reruns:
+
+- Completed extractor conversation scopes: `7777`
+- Completed consolidator conversation scopes: `7777`
+- Failed extractor/consolidator progress rows: `0`
+- In-flight extraction rows: `0`
+- Extracted row claim-count mismatches: `0`
+- Active beliefs with empty evidence or claim arrays: `0`
+- Claim object-channel XOR violations: `0`
+- Belief object-channel XOR violations: `0`
+- Active AI conversations missing completed extractor or consolidator progress:
+  `0`
+
+Phase 3 extraction and consolidation are now closed for the full active
+AI-conversation corpus under D075.

@@ -1029,7 +1029,9 @@ def test_extractor_validation_repair_still_invalid_remains_failed_for_unknown_er
     assert "extraction_result_kind" not in raw
 
 
-def test_extractor_validation_repair_uses_one_attempt_even_with_extra_retries(conn):
+def test_extractor_validation_repair_parse_failure_with_diagnosed_prior_drops_is_accounted_zero(
+    conn,
+):
     conv_id, gen_id, seg_id, msg_ids = active_segment(conn, [("user", "call me by my handle", 1)])
     client = SequenceExtractor(
         [
@@ -1057,21 +1059,34 @@ def test_extractor_validation_repair_uses_one_attempt_even_with_extra_retries(co
         retries=3,
     )
 
-    assert result.status == "failed"
+    assert result.status == "extracted"
+    assert result.claim_count == 0
     assert len(client.calls) == 2
     raw = conn.execute(
         "SELECT raw_payload FROM claim_extractions WHERE id = %s",
         (result.extraction_id,),
     ).fetchone()[0]
+    assert raw["failure_kind"] is None
+    assert raw["extraction_result_kind"] == "accounted_zero"
     assert raw["validation_repair"]["result"] == "failed"
     assert raw["validation_repair"]["prior_dropped_count"] == 1
+    assert raw["validation_repair"]["final_dropped_count"] == 0
     assert raw["validation_repair"]["prior_dropped_claims"][0]["predicate"] == "has_name"
     assert raw["validation_repair"]["prior_dropped_claims"][0]["object_text_type"] == "null"
     assert raw["validation_repair"]["prior_dropped_claims"][0]["object_json_type"] == "null"
     assert "subject_text" not in raw["validation_repair"]["prior_dropped_claims"][0]
     assert "object_text" not in raw["validation_repair"]["prior_dropped_claims"][0]
     assert raw["validation_repair"]["last_error"] == "extractor returned invalid JSON"
-    assert raw["failure_kind"] == "parse_error"
+    assert raw["dropped_claims"][0]["error"] == (
+        "exactly one of object_text or object_json is required"
+    )
+    assert conn.execute(
+        """
+        SELECT count(*)
+        FROM consolidation_progress
+        WHERE stage = 'extractor' AND status = 'failed'
+        """
+    ).fetchone()[0] == 0
 
 
 @pytest.mark.parametrize(
