@@ -1307,3 +1307,24 @@ unresolved P024 questions.
   `captures` (for reclassification) or `consolidation_progress` (for
   re-extraction supervisor events) rather than an inline column on
   `claim_extractions` (S-F016 option a).
+
+## Audit cascade (RFC 0018, advisory)
+
+The schema substrate for the evidence-to-claim audit cascade lives in
+[`migrations/007_claim_audits.sql`](../migrations/007_claim_audits.sql)
+and adds three append-only tables: `audit_reason_vocabulary`,
+`claim_audits`, and `projection_audits`. The cascade is advisory in V1
+per [D069](../DECISION_LOG.md#d069): no row in either audit table
+blocks extraction, consolidation, or `current_beliefs` exposure.
+`claims`, `beliefs`, `belief_audit`, and `claim_extractions` are
+unchanged; verdicts surface to downstream consumers via joins on
+`claim_id` and `projection_ref`, never as column updates on existing
+rows. RFC 0018's full proposal, including the failure-mode taxonomy
+behind the seeded vocabulary, is the canonical reference.
+
+The reviewer/LLM-calling code is out of scope for this migration. The
+build prompt is scheduled after Step 5 (gold-set authoring) per
+RFC 0018 §Promotion Path so the gold set can sanity-check Stage 2
+verdicts. Until then, the schema simply gives the cascade a place to
+write data; no extractor or consolidator behavior changes as a result
+of landing migration 007.

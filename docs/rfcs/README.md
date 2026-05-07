@@ -32,11 +32,11 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0011](0011-phase-3-claims-beliefs.md) | proposal | implemented | Phase 3 claims and bitemporal beliefs |
 | [0012](0012-python-agentic-coding-standard.md) | proposal | partial | Python agentic coding standard |
 | [0013](0013-development-operational-issue-loop.md) | accepted | partial | Development operational issue loop |
-| [0014](0014-operational-artifact-home.md) | proposal | partial | Operational artifact home (spec handoff) |
+| [0014](0014-operational-artifact-home.md) | accepted | implemented | Operational artifact home (spec handoff) |
 | [0015](0015-test-coverage-improvements.md) | proposal | partial | Test coverage improvements |
 | [0016](0016-context-lane-reranker-slot.md) | proposal | none | Context lane reranker slot |
-| [0017](0017-extraction-prompt-versioning.md) | proposal | partial | Extraction prompt versioning and cross-corpus dry-run |
-| [0018](0018-evidence-to-claim-audit-cascade.md) | proposal | none | Evidence-to-claim audit cascade |
+| [0017](0017-extraction-prompt-versioning.md) | proposal | implemented | Extraction prompt versioning and cross-corpus dry-run |
+| [0018](0018-evidence-to-claim-audit-cascade.md) | accepted | partial | Evidence-to-claim audit cascade |
 | [0019](0019-extraction-batching-server.md) | proposal | partial | Continuous-batching inference server for Phase 3 claim extraction |
 | [0020](0020-segmentation-batching-server.md) | proposal | none | Continuous-batching inference server for Phase 2 segmentation |
 
@@ -76,9 +76,12 @@ prescriptive — a `none` here is not a TODO unless promoted via
 - **0013** — marker gates are scripted in `scripts/phase3_tmux_agents.sh`;
   redacted-report authoring and repair-plan synthesis remain coordinator-
   driven rather than fully automated.
-- **0014** — spec accepted (D066) and `phase3_tmux_agents.sh` already scans
-  `docs/operations/phase3-postbuild/`, but the directory is not yet populated;
-  legacy RFC 0013 per-loop paths still hold live markers.
+- **0014** — populated 2026-05-07: `docs/operations/` and
+  `docs/operations/phase3-postbuild/` exist with a README documenting layout,
+  privacy rules, and migration semantics; the marker scanner already reads
+  the new root. Per RFC §Migration Plan, legacy RFC 0013 markers are
+  preserved as audit provenance and not moved unless the owner requests
+  history cleanup.
 - **0015** — top-priority gaps and most secondary gaps landed 2026-05-07:
   `tests/test_cli.py` (16 tests, all CLI subcommands except `pipeline-3`),
   `tests/test_canonicalize_and_sanitize.py` (44 tests locking
@@ -91,10 +94,25 @@ prescriptive — a `none` here is not a TODO unless promoted via
   test). Total +126 tests; full suite 283 passed in 72s. Gaps 6 (loader
   helpers, three loaders) and 7 (migration safety, touches conftest)
   deferred as follow-ups.
-- **0017** — Part 1 versioning contract is live
-  (`EXTRACTION_PROMPT_VERSION = "extractor.v8.d064.accounted-zero"` in
-  `src/engram/extractor.py`); Part 2 (`engram re-extract` CLI) and Part 3
-  (cross-corpus dry-run gate) are unbuilt.
+- **0017** — fully implemented 2026-05-07. Part 1 versioning contract was
+  already live (`EXTRACTION_PROMPT_VERSION` in `src/engram/extractor.py`).
+  Part 2: `engram re-extract --version <new>` CLI subcommand with
+  `--dry-run`, `--limit`, `--source-id`, `--batch-size`, `--diff-sample`;
+  reuses the existing per-segment extraction path, preserves prior claim
+  rows, reports row counts / coverage gaps / sample diffs; consolidation is
+  intentionally NOT auto-triggered. Part 3: `scripts/cross_corpus_dryrun.py`
+  harness with `--self-test` mode, plus the findings template at
+  `docs/reviews/phase3/PHASE_3_CROSS_CORPUS_DRYRUN_TEMPLATE.md`. Privacy
+  contract enforced via tests — no raw corpus content reaches committed
+  findings docs.
+- **0018** — schema-level adoption landed 2026-05-07:
+  `migrations/007_claim_audits.sql` creates `audit_reason_vocabulary` (13
+  reasons seeded; `trace_broken` / `evidence_synthesized` /
+  `predicate_misrouted` flagged `precludes_supported`), `claim_audits`, and
+  `projection_audits`, all append-only with stage/verdict and per-row
+  reason validation triggers. D069–D073 record the five proposed decisions.
+  Reviewer LLM-calling code is **not** built — per RFC §Promotion Path,
+  the cascade build prompt is scheduled post-Step-5 (gold-set authoring).
 - **0019** — benchmark-only extraction backend harness lives in
   `benchmarks/extraction/`. It can create fixed active-segment slices, smoke a
   loopback OpenAI-compatible endpoint, run concurrent scratch-only extraction

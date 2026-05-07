@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import random
+import re
 import signal
 import time
 from collections import Counter
@@ -29,6 +31,9 @@ from engram.segmenter import (
 
 
 EXTRACTION_PROMPT_VERSION = "extractor.v8.d064.accounted-zero"
+EXTRACTION_PROMPT_VERSION_REGEX = re.compile(
+    r"^extractor\.v\d+\.[a-z0-9_-]+\.[a-z0-9_-]+$"
+)
 EXTRACTION_REQUEST_PROFILE_VERSION = (
     "ik-llama-json-schema.d034.v10.extractor-8192-accounted-zero"
 )
@@ -2084,3 +2089,399 @@ def extractor_request_deadline(seconds: int):
         signal.signal(signal.SIGALRM, old_handler)
         if old_timer[0] > 0:
             signal.setitimer(signal.ITIMER_REAL, old_timer[0], old_timer[1])
+
+
+# ---------------------------------------------------------------------------
+# RFC 0017 Part 2: re-extraction orchestration
+# ---------------------------------------------------------------------------
+
+
+class ReExtractError(ExtractionError):
+    """Raised when re-extraction inputs are invalid."""
+
+
+@dataclass(frozen=True)
+class ReExtractPlanRow:
+    segment_id: str
+    conversation_id: str | None
+    source_id: str | None
+    source_kind: str
+    prior_prompt_versions: list[str]
+    prior_claim_count: int
+
+
+@dataclass(frozen=True)
+class ReExtractPlan:
+    target_version: str
+    current_version: str
+    segments: list[ReExtractPlanRow]
+    prior_version_counts: dict[str, int]
+    source_kind_counts: dict[str, int]
+
+    @property
+    def segment_count(self) -> int:
+        return len(self.segments)
+
+
+@dataclass(frozen=True)
+class ReExtractResult:
+    target_version: str
+    plan: ReExtractPlan
+    processed: int
+    created: int
+    skipped: int
+    failed: int
+    coverage_gaps: list[dict[str, Any]]
+    diff_samples: list[dict[str, Any]]
+    dry_run: bool
+
+
+def fetch_re_extract_plan(
+    conn: psycopg.Connection,
+    *,
+    target_version: str,
+    current_version: str,
+    limit: int | None = None,
+    source_id: str | None = None,
+) -> ReExtractPlan:
+    """Compute the segment universe for re-extraction.
+
+    Returns the active segments whose latest ``claim_extractions`` row is *not*
+    under ``target_version``. Segments whose latest extraction is already at
+    ``target_version`` are excluded — re-extracting them is a noop. Segments
+    with no prior extraction are also included so coverage starts from a clean
+    slate.
+    """
+
+    rows = conn.execute(
+        """
+        WITH latest AS (
+            SELECT DISTINCT ON (segment_id)
+                segment_id,
+                extraction_prompt_version,
+                claim_count
+            FROM claim_extractions
+            WHERE status IN ('extracted', 'extracting')
+            ORDER BY segment_id, created_at DESC
+        ),
+        all_versions AS (
+            SELECT segment_id, array_agg(DISTINCT extraction_prompt_version) AS versions
+            FROM claim_extractions
+            WHERE status = 'extracted'
+            GROUP BY segment_id
+        )
+        SELECT
+            s.id::text,
+            s.conversation_id::text,
+            s.source_id::text,
+            s.source_kind::text,
+            COALESCE(av.versions, ARRAY[]::text[]) AS versions,
+            COALESCE(latest.claim_count, 0) AS prior_claim_count,
+            latest.extraction_prompt_version AS latest_version
+        FROM segments s
+        JOIN segment_generations sg ON sg.id = s.generation_id
+        LEFT JOIN latest ON latest.segment_id = s.id
+        LEFT JOIN all_versions av ON av.segment_id = s.id
+        WHERE s.is_active = true
+          AND sg.status = 'active'
+          AND s.source_kind IN ('chatgpt', 'claude', 'gemini')
+          AND s.conversation_id IS NOT NULL
+          AND (latest.extraction_prompt_version IS NULL
+               OR latest.extraction_prompt_version <> %s)
+          AND (%s::uuid IS NULL OR s.source_id = %s::uuid)
+        ORDER BY s.conversation_id, s.sequence_index, s.id
+        """,
+        (target_version, source_id, source_id),
+    ).fetchall()
+
+    segments: list[ReExtractPlanRow] = []
+    prior_version_counts: Counter[str] = Counter()
+    source_kind_counts: Counter[str] = Counter()
+    for row in rows:
+        segment_id, conv_id, src_id, source_kind, versions, prior_claims, _latest = row
+        prior_versions = list(versions) if versions else []
+        segments.append(
+            ReExtractPlanRow(
+                segment_id=segment_id,
+                conversation_id=conv_id,
+                source_id=src_id,
+                source_kind=source_kind,
+                prior_prompt_versions=prior_versions,
+                prior_claim_count=int(prior_claims),
+            )
+        )
+        source_kind_counts[source_kind] += 1
+        if prior_versions:
+            for v in prior_versions:
+                prior_version_counts[v] += 1
+        else:
+            prior_version_counts["<none>"] += 1
+
+    if limit is not None and limit >= 0:
+        segments = segments[:limit]
+
+    return ReExtractPlan(
+        target_version=target_version,
+        current_version=current_version,
+        segments=segments,
+        prior_version_counts=dict(prior_version_counts),
+        source_kind_counts=dict(source_kind_counts),
+    )
+
+
+def _claim_count_for_segment_version(
+    conn: psycopg.Connection,
+    *,
+    segment_id: str,
+    prompt_version: str,
+) -> int:
+    row = conn.execute(
+        """
+        SELECT COUNT(*) FROM claims
+        WHERE segment_id = %s AND extraction_prompt_version = %s
+        """,
+        (segment_id, prompt_version),
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def _predicate_distribution_for_segment_version(
+    conn: psycopg.Connection,
+    *,
+    segment_id: str,
+    prompt_version: str,
+) -> dict[str, int]:
+    rows = conn.execute(
+        """
+        SELECT predicate, COUNT(*)
+        FROM claims
+        WHERE segment_id = %s AND extraction_prompt_version = %s
+        GROUP BY predicate
+        ORDER BY predicate
+        """,
+        (segment_id, prompt_version),
+    ).fetchall()
+    return {row[0]: int(row[1]) for row in rows}
+
+
+def re_extract(
+    conn: psycopg.Connection,
+    target_version: str,
+    *,
+    batch_size: int = 50,
+    limit: int | None = None,
+    source_id: str | None = None,
+    diff_sample: int = 5,
+    dry_run: bool = False,
+    model_version: str | None = None,
+    client: ExtractorClient | None = None,
+    progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
+    rng: random.Random | None = None,
+) -> ReExtractResult:
+    """RFC 0017 Part 2 re-extraction orchestration.
+
+    The protocol:
+
+    1. Raw evidence is unchanged (existing immutability triggers enforce this).
+    2. New ``claim_extractions`` and ``claims`` rows are inserted under
+       ``target_version``. Old rows are *not* deleted.
+    3. Bitemporal beliefs are reconsolidated separately by the operator running
+       ``engram consolidate`` after this command. This function deliberately
+       does not auto-trigger consolidation.
+    """
+
+    if not target_version:
+        raise ReExtractError("target_version is required")
+    if not EXTRACTION_PROMPT_VERSION_REGEX.match(target_version):
+        raise ReExtractError(
+            f"target_version {target_version!r} does not match expected format "
+            "extractor.v{N}.{date_or_decision}.{descriptor}"
+        )
+    if target_version == EXTRACTION_PROMPT_VERSION:
+        raise ReExtractError(
+            f"target_version {target_version!r} equals the live "
+            "EXTRACTION_PROMPT_VERSION; re-extracting under the same version "
+            "is wasteful and is rejected"
+        )
+
+    plan = fetch_re_extract_plan(
+        conn,
+        target_version=target_version,
+        current_version=EXTRACTION_PROMPT_VERSION,
+        limit=limit,
+        source_id=source_id,
+    )
+
+    if dry_run:
+        return ReExtractResult(
+            target_version=target_version,
+            plan=plan,
+            processed=0,
+            created=0,
+            skipped=0,
+            failed=0,
+            coverage_gaps=[],
+            diff_samples=[],
+            dry_run=True,
+        )
+
+    if not plan.segments:
+        return ReExtractResult(
+            target_version=target_version,
+            plan=plan,
+            processed=0,
+            created=0,
+            skipped=0,
+            failed=0,
+            coverage_gaps=[],
+            diff_samples=[],
+            dry_run=False,
+        )
+
+    model_id = model_version or default_extractor_model_id()
+    extractor_client = client
+    processed = 0
+    created = 0
+    skipped = 0
+    failed = 0
+    coverage_gaps: list[dict[str, Any]] = []
+
+    # Process in chunks of batch_size, but call extract_claims_from_segment
+    # directly so the new prompt_version is stamped row-by-row. This mirrors
+    # how extract_pending_claims drives single-segment extraction.
+    for chunk_start in range(0, len(plan.segments), batch_size):
+        chunk = plan.segments[chunk_start : chunk_start + batch_size]
+        for index, segment_row in enumerate(chunk, start=chunk_start + 1):
+            started_at = time.monotonic()
+            if progress_callback:
+                progress_callback(
+                    "re_extract_start",
+                    {"index": index, "segment_id": segment_row.segment_id},
+                )
+            result = extract_claims_from_segment(
+                conn,
+                segment_row.segment_id,
+                model_version=model_id,
+                prompt_version=target_version,
+                client=extractor_client,
+            )
+            processed += 1
+            if result.noop:
+                skipped += 1
+            elif result.status == "failed":
+                failed += 1
+            else:
+                created += result.claim_count
+
+            # Coverage gap: prior version produced >= 1 claim, new version 0.
+            if (
+                result.status != "failed"
+                and result.claim_count == 0
+                and segment_row.prior_claim_count >= 1
+            ):
+                coverage_gaps.append(
+                    {
+                        "segment_id": segment_row.segment_id,
+                        "conversation_id": segment_row.conversation_id,
+                        "source_kind": segment_row.source_kind,
+                        "prior_claim_count": segment_row.prior_claim_count,
+                        "prior_versions": segment_row.prior_prompt_versions,
+                    }
+                )
+
+            if progress_callback:
+                progress_callback(
+                    "re_extract_done"
+                    if result.status != "failed"
+                    else "re_extract_failed",
+                    {
+                        "index": index,
+                        "segment_id": segment_row.segment_id,
+                        "claim_count": result.claim_count,
+                        "status": result.status,
+                        "elapsed": time.monotonic() - started_at,
+                    },
+                )
+
+            if result.status == "failed":
+                # Mirror extract_pending_claims: stop after a failure to avoid
+                # stamping a long run of failures from the same backend issue.
+                break
+        else:
+            continue
+        break
+
+    diff_samples = _build_diff_samples(
+        conn,
+        plan=plan,
+        target_version=target_version,
+        diff_sample=diff_sample,
+        rng=rng or random.Random(0),
+    )
+
+    return ReExtractResult(
+        target_version=target_version,
+        plan=plan,
+        processed=processed,
+        created=created,
+        skipped=skipped,
+        failed=failed,
+        coverage_gaps=coverage_gaps,
+        diff_samples=diff_samples,
+        dry_run=False,
+    )
+
+
+def _build_diff_samples(
+    conn: psycopg.Connection,
+    *,
+    plan: ReExtractPlan,
+    target_version: str,
+    diff_sample: int,
+    rng: random.Random,
+) -> list[dict[str, Any]]:
+    """Build a side-by-side claim count comparison for ``diff_sample`` segments
+    that have claims under both the prior versions and ``target_version``."""
+
+    if diff_sample <= 0 or not plan.segments:
+        return []
+
+    eligible = [s for s in plan.segments if s.prior_claim_count >= 1]
+    if not eligible:
+        return []
+
+    sample_size = min(diff_sample, len(eligible))
+    chosen = rng.sample(eligible, sample_size)
+    samples: list[dict[str, Any]] = []
+    for segment_row in chosen:
+        new_count = _claim_count_for_segment_version(
+            conn,
+            segment_id=segment_row.segment_id,
+            prompt_version=target_version,
+        )
+        new_predicates = _predicate_distribution_for_segment_version(
+            conn,
+            segment_id=segment_row.segment_id,
+            prompt_version=target_version,
+        )
+        prior_predicates: dict[str, int] = {}
+        for prior_v in segment_row.prior_prompt_versions:
+            for predicate, count in _predicate_distribution_for_segment_version(
+                conn,
+                segment_id=segment_row.segment_id,
+                prompt_version=prior_v,
+            ).items():
+                prior_predicates[predicate] = prior_predicates.get(predicate, 0) + count
+        samples.append(
+            {
+                "segment_id": segment_row.segment_id,
+                "conversation_id": segment_row.conversation_id,
+                "source_kind": segment_row.source_kind,
+                "prior_claim_count": segment_row.prior_claim_count,
+                "new_claim_count": new_count,
+                "prior_predicates": prior_predicates,
+                "new_predicates": new_predicates,
+                "prior_versions": segment_row.prior_prompt_versions,
+            }
+        )
+    return samples

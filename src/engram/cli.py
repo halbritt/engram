@@ -22,9 +22,12 @@ from engram.extractor import (
     EXTRACTION_PROMPT_VERSION,
     IkLlamaExtractorClient,
     PREDICATE_VOCABULARY,
+    ReExtractError,
+    ReExtractResult,
     default_extractor_model_id,
     extract_claims_from_segment,
     extract_pending_claims,
+    re_extract,
     requeue_extraction_conversation,
     run_extractor_health_smoke,
 )
@@ -91,6 +94,27 @@ def main(argv: list[str] | None = None) -> int:
     extract_parser.add_argument("--conversation-id")
     extract_parser.add_argument("--requeue", action="store_true")
     extract_parser.add_argument("--prompt-version", default=EXTRACTION_PROMPT_VERSION)
+
+    re_extract_parser = subparsers.add_parser(
+        "re-extract",
+        help=(
+            "Re-extract claims under a new prompt version (RFC 0017 Part 2). "
+            "Old rows are preserved for audit; consolidation is not auto-triggered."
+        ),
+    )
+    re_extract_parser.add_argument(
+        "--version",
+        required=True,
+        help=(
+            "Target prompt version, e.g. extractor.v9.d065.descriptor. "
+            "Must differ from the live EXTRACTION_PROMPT_VERSION."
+        ),
+    )
+    re_extract_parser.add_argument("--batch-size", type=int, default=50)
+    re_extract_parser.add_argument("--limit", type=int)
+    re_extract_parser.add_argument("--source-id")
+    re_extract_parser.add_argument("--diff-sample", type=int, default=5)
+    re_extract_parser.add_argument("--dry-run", action="store_true")
 
     consolidate_parser = subparsers.add_parser(
         "consolidate",
@@ -234,6 +258,25 @@ def main(argv: list[str] | None = None) -> int:
                 f"{result.created} claims created / {result.processed} segments processed "
                 f"({result.skipped} skipped, {result.failed} failed)"
             )
+            return 0 if result.failed == 0 else 1
+
+        if args.command == "re-extract":
+            try:
+                with connect() as conn:
+                    apply_phase3_reclassification_invalidations(conn)
+                    result = run_re_extract(
+                        conn,
+                        target_version=args.version,
+                        batch_size=args.batch_size,
+                        limit=args.limit,
+                        source_id=args.source_id,
+                        diff_sample=args.diff_sample,
+                        dry_run=args.dry_run,
+                    )
+            except ReExtractError as exc:
+                print(f"re-extract: {exc}", file=sys.stderr)
+                return 1
+            print_re_extract_result(result)
             return 0 if result.failed == 0 else 1
 
         if args.command == "consolidate":
@@ -961,6 +1004,140 @@ def print_consolidate_progress(event: str, payload: dict[str, Any]) -> None:
         print(
             f"consolidate failed: {payload['error']}",
             flush=True,
+        )
+
+
+def run_re_extract(
+    conn,
+    *,
+    target_version: str,
+    batch_size: int,
+    limit: int | None,
+    source_id: str | None,
+    diff_sample: int,
+    dry_run: bool,
+) -> ReExtractResult:
+    """Drive the RFC 0017 Part 2 re-extraction orchestrator.
+
+    Health-smokes the extractor backend before and after the run when not in
+    dry-run mode, mirroring the ``extract`` subcommand's safety check.
+    """
+
+    model_id: str | None = None
+    extractor_client = None
+    if not dry_run:
+        model_id = default_extractor_model_id()
+        extractor_client = IkLlamaExtractorClient()
+        run_extractor_health_smoke(extractor_client, model_id=model_id)
+    result = re_extract(
+        conn,
+        target_version,
+        batch_size=batch_size,
+        limit=limit,
+        source_id=source_id,
+        diff_sample=diff_sample,
+        dry_run=dry_run,
+        model_version=model_id,
+        client=extractor_client,
+        progress_callback=print_re_extract_progress,
+    )
+    if not dry_run and result.processed and extractor_client is not None:
+        run_extractor_health_smoke(extractor_client, model_id=model_id)
+    conn.commit()
+    return result
+
+
+def print_re_extract_progress(event: str, payload: dict[str, Any]) -> None:
+    if event == "re_extract_start":
+        print(
+            f"re-extract segment={payload['segment_id']}",
+            flush=True,
+        )
+        return
+    if event == "re_extract_done":
+        print(
+            f"re-extract segment={payload['segment_id']} done "
+            f"claims={payload['claim_count']} "
+            f"elapsed={payload['elapsed']:.1f}s",
+            flush=True,
+        )
+        return
+    if event == "re_extract_failed":
+        print(
+            f"re-extract segment={payload['segment_id']} failed "
+            f"elapsed={payload['elapsed']:.1f}s",
+            flush=True,
+        )
+
+
+def print_re_extract_result(result: ReExtractResult) -> None:
+    plan = result.plan
+    if result.dry_run:
+        print(
+            "re-extract DRY-RUN target="
+            f"{result.target_version} "
+            f"current={plan.current_version} "
+            f"segments={plan.segment_count}"
+        )
+    else:
+        print(
+            "re-extract target="
+            f"{result.target_version} "
+            f"current={plan.current_version} "
+            f"segments={plan.segment_count} "
+            f"processed={result.processed} "
+            f"created={result.created} "
+            f"skipped={result.skipped} "
+            f"failed={result.failed}"
+        )
+    if plan.source_kind_counts:
+        breakdown = ", ".join(
+            f"{kind}={count}"
+            for kind, count in sorted(plan.source_kind_counts.items())
+        )
+        print(f"  source_kind: {breakdown}")
+    if plan.prior_version_counts:
+        prior = ", ".join(
+            f"{version}={count}"
+            for version, count in sorted(plan.prior_version_counts.items())
+        )
+        print(f"  prior_versions: {prior}")
+    if not result.dry_run:
+        if result.coverage_gaps:
+            print(f"coverage gaps ({len(result.coverage_gaps)}):")
+            print("  segment_id                            prior_claims  prior_versions")
+            for gap in result.coverage_gaps:
+                versions = ",".join(gap["prior_versions"]) or "-"
+                print(
+                    "  "
+                    f"{gap['segment_id']:<38} "
+                    f"{gap['prior_claim_count']:<13} "
+                    f"{versions}"
+                )
+        else:
+            print("coverage gaps: none")
+        if result.diff_samples:
+            print(f"diff sample ({len(result.diff_samples)}):")
+            for sample in result.diff_samples:
+                prior_predicates = ",".join(
+                    f"{p}={c}" for p, c in sorted(sample["prior_predicates"].items())
+                ) or "-"
+                new_predicates = ",".join(
+                    f"{p}={c}" for p, c in sorted(sample["new_predicates"].items())
+                ) or "-"
+                print(
+                    "  segment="
+                    f"{sample['segment_id']} "
+                    f"prior_count={sample['prior_claim_count']} "
+                    f"new_count={sample['new_claim_count']}"
+                )
+                print(f"    prior_predicates: {prior_predicates}")
+                print(f"    new_predicates:   {new_predicates}")
+        else:
+            print("diff sample: no segments with claims under both versions")
+        print(
+            "hint: run `engram consolidate --rebuild` to reconsolidate beliefs "
+            "from the new claim version (RFC 0017 Part 2 step 3)."
         )
 
 

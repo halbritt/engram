@@ -20,6 +20,9 @@ def conn():
             """
             DROP TABLE IF EXISTS
                 schema_migrations,
+                projection_audits,
+                claim_audits,
+                audit_reason_vocabulary,
                 contradictions,
                 belief_audit,
                 beliefs,
@@ -54,6 +57,10 @@ def conn():
         admin.execute("DROP FUNCTION IF EXISTS fn_beliefs_prepare_validate() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS fn_belief_audit_append_only() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS fn_contradictions_mutation_guard() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_claim_audits_validate_reasons() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_claim_audits_append_only() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_projection_audits_validate_reasons() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_projection_audits_append_only() CASCADE")
         admin.execute("DROP TYPE IF EXISTS source_kind CASCADE")
         admin.execute("DROP TYPE IF EXISTS capture_type CASCADE")
         admin.execute("DROP TYPE IF EXISTS consolidation_status CASCADE")

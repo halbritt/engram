@@ -1,8 +1,9 @@
 <a id="rfc-0018"></a>
 # RFC 0018: Evidence-to-Claim Audit Cascade
 
-Status: proposal
+Status: accepted
 Date: 2026-05-06
+Promoted: D069–D073 on 2026-05-07; reviewer build prompt scheduled post-Step-5 per RFC §Promotion Path step 4
 Context: ROADMAP Step 6 (post-Phase-3 adversarial round) and Step 9 (gold
 set against consolidated corpus); RFC 0011 §§ Stage A / Stage B;
 DECISION_LOG D002, D003, D008, D010, D019, D043, D049, D050, D052, D056,

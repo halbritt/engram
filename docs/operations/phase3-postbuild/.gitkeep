@@ -1,0 +1,4 @@
+# This file keeps `docs/operations/phase3-postbuild/` tracked while the
+# directory has no live loops. New post-build runs land here under
+# `<YYYYMMDD>_<run_slug>/` per RFC 0014 / D066. Once any live loop directory
+# exists, this `.gitkeep` may be removed.
