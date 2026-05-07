@@ -1,8 +1,13 @@
 # Operational Artifact Home Spec
 
-Status: accepted implementation spec
+Status: accepted implementation spec, amended by D074 (markers retired)
 Date: 2026-05-06
 Revised: 2026-05-06 after P004 package checkpoint
+Amended: 2026-05-07 by D074 — Striatum SQLite is the authoritative gate state
+for new operational loops; the marker schema (S006, S007, S010, S011 below)
+is retired for new artifacts and applies only to legacy Phase 3 markers
+during their preservation period. The directory home (S001–S005, S008, S009)
+and the privacy / redaction rules carry forward unchanged.
 Accepted: 2026-05-06 by owner for Phase 3 implementation
 author: coordinator-codex-gpt-5.5-001
 Source RFC: `docs/rfcs/0014-operational-artifact-home.md`
@@ -12,6 +17,49 @@ This spec turns RFC 0014 review findings into explicit implementation choices.
 Owner acceptance on 2026-05-06 promotes these choices into the Phase 3 runbook
 and script implementation scope. Binding project history is recorded in
 `DECISION_LOG.md`; this spec remains the detailed handoff contract.
+
+## Amendment notice (D074, 2026-05-07)
+
+D074 retires the marker mechanism in favor of Striatum's SQLite store
+(`.striatum/state.sqlite3`) as the authoritative gate state. The practical
+deltas to the choices below:
+
+- **S001–S005, S008, S009 stand unchanged.** The `docs/operations/` root,
+  the phase-scoped area names (`phase3-postbuild`, `phase4-build`, etc.),
+  the report/marker separation principle (now degenerate — only reports
+  remain), the deprecation cross-reference for RFC 0013, and the
+  Striatum vs. repository-artifact boundary all carry forward.
+- **S006, S007, S010, S011 are legacy-only.** Marker front matter
+  (`loop`/`issue_id`/`family`/`gate`/`state`/`linked_report`/`supersedes`/
+  `corpus_content_included`), cross-root logical-set semantics, flat
+  legacy gate-active rules, and the marker-stricter-than-reports rule
+  apply ONLY to existing Phase 3 markers under
+  `docs/reviews/phase3/postbuild/markers/` and any in-flight Phase 3
+  loop directories. New loops do not write markers.
+- **Canonical layout for new loops** drops the `markers/` subtree:
+  ```text
+  docs/operations/<area>/<loop_id>/
+    reports/
+      01_RUN_REPORT.md
+      02_REPAIR_PLAN.md
+      05_REPAIR_VERIFIED.md
+  ```
+- **Live gate state** lives in Striatum. Reading "is this loop blocked?"
+  goes through `striatum list jobs --run-id <id> --state blocked` or
+  `striatum status`, not through file scanning.
+- **`scripts/phase3_tmux_agents.sh` is retired support.** It continues to
+  scan the legacy markers it already knows about so no in-flight Phase 3
+  gate is broken; new phase scanners should not be patterned after it.
+  Replace with a thin Striatum-list wrapper if a generalized scanner is
+  needed.
+- **Privacy contracts in `## Artifact Rules` apply to reports as written.**
+  The `corpus_content_included: none` constraint that S011 made marker-
+  exclusive collapses into the existing report rules: tracked reports
+  follow RFC 0013 §3 redaction; private repair evidence still goes to
+  ignored `logs/operational/`.
+
+The original choices below are preserved unaltered for historical reference
+and for Phase 3 marker compatibility while legacy markers remain in place.
 
 ## Purpose
 

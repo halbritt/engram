@@ -31,8 +31,8 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0010](0010-segmenter-server-throughput-profile.md) | proposal | partial | Segmenter server throughput profile |
 | [0011](0011-phase-3-claims-beliefs.md) | proposal | implemented | Phase 3 claims and bitemporal beliefs |
 | [0012](0012-python-agentic-coding-standard.md) | proposal | partial | Python agentic coding standard |
-| [0013](0013-development-operational-issue-loop.md) | accepted | partial | Development operational issue loop |
-| [0014](0014-operational-artifact-home.md) | accepted | implemented | Operational artifact home (spec handoff) |
+| [0013](0013-development-operational-issue-loop.md) | superseded | n/a | Development operational issue loop |
+| [0014](0014-operational-artifact-home.md) | accepted | implemented | Operational artifact home (markers retired by D074) |
 | [0015](0015-test-coverage-improvements.md) | proposal | partial | Test coverage improvements |
 | [0016](0016-context-lane-reranker-slot.md) | proposal | none | Context lane reranker slot |
 | [0017](0017-extraction-prompt-versioning.md) | proposal | implemented | Extraction prompt versioning and cross-corpus dry-run |
@@ -73,15 +73,20 @@ prescriptive — a `none` here is not a TODO unless promoted via
   51 pyright errors at `typeCheckingMode = "basic"`. Phase 1 (green-on-touch),
   Phase 2 (bounded sweeps), and Phase 3 (gate) follow incrementally per the
   RFC's adoption plan.
-- **0013** — marker gates are scripted in `scripts/phase3_tmux_agents.sh`;
-  redacted-report authoring and repair-plan synthesis remain coordinator-
-  driven rather than fully automated.
-- **0014** — populated 2026-05-07: `docs/operations/` and
-  `docs/operations/phase3-postbuild/` exist with a README documenting layout,
-  privacy rules, and migration semantics; the marker scanner already reads
-  the new root. Per RFC §Migration Plan, legacy RFC 0013 markers are
-  preserved as audit provenance and not moved unless the owner requests
-  history cleanup.
+- **0013** — superseded by D074 (2026-05-07): the marker mechanism is
+  retired in favor of Striatum SQLite as the authoritative gate state.
+  The redaction and report-layout guidance carries forward via
+  `docs/process/operational-artifact-home-spec.md`. Legacy Phase 3 markers
+  under `docs/reviews/phase3/postbuild/markers/` are preserved as audit
+  provenance; `scripts/phase3_tmux_agents.sh` continues to scan them so
+  in-flight Phase 3 gates remain operational.
+- **0014** — directory home populated 2026-05-07; amended same day by
+  D074: `docs/operations/<area>/<loop>/reports/` stays as the canonical
+  destination for redacted operational reports, but the `markers/` subtree
+  is retired. Striatum SQLite (`.striatum/state.sqlite3`) is now the
+  authoritative gate state. The privacy carry, the directory layout
+  (S001–S005, S008, S009 of the spec), and the legacy-marker preservation
+  rule all stand unchanged.
 - **0015** — top-priority gaps and most secondary gaps landed 2026-05-07:
   `tests/test_cli.py` (16 tests, all CLI subcommands except `pipeline-3`),
   `tests/test_canonicalize_and_sanitize.py` (44 tests locking

@@ -1,12 +1,18 @@
 <a id="rfc-0014"></a>
 # RFC 0014: Operational Artifact Home
 
-Status: accepted for implementation
+Status: accepted
 Date: 2026-05-05
 Accepted: 2026-05-06 by owner for Phase 3 implementation
 Spec handoff: `docs/process/operational-artifact-home-spec.md` on 2026-05-06
 Spec revision: flat legacy markers, marker privacy, human-checkpoint
 resolution, and malformed marker handling tightened on 2026-05-06
+Amended: D074 on 2026-05-07 retires the `markers/` subtree from the
+canonical layout. Striatum SQLite (`.striatum/state.sqlite3`) is now the
+authoritative gate state for new operational loops. The directory home
+(`docs/operations/<area>/<loop>/reports/`), the privacy carry from RFC 0013,
+and the Striatum / `agent_runner` boundary all stand unchanged. Legacy
+Phase 3 markers remain as audit provenance.
 Context: D060, D062, D063, RFC 0013,
 `docs/process/multi-agent-review-loop.md`,
 `docs/process/phase-3-agent-runbook.md`
@@ -14,6 +20,7 @@ Decision refs:
   - D060
   - D062
   - D063
+  - D074
 Review refs:
   - none
 Phase refs:

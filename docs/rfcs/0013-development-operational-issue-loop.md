@@ -1,10 +1,17 @@
 <a id="rfc-0013"></a>
 # RFC 0013: Development Operational Issue Loop
 
-Status: accepted
+Status: superseded
 Date: 2026-05-05
+Superseded: D074 on 2026-05-07 retires the marker mechanism in favor of
+Striatum SQLite as the authoritative gate state. RFC 0013's redaction and
+report-layout guidance carries forward via
+`docs/process/operational-artifact-home-spec.md`; the marker schema and the
+expansion-gate scanner are legacy. Existing Phase 3 markers are preserved
+as audit provenance and are not deleted.
 Path guidance: superseded for future artifacts by accepted RFC 0014 on
-2026-05-06; legacy RFC 0013 marker paths remain scanned during migration.
+2026-05-06; legacy RFC 0013 marker paths remain scanned during the
+Phase 3 transition until D074 is fully wound down.
 Context: D059, D061, RFC 0011, `docs/process/multi-agent-review-loop.md`,
 `docs/process/project-judgment.md`,
 `docs/reviews/phase3/PHASE_3_POSTBUILD_RUN_LIMIT10_2026_05_05.md`
@@ -13,6 +20,7 @@ Decision refs:
   - D059
   - D061
   - D062
+  - D074
 Review refs:
   - none
 Phase refs:

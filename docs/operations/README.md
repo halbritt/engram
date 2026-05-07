@@ -1,70 +1,95 @@
 <a id="docs-operations-readme"></a>
 # Operations
 
-Status: accepted (RFC 0014, D066, 2026-05-06)
+Status: accepted (RFC 0014, D066, 2026-05-06); amended by D074 (markers retired) on 2026-05-07
 Source RFC: [RFC-0014](../rfcs/0014-operational-artifact-home.md)
 Spec: [operational-artifact-home-spec.md](../process/operational-artifact-home-spec.md)
 Decision refs:
   - D066
+  - D074
 
 This directory is the committed home for redacted development operational
-artifacts — the things `agent_runner` (Striatum) and the Phase 3 post-build
-loop produce as they run. Per RFC 0014 and D066, `docs/operations/` is the
-**only** place new operational reports and markers should land going forward.
+**reports** — the prose run / repair / verification artifacts that
+Striatum-orchestrated multi-agent loops produce. Per RFC 0014 (D066),
+`docs/operations/` is the canonical destination for those committed
+artifacts. Per D074, gate state is **not** tracked here: live job state,
+blockers, verdicts, and `human_checkpoint` severity all live in Striatum's
+SQLite store at `.striatum/state.sqlite3`.
 
 ## What lives here
 
 | Path | Purpose |
 |------|---------|
 | `docs/operations/<area>/<loop_id>/reports/` | Human-readable redacted prose run reports (RUN, REPAIR_PLAN, REPAIR_VERIFIED). |
-| `docs/operations/<area>/<loop_id>/markers/` | Machine-readable gate markers (`blocked`, `ready`, `human_checkpoint`). The script `scripts/phase3_tmux_agents.sh` reads these. |
 
 `<area>` is phase-scoped (S002): Phase 3 post-build work uses
-`docs/operations/phase3-postbuild/<YYYYMMDD>_<run_slug>/`. `<loop_id>` is
-typically `<YYYYMMDD>_<short-slug>`.
+`docs/operations/phase3-postbuild/<YYYYMMDD>_<run_slug>/`; Phase 4 will use
+`docs/operations/phase4-build/<...>/`, etc. `<loop_id>` is typically
+`<YYYYMMDD>_<short-slug>`.
 
 ## What does NOT live here
 
 - **Multi-agent reviews** — those stay under `docs/reviews/` (S005). Reviews
   are model feedback and synthesis, not gate state.
 - **Untracked local diagnostics** — those stay under `logs/operational/`,
-  which is gitignored. Private corpus content goes there, never here (S011).
+  which is gitignored. Private corpus content goes there, never here.
+- **Marker files for new loops** — D074 retired the marker mechanism. Live
+  gate state lives in Striatum (`.striatum/state.sqlite3`); read it with
+  `striatum list jobs --run-id <id>`, `striatum status`, or `striatum why`.
 - **Legacy RFC 0013 markers** — these remain in place under
-  `docs/reviews/phase3/postbuild/markers/` until the owner explicitly asks
-  for history cleanup (RFC 0014 §Migration Plan). The marker scanner reads
-  legacy and new roots as one logical set during transition (S007, S010).
+  `docs/reviews/phase3/postbuild/markers/` as audit provenance for
+  in-flight Phase 3 work. New loops do not produce markers.
 
-## Marker schema
+## Gate state lives in Striatum
 
-Markers carry RFC 0013-style front matter with one stricter rule:
-`corpus_content_included: none` is mandatory. See the spec at
-`docs/process/operational-artifact-home-spec.md` § Marker Schema for the full
-contract.
+D074 designates Striatum's SQLite as the authoritative state for new
+operational loops. Common queries:
 
-Reports do not have machine-readable state; they are prose. Only marker files
-carry `.blocked`, `.ready`, or `.human_checkpoint` suffixes.
+```sh
+# Is anything blocked in this run?
+striatum list jobs --run-id <id> --state blocked
+
+# What checkpoints need human attention?
+striatum status --run-id <id>
+
+# Why is this job stuck?
+striatum why --job-id <id>
+```
+
+Owner decisions that resolve a `human_checkpoint` are recorded as durable
+Markdown via `striatum decision record --outcome accepted`. Decision
+artifacts land under the workflow's configured `write_scope`.
 
 ## Privacy and redaction
 
-Same rules as RFC 0013 §3 (S006 unchanged). Markers are stricter than
-reports; markers may not carry private corpus content even with owner
-approval. If private content is needed for repair triage, it goes in ignored
-local diagnostics under `logs/operational/`, with only a redacted summary
-linked from a tracked report.
+Reports follow RFC 0013 §3 (S006 carries forward as report-level rules
+post-D074). The privacy carry from RFC 0014:
+
+- Tracked reports are redacted prose. Owner-approved private detail is
+  permitted only when the report explicitly records the approval per
+  RFC 0013.
+- Private repair evidence goes to ignored `logs/operational/`. Tracked
+  reports may link only to a redacted summary.
+- Striatum enforces a default-deny evidence redaction registry at the
+  publish-artifact layer; see `src/striatum/cli/evidence.py` in the
+  Striatum repo.
 
 ## Path hygiene
 
-D060 enforces relative paths in tracked docs. Markers in particular must use
-repository-relative POSIX paths in `linked_report` and `supersedes` front
-matter — no `/home/<user>/`, no `~/`, no absolute paths.
+D060 enforces relative paths in tracked docs. `linked_report:` and similar
+artifact references in committed reports must use repository-relative
+POSIX paths — no `/home/<user>/`, no `~/`, no absolute paths.
 
 ## Migration status
 
-As of 2026-05-07, this directory exists but has no live loops yet. Phase 3
-post-build markers continue to land in the legacy RFC 0013 path
-(`docs/reviews/phase3/postbuild/markers/`) until the next post-build run.
-The first new loop landing under `docs/operations/phase3-postbuild/` will
-also `supersedes:` its corresponding legacy markers per S007.
+As of 2026-05-07:
 
-The marker scanner (`scripts/phase3_tmux_agents.sh`) already reads both
-roots, so adding `docs/operations/` does not break existing gates.
+- This directory exists with no live loops yet.
+- Phase 3 post-build markers under `docs/reviews/phase3/postbuild/markers/`
+  are preserved as audit provenance per D074 — they are not deleted, but no
+  new markers join them.
+- `scripts/phase3_tmux_agents.sh` continues to scan legacy markers so any
+  in-flight Phase 3 gate stays operational. It is not the pattern for new
+  phases — Phase 4 and later use Striatum directly.
+- The first new loop landing under `docs/operations/<area>/<loop_id>/` writes
+  only the `reports/` subtree; no markers.
