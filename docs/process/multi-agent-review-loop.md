@@ -96,3 +96,45 @@ For the segmentation benchmark:
 3. Codex synthesizes the review and updates the spec.
 4. Codex starts a fresh execution context to run the benchmark, tests, and
    result capture.
+
+## Striatum-orchestrated reviews (D074, 2026-05-07)
+
+For substantial reviews — Phase 4 onward — Engram uses
+[Striatum](https://github.com/halbritt/striatum) to drive the loop instead
+of running it by hand. Striatum is the local-first orchestrator extracted
+from Engram's Phase 3 incubation; per D074, its SQLite store
+(`.striatum/state.sqlite3`) is the authoritative gate state, and marker
+files are retired.
+
+A Striatum-orchestrated workflow encodes the procedure above as a JSON
+file under `prompts/<phase>/workflow.json`:
+
+- the originating-agent / reviewing-agent / synthesizer roles map to
+  Striatum role definitions (`reviewer.md`, `ledger.md`, `synthesizer.md`,
+  `coordinator.md`),
+- the `docs/reviews/` storage rule maps to per-job `write_scope` /
+  `expected_artifacts`,
+- `human_checkpoint` blockers replace ad-hoc waiting for owner input,
+- `striatum decision record --outcome accepted|rejected|accepted_with_follow_up`
+  records the durable Markdown decision artifact when the loop closes.
+
+The reference workflow is `prompts/phase4/workflow.json`. To prepare a
+run:
+
+```sh
+make striatum-init        # one-time, creates .striatum/state.sqlite3
+make phase4-validate      # JSON schema check
+make phase4-prepare       # creates a run, returns a run_id
+make phase4-status        # shows job state, blockers, verdicts
+```
+
+See:
+- `~/git/striatum/README.md` for the CLI surface
+- `~/git/striatum/examples/rfc-0014-operational-artifact-home/` for the
+  reference workflow Engram modeled Phase 4 on
+- D074 in `DECISION_LOG.md` for why markers were retired
+
+Reviews still land under `docs/reviews/<phase>/`. Run reports for
+operational loops still land under `docs/operations/<area>/<loop>/reports/`
+per RFC 0014 (D066). What changed is *who tracks gate state*: Striatum's
+SQLite, not the filesystem.

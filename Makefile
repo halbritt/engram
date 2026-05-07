@@ -6,8 +6,9 @@ DOCKER_TEST_DATABASE_URL ?= postgresql://engram:engram@127.0.0.1:54329/engram_te
 EXPORT_PATH := $(if $(filter command line,$(origin PATH)),$(PATH),)
 SEGMENTER_MODEL ?=
 SEGMENTER_MODEL_ENV := $(if $(SEGMENTER_MODEL),ENGRAM_SEGMENTER_MODEL="$(SEGMENTER_MODEL)",)
+STRIATUM_REPO ?= $(HOME)/git/striatum
 
-.PHONY: install db-up db-down wait-db migrate migrate-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker test test-db test-docker test-db-docker schema-docs check-refs lint format typecheck
+.PHONY: install db-up db-down wait-db migrate migrate-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker test test-db test-docker test-db-docker schema-docs check-refs lint format typecheck install-striatum striatum-init phase4-validate phase4-prepare phase4-status
 
 install: .venv/.installed
 
@@ -125,6 +126,23 @@ test-docker: install test-db-docker
 
 check-refs:
 	python3 scripts/check_artifact_refs.py --root .
+
+STRIATUM := .venv/bin/striatum
+
+install-striatum: install
+	$(PYTHON) -m pip install -e "$(STRIATUM_REPO)"
+
+striatum-init: install-striatum
+	$(STRIATUM) --repo . init
+
+phase4-validate: install-striatum
+	$(STRIATUM) --repo . workflow validate prompts/phase4/workflow.json
+
+phase4-prepare: install-striatum
+	$(STRIATUM) --repo . run prepare --workflow prompts/phase4/workflow.json
+
+phase4-status: install-striatum
+	$(STRIATUM) --repo . status
 
 lint: install
 	$(PYTHON) -m ruff check .
