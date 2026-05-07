@@ -37,6 +37,8 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0016](0016-context-lane-reranker-slot.md) | proposal | none | Context lane reranker slot |
 | [0017](0017-extraction-prompt-versioning.md) | proposal | partial | Extraction prompt versioning and cross-corpus dry-run |
 | [0018](0018-evidence-to-claim-audit-cascade.md) | proposal | none | Evidence-to-claim audit cascade |
+| [0019](0019-extraction-batching-server.md) | proposal | none | Continuous-batching inference server for Phase 3 claim extraction |
+| [0020](0020-segmentation-batching-server.md) | proposal | none | Continuous-batching inference server for Phase 2 segmentation |
 
 ## Implementation notes (2026-05-07 sweep)
 
