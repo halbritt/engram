@@ -10,3 +10,4 @@ logs/
 .scratch/
 .agent_runner/
 .striatum/
+llama.log
