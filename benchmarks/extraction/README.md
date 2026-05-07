@@ -57,12 +57,15 @@ Compare a control run and a candidate run:
   --control-run .scratch/benchmarks/extraction-backend/<control-run>/run.json \
   --candidate-run .scratch/benchmarks/extraction-backend/<candidate-run>/run.json \
   --output-dir .scratch/benchmarks/extraction-backend \
+  --review-id REVIEW-NNNN \
   --review-output docs/reviews/phase3/PHASE_3_EXTRACTION_BACKEND_BENCHMARK_2026_05_07.md
 ```
 
 The tracked review output is aggregate-only. Raw segment-level records stay in
 `.scratch/` by default and omit claim text unless `--include-claim-text` is
-explicitly passed.
+explicitly passed. If the comparison report is written under `docs/reviews/`,
+assign and register a `REVIEW-####` ID in `docs/artifacts/review-id-registry.md`
+before committing the report.
 
 ## Optional Server Runtimes
 
@@ -126,6 +129,15 @@ Runs write this shape under the chosen output directory:
 ```
 
 `run.json` records backend name, model metadata, request settings,
-`/v1/models`, optional metrics snapshots, slice metadata, aggregate validity
-and throughput metrics, predicate/stability distributions, and failure counts.
-`segments.jsonl` records one redacted result per segment.
+`/v1/models`, pre-run and post-run empty-claims smokes, optional metrics
+snapshots, slice metadata, aggregate validity and throughput metrics,
+predicate/stability distributions, and failure counts. `segments.jsonl` records
+one redacted result per segment.
+
+When `--server-command` is used, the command must visibly bind to the same
+loopback host and port as `--base-url`. The harness also sets offline /
+no-telemetry environment defaults for the managed process. This is not a
+replacement for an OS-level no-egress sandbox. Server stdout/stderr is discarded
+by default because request logs can contain corpus text; pass
+`--capture-server-log` only when request logging is disabled and the log is safe
+to archive.

@@ -19,3 +19,7 @@ Expected artifact families:
 - `PHASE_3_BUILD_REVIEW_SYNTHESIS_2026_05_05.md`
 - `PHASE_3_PIPELINE_START_2026_05_05.md`
 - `PHASE_3_EXTRACTION_BACKEND_BENCHMARK_<date>.md`
+
+Tracked extraction backend benchmark reports should carry a registered
+`REVIEW-####` header per D068. Scratch-only run artifacts stay under
+`.scratch/benchmarks/extraction-backend/`.

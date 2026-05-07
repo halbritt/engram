@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import shlex
 import subprocess
@@ -32,6 +33,7 @@ from benchmarks.segmentation.strategies import expanded_model_path, model_file_s
 from engram.db import connect
 from engram.extractor import (
     DEFAULT_EXTRACTION_MAX_TOKENS,
+    EXTRACTION_ADAPTIVE_SPLIT_MAX_DEPTH,
     EXTRACTION_PROMPT_VERSION,
     EXTRACTION_RETRIES,
     EXTRACTION_SYSTEM_PROMPT,
@@ -39,6 +41,7 @@ from engram.extractor import (
     ExtractionError,
     ExtractorModelOutput,
     SegmentPayload,
+    accounted_zero_eligibility,
     attach_attempt_diagnostics,
     attach_chunk_diagnostics,
     build_extraction_prompt,
@@ -124,6 +127,7 @@ class BenchmarkRunConfig:
     metrics_url: str | None = None
     model_path: str | None = None
     server_command: str | None = None
+    capture_server_log: bool = False
     server_ready_timeout_seconds: int = DEFAULT_SERVER_READY_TIMEOUT_SECONDS
 
 
@@ -147,7 +151,7 @@ class SegmentBenchmarkResult:
 class ManagedServer:
     process: subprocess.Popen[str]
     command: list[str]
-    log_path: Path
+    log_path: Path | None
 
 
 class BenchmarkExtractorClient:
@@ -222,6 +226,15 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--concurrency", type=positive_int, default=1)
     run.add_argument("--include-claim-text", action="store_true", default=False)
     run.add_argument("--server-command")
+    run.add_argument(
+        "--capture-server-log",
+        action="store_true",
+        default=False,
+        help=(
+            "Capture managed server stdout/stderr to server.log. Use only with "
+            "request logging disabled; logs may contain private corpus text."
+        ),
+    )
     run.add_argument("--server-ready-timeout-seconds", type=positive_int, default=180)
     run.add_argument("--metrics-url")
     add_endpoint_args(run)
@@ -236,6 +249,10 @@ def build_parser() -> argparse.ArgumentParser:
             "Optional tracked markdown summary path, for example "
             "docs/reviews/phase3/PHASE_3_EXTRACTION_BACKEND_BENCHMARK_2026_05_07.md"
         ),
+    )
+    compare.add_argument(
+        "--review-id",
+        help="Required when --review-output is under docs/reviews/; e.g. REVIEW-NNNN.",
     )
 
     return parser
@@ -276,6 +293,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "sample-slice":
             with connect() as conn:
+                set_read_only_transaction(conn)
                 selected = create_segment_slice(
                     conn,
                     target_size=args.target_size,
@@ -323,6 +341,7 @@ def main(argv: list[str] | None = None) -> int:
                 candidate_run_path=Path(args.candidate_run),
                 output_dir=Path(args.output_dir),
                 review_output=Path(args.review_output) if args.review_output else None,
+                review_id=args.review_id,
             )
             print(comparison_path)
             return 0
@@ -361,6 +380,7 @@ def config_from_args(
         metrics_url=getattr(args, "metrics_url", None),
         model_path=args.model_path,
         server_command=getattr(args, "server_command", None),
+        capture_server_log=getattr(args, "capture_server_log", False),
         server_ready_timeout_seconds=getattr(
             args,
             "server_ready_timeout_seconds",
@@ -392,7 +412,7 @@ def create_segment_slice(
           AND sg.status = 'active'
           AND s.conversation_id IS NOT NULL
           AND s.source_kind IN ('chatgpt', 'claude', 'gemini')
-          AND (cardinality(%s::text[]) = 0 OR s.source_kind = ANY(%s::text[]))
+          AND (cardinality(%s::text[]) = 0 OR s.source_kind::text = ANY(%s::text[]))
         ORDER BY s.source_kind, s.conversation_id, s.sequence_index, s.id
         """,
         (list(source_kinds), list(source_kinds)),
@@ -411,6 +431,10 @@ def create_segment_slice(
         for row in rows
     ]
     return select_balanced_slice(candidates, target_size=target_size, seed=seed)
+
+
+def set_read_only_transaction(conn: psycopg.Connection) -> None:
+    conn.execute("SET TRANSACTION READ ONLY")
 
 
 def select_balanced_slice(
@@ -490,8 +514,11 @@ def run_backend_benchmark(config: BenchmarkRunConfig, *, slice_path: Path) -> Pa
         if config.server_command:
             server = start_managed_server(config, run_dir=run_dir)
         server_before = probe_server(config)
+        client = client_from_config(config)
+        pre_smoke = run_recorded_health_smoke(config, client, label="pre")
         metrics_before = fetch_metrics_snapshot(config.metrics_url)
         with connect() as conn:
+            set_read_only_transaction(conn)
             segments = [
                 fetch_segment_payload(conn, item["segment_id"])
                 for item in slice_payload["segments"]
@@ -500,6 +527,7 @@ def run_backend_benchmark(config: BenchmarkRunConfig, *, slice_path: Path) -> Pa
         started = time.perf_counter()
         results = run_segments_concurrently(segments, config)
         wall_clock_seconds = time.perf_counter() - started
+        post_smoke = run_recorded_health_smoke(config, client, label="post")
         metrics_after = fetch_metrics_snapshot(config.metrics_url)
 
         records_path = run_dir / "segments.jsonl"
@@ -512,6 +540,8 @@ def run_backend_benchmark(config: BenchmarkRunConfig, *, slice_path: Path) -> Pa
             results=results,
             wall_clock_seconds=wall_clock_seconds,
             server_before=server_before,
+            pre_smoke=pre_smoke,
+            post_smoke=post_smoke,
             metrics_before=metrics_before,
             metrics_after=metrics_after,
             server=server,
@@ -590,11 +620,43 @@ def extract_segment_for_benchmark(
             parse_metadata={},
             failure={
                 "kind": classify_exception(exc),
-                "error": str(exc),
+                "error": safe_failure_error(exc),
             },
         )
 
     duration_seconds = time.perf_counter() - started
+    if not valid and dropped:
+        if is_accounted_zero_benchmark_output(output):
+            return SegmentBenchmarkResult(
+                index=index,
+                segment_id=segment.id,
+                status="accounted_zero",
+                duration_seconds=duration_seconds,
+                claim_count=0,
+                dropped_count=len(dropped),
+                schema_valid=True,
+                provenance_valid=not provenance_drop_count(dropped),
+                claims=[],
+                dropped_claims=redact_dropped_claims(dropped),
+                parse_metadata=summarize_parse_metadata(output.parse_metadata),
+            )
+        return SegmentBenchmarkResult(
+            index=index,
+            segment_id=segment.id,
+            status="failed",
+            duration_seconds=duration_seconds,
+            claim_count=0,
+            dropped_count=len(dropped),
+            schema_valid=False,
+            provenance_valid=False,
+            claims=[],
+            dropped_claims=redact_dropped_claims(dropped),
+            parse_metadata=summarize_parse_metadata(output.parse_metadata),
+            failure={
+                "kind": "local_validation_failed_post_repair",
+                "error": "all extracted claims failed local validation",
+            },
+        )
     return SegmentBenchmarkResult(
         index=index,
         segment_id=segment.id,
@@ -618,6 +680,7 @@ def extract_segment_chunks_threadsafe(
     max_tokens: int,
     retries: int,
     validation_feedback: str | None = None,
+    adaptive_split: bool = True,
 ) -> ExtractorModelOutput:
     outputs: list[ExtractorModelOutput] = []
     chunk_metadata: list[dict[str, Any]] = []
@@ -629,6 +692,7 @@ def extract_segment_chunks_threadsafe(
             max_tokens=max_tokens,
             retries=retries,
             validation_feedback=validation_feedback,
+            adaptive_split=adaptive_split,
             root_chunk_index=index,
             root_chunk_count=len(chunks),
             split_path=[index],
@@ -675,6 +739,7 @@ def extract_chunk_adaptively_threadsafe(
     max_tokens: int,
     retries: int,
     validation_feedback: str | None,
+    adaptive_split: bool,
     root_chunk_index: int,
     root_chunk_count: int,
     split_path: list[int],
@@ -693,7 +758,11 @@ def extract_chunk_adaptively_threadsafe(
         )
     except Exception as exc:
         subchunks = split_extraction_chunk(chunk)
-        if split_depth < 4 and len(subchunks) > 1:
+        if (
+            adaptive_split
+            and split_depth < EXTRACTION_ADAPTIVE_SPLIT_MAX_DEPTH
+            and len(subchunks) > 1
+        ):
             child_retries = max(0, retries - 1)
             for subindex, subchunk in enumerate(subchunks, start=1):
                 extract_chunk_adaptively_threadsafe(
@@ -703,6 +772,7 @@ def extract_chunk_adaptively_threadsafe(
                     max_tokens=max_tokens,
                     retries=child_retries,
                     validation_feedback=validation_feedback,
+                    adaptive_split=adaptive_split,
                     root_chunk_index=root_chunk_index,
                     root_chunk_count=root_chunk_count,
                     split_path=[*split_path, subindex],
@@ -805,6 +875,7 @@ def retry_after_trigger_violation_threadsafe(
             max_tokens=max_tokens,
             retries=0,
             validation_feedback=feedback,
+            adaptive_split=False,
         )
     except Exception as exc:
         return (
@@ -853,6 +924,13 @@ def retry_after_trigger_violation_threadsafe(
     )
 
 
+def is_accounted_zero_benchmark_output(output: ExtractorModelOutput) -> bool:
+    repair = output.parse_metadata.get("validation_repair")
+    if not isinstance(repair, dict):
+        return False
+    return accounted_zero_eligibility(repair).eligible
+
+
 def run_extractor_health_smoke_threadsafe(
     client: BenchmarkExtractorClient,
     *,
@@ -868,6 +946,28 @@ def run_extractor_health_smoke_threadsafe(
         allowed_message_ids=None,
         retries=retries,
     )
+
+
+def run_recorded_health_smoke(
+    config: BenchmarkRunConfig,
+    client: BenchmarkExtractorClient,
+    *,
+    label: str,
+) -> dict[str, Any]:
+    started = time.perf_counter()
+    run_extractor_health_smoke_threadsafe(
+        client,
+        model_id=config.model_id,
+        max_tokens=min(128, config.max_tokens),
+        retries=0,
+    )
+    return {
+        "label": label,
+        "passed": True,
+        "duration_seconds": time.perf_counter() - started,
+        "max_tokens": min(128, config.max_tokens),
+        "request_profile_version": config.request_profile_version,
+    }
 
 
 def build_chat_completion_payload(
@@ -915,6 +1015,8 @@ def build_run_payload(
     results: list[SegmentBenchmarkResult],
     wall_clock_seconds: float,
     server_before: dict[str, Any],
+    pre_smoke: dict[str, Any],
+    post_smoke: dict[str, Any],
     metrics_before: dict[str, Any] | None,
     metrics_after: dict[str, Any] | None,
     server: ManagedServer | None,
@@ -952,8 +1054,11 @@ def build_run_payload(
         "server": {
             "managed": server is not None,
             "command": server.command if server else None,
-            "log_path": str(server.log_path) if server else None,
+            "log_path": str(server.log_path) if server and server.log_path else None,
+            "log_capture": config.capture_server_log,
             "probe_before": server_before,
+            "pre_smoke": pre_smoke,
+            "post_smoke": post_smoke,
             "metrics_before": metrics_before,
             "metrics_after": metrics_after,
         },
@@ -982,8 +1087,8 @@ def aggregate_metrics(
     wall_clock_seconds: float,
 ) -> dict[str, Any]:
     total = len(results)
-    ok = sum(1 for result in results if result.status == "ok")
-    failed = total - ok
+    schema_valid = sum(1 for result in results if result.schema_valid)
+    failed = sum(1 for result in results if result.status == "failed")
     claims = [claim for result in results for claim in result.claims]
     dropped_count = sum(result.dropped_count for result in results)
     claim_count = len(claims)
@@ -993,9 +1098,9 @@ def aggregate_metrics(
     usage = aggregate_usage(results)
     return {
         "segments_total": total,
-        "segments_ok": ok,
+        "segments_ok": total - failed,
         "segments_failed": failed,
-        "schema_valid_rate": ratio(ok, total),
+        "schema_valid_rate": ratio(schema_valid, total),
         "provenance_clean_segments": sum(1 for result in results if result.provenance_valid),
         "provenance_clean_segment_rate": ratio(
             sum(1 for result in results if result.provenance_valid),
@@ -1120,6 +1225,7 @@ def compare_backend_runs(
     candidate_run_path: Path,
     output_dir: Path,
     review_output: Path | None,
+    review_id: str | None = None,
 ) -> Path:
     control_run, control_records = load_run_artifacts(control_run_path)
     candidate_run, candidate_records = load_run_artifacts(candidate_run_path)
@@ -1139,8 +1245,7 @@ def compare_backend_runs(
     markdown = render_comparison_markdown(comparison)
     (comparison_dir / "report.md").write_text(markdown, encoding="utf-8")
     if review_output is not None:
-        review_output.parent.mkdir(parents=True, exist_ok=True)
-        review_output.write_text(markdown, encoding="utf-8")
+        write_review_output(review_output, review_id=review_id, comparison=comparison)
     return comparison_path
 
 
@@ -1150,6 +1255,7 @@ def build_comparison_payload(
     candidate_run: dict[str, Any],
     candidate_records: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    assert_same_segment_order(control_records, candidate_records)
     control_metrics = control_run["metrics"]
     candidate_metrics = candidate_run["metrics"]
     control_wall = float(control_metrics.get("wall_clock_seconds") or 0)
@@ -1157,6 +1263,43 @@ def build_comparison_payload(
     speedup = None if candidate_wall <= 0 else control_wall / candidate_wall
     control_claims = [claim for record in control_records for claim in record.get("claims", [])]
     candidate_claims = [claim for record in candidate_records for claim in record.get("claims", [])]
+    comparison_metrics = {
+        "speedup": speedup,
+        "schema_valid_rate_delta": (
+            none_safe_delta(
+                candidate_metrics.get("schema_valid_rate"),
+                control_metrics.get("schema_valid_rate"),
+            )
+        ),
+        "provenance_clean_segment_rate_delta": (
+            none_safe_delta(
+                candidate_metrics.get("provenance_clean_segment_rate"),
+                control_metrics.get("provenance_clean_segment_rate"),
+            )
+        ),
+        "dropped_claim_rate_delta": (
+            none_safe_delta(
+                candidate_metrics.get("dropped_claim_rate"),
+                control_metrics.get("dropped_claim_rate"),
+            )
+        ),
+        "claim_count_delta": (
+            int(candidate_metrics.get("claim_count") or 0)
+            - int(control_metrics.get("claim_count") or 0)
+        ),
+        "predicate_distribution_l1": distribution_l1(
+            Counter(str(claim.get("predicate")) for claim in control_claims),
+            Counter(str(claim.get("predicate")) for claim in candidate_claims),
+        ),
+        "stability_distribution_l1": distribution_l1(
+            Counter(str(claim.get("stability_class")) for claim in control_claims),
+            Counter(str(claim.get("stability_class")) for claim in candidate_claims),
+        ),
+        "field_presence_deltas": field_presence_deltas(
+            control_metrics.get("field_presence"),
+            candidate_metrics.get("field_presence"),
+        ),
+    }
     return {
         "schema_version": COMPARISON_SCHEMA_VERSION,
         "created_at": utc_now(),
@@ -1168,48 +1311,82 @@ def build_comparison_payload(
             set(record["segment_id"] for record in control_records)
             & set(record["segment_id"] for record in candidate_records)
         ),
-        "metrics": {
-            "speedup": speedup,
-            "schema_valid_rate_delta": (
-                none_safe_delta(
-                    candidate_metrics.get("schema_valid_rate"),
-                    control_metrics.get("schema_valid_rate"),
-                )
-            ),
-            "provenance_clean_segment_rate_delta": (
-                none_safe_delta(
-                    candidate_metrics.get("provenance_clean_segment_rate"),
-                    control_metrics.get("provenance_clean_segment_rate"),
-                )
-            ),
-            "dropped_claim_rate_delta": (
-                none_safe_delta(
-                    candidate_metrics.get("dropped_claim_rate"),
-                    control_metrics.get("dropped_claim_rate"),
-                )
-            ),
-            "claim_count_delta": (
-                int(candidate_metrics.get("claim_count") or 0)
-                - int(control_metrics.get("claim_count") or 0)
-            ),
-            "predicate_distribution_l1": distribution_l1(
-                Counter(str(claim.get("predicate")) for claim in control_claims),
-                Counter(str(claim.get("predicate")) for claim in candidate_claims),
-            ),
-            "stability_distribution_l1": distribution_l1(
-                Counter(str(claim.get("stability_class")) for claim in control_claims),
-                Counter(str(claim.get("stability_class")) for claim in candidate_claims),
-            ),
-        },
-        "promotion_readiness": promotion_readiness(control_metrics, candidate_metrics, speedup),
+        "metrics": comparison_metrics,
+        "promotion_readiness": promotion_readiness(
+            control_metrics,
+            candidate_metrics,
+            comparison_metrics,
+        ),
     }
+
+
+def assert_same_segment_order(
+    control_records: list[dict[str, Any]],
+    candidate_records: list[dict[str, Any]],
+) -> None:
+    control_ids = [str(record.get("segment_id")) for record in control_records]
+    candidate_ids = [str(record.get("segment_id")) for record in candidate_records]
+    if control_ids != candidate_ids:
+        raise ExtractionBenchmarkError(
+            "control and candidate runs must contain the same fixed segment slice in the same order"
+        )
+
+
+def field_presence_deltas(control: Any, candidate: Any) -> dict[str, float | None]:
+    if not isinstance(control, dict) or not isinstance(candidate, dict):
+        return {}
+    return {
+        key: none_safe_delta(candidate.get(key), control.get(key))
+        for key in sorted(set(control) | set(candidate))
+    }
+
+
+def write_review_output(
+    review_output: Path,
+    *,
+    review_id: str | None,
+    comparison: dict[str, Any],
+) -> None:
+    if is_reviews_path(review_output):
+        if review_id is None:
+            raise ExtractionBenchmarkError(
+                "--review-id is required when --review-output is under docs/reviews/"
+            )
+        review_number = review_id.removeprefix("REVIEW-")
+        if review_number == review_id or len(review_number) != 4 or not review_number.isdigit():
+            raise ExtractionBenchmarkError("--review-id must use REVIEW-#### format")
+    review_output.parent.mkdir(parents=True, exist_ok=True)
+    review_output.write_text(
+        render_comparison_markdown(comparison, review_id=review_id),
+        encoding="utf-8",
+    )
+
+
+def is_reviews_path(path: Path) -> bool:
+    parts = path.parts
+    for index in range(len(parts) - 1):
+        if parts[index] == "docs" and parts[index + 1] == "reviews":
+            return True
+    return False
 
 
 def promotion_readiness(
     control_metrics: dict[str, Any],
     candidate_metrics: dict[str, Any],
-    speedup: float | None,
+    comparison_metrics: dict[str, Any],
 ) -> dict[str, Any]:
+    speedup = comparison_metrics.get("speedup")
+    control_claim_count = int(control_metrics.get("claim_count") or 0)
+    candidate_claim_count = int(candidate_metrics.get("claim_count") or 0)
+    dropped_delta = comparison_metrics.get("dropped_claim_rate_delta")
+    predicate_l1 = comparison_metrics.get("predicate_distribution_l1")
+    stability_l1 = comparison_metrics.get("stability_distribution_l1")
+    field_presence = comparison_metrics.get("field_presence_deltas")
+    field_presence_ok = isinstance(field_presence, dict) and all(
+        value is None or value >= 0
+        for value in field_presence.values()
+        if isinstance(value, int | float) or value is None
+    )
     checks = {
         "schema_valid_rate_at_least_control": (
             candidate_metrics.get("schema_valid_rate", 0)
@@ -1222,58 +1399,106 @@ def promotion_readiness(
         "speedup_at_least_floor_2x": speedup is not None and speedup >= 2.0,
         "speedup_at_least_target_5x": speedup is not None and speedup >= 5.0,
         "no_candidate_failures": int(candidate_metrics.get("segments_failed") or 0) == 0,
+        "claim_count_nonzero_if_control_nonzero": (
+            control_claim_count == 0 or candidate_claim_count > 0
+        ),
+        "claim_count_within_20_percent_of_control": (
+            control_claim_count == 0 or candidate_claim_count >= int(control_claim_count * 0.8)
+        ),
+        "dropped_claim_rate_not_higher_than_control": (
+            isinstance(dropped_delta, int | float) and dropped_delta <= 0
+        ),
+        "field_presence_not_lower_than_control": field_presence_ok,
+        "predicate_distribution_review_required": predicate_l1 != 0,
+        "stability_distribution_review_required": stability_l1 != 0,
+        "recorded_human_review_present": False,
     }
+    objective_checks_passed = (
+        checks["schema_valid_rate_at_least_control"]
+        and checks["provenance_clean_segment_rate_at_least_control"]
+        and checks["speedup_at_least_floor_2x"]
+        and checks["no_candidate_failures"]
+        and checks["claim_count_nonzero_if_control_nonzero"]
+        and checks["claim_count_within_20_percent_of_control"]
+        and checks["dropped_claim_rate_not_higher_than_control"]
+        and checks["field_presence_not_lower_than_control"]
+    )
     return {
         "checks": checks,
-        "candidate_for_production_switch": (
-            checks["schema_valid_rate_at_least_control"]
-            and checks["provenance_clean_segment_rate_at_least_control"]
-            and checks["speedup_at_least_floor_2x"]
-            and checks["no_candidate_failures"]
-        ),
+        "objective_checks_passed": objective_checks_passed,
+        "candidate_for_production_switch": False,
         "note": (
-            "This comparison is evidence only. Production promotion still requires "
+            "This comparison is evidence only and cannot authorize a production switch by "
+            "itself. Production promotion still requires recorded distribution review, "
             "DECISION_LOG.md, request_profile_version/extraction_model_version changes, "
             "and RFC 0017 re-extraction handling."
         ),
     }
 
 
-def render_comparison_markdown(comparison: dict[str, Any]) -> str:
+def render_comparison_markdown(
+    comparison: dict[str, Any],
+    *,
+    review_id: str | None = None,
+) -> str:
     metrics = comparison["metrics"]
     readiness = comparison["promotion_readiness"]["checks"]
-    lines = [
-        "# Phase 3 Extraction Backend Benchmark",
-        "",
-        "| Field | Value |",
-        "|---|---|",
-        f"| Created | `{comparison['created_at']}` |",
-        f"| RFC | `{comparison['rfc']}` |",
-        f"| Control | `{comparison['control']['backend_name']}` |",
-        f"| Candidate | `{comparison['candidate']['backend_name']}` |",
-        f"| Shared segments | `{comparison['shared_segment_count']}` |",
-        "",
-        "## Metrics",
-        "",
-        "| Metric | Value |",
-        "|---|---:|",
-        f"| Speedup | `{format_optional_float(metrics['speedup'])}` |",
-        f"| Schema valid delta | `{format_optional_float(metrics['schema_valid_rate_delta'])}` |",
-        "| Provenance clean segment delta | "
-        f"`{format_optional_float(metrics['provenance_clean_segment_rate_delta'])}` |",
-        "| Dropped claim rate delta | "
-        f"`{format_optional_float(metrics['dropped_claim_rate_delta'])}` |",
-        f"| Claim count delta | `{metrics['claim_count_delta']}` |",
-        "| Predicate distribution L1 | "
-        f"`{format_optional_float(metrics['predicate_distribution_l1'])}` |",
-        "| Stability distribution L1 | "
-        f"`{format_optional_float(metrics['stability_distribution_l1'])}` |",
-        "",
-        "## Promotion Checks",
-        "",
-        "| Check | Passed |",
-        "|---|---:|",
-    ]
+    lines = []
+    if review_id is not None:
+        lines.extend(
+            [
+                f'<a id="{review_id.lower()}"></a>',
+                f"# {review_id}: Phase 3 Extraction Backend Benchmark",
+                "",
+                "Status: findings",
+                f"Date: {comparison['created_at'][:10]}",
+                "Context: RFC 0019 extraction backend benchmark comparison",
+                "Decision refs:",
+                "  - none",
+                "Review refs:",
+                "  - none",
+                "Phase refs:",
+                "  - PHASE-0003",
+                "RFC refs:",
+                "  - RFC-0019",
+                "",
+            ]
+        )
+    else:
+        lines.extend(["# Phase 3 Extraction Backend Benchmark", ""])
+    lines.extend(
+        [
+            "| Field | Value |",
+            "|---|---|",
+            f"| Created | `{comparison['created_at']}` |",
+            f"| RFC | `{comparison['rfc']}` |",
+            f"| Control | `{comparison['control']['backend_name']}` |",
+            f"| Candidate | `{comparison['candidate']['backend_name']}` |",
+            f"| Shared segments | `{comparison['shared_segment_count']}` |",
+            "",
+            "## Metrics",
+            "",
+            "| Metric | Value |",
+            "|---|---:|",
+            f"| Speedup | `{format_optional_float(metrics['speedup'])}` |",
+            "| Schema valid delta | "
+            f"`{format_optional_float(metrics['schema_valid_rate_delta'])}` |",
+            "| Provenance clean segment delta | "
+            f"`{format_optional_float(metrics['provenance_clean_segment_rate_delta'])}` |",
+            "| Dropped claim rate delta | "
+            f"`{format_optional_float(metrics['dropped_claim_rate_delta'])}` |",
+            f"| Claim count delta | `{metrics['claim_count_delta']}` |",
+            "| Predicate distribution L1 | "
+            f"`{format_optional_float(metrics['predicate_distribution_l1'])}` |",
+            "| Stability distribution L1 | "
+            f"`{format_optional_float(metrics['stability_distribution_l1'])}` |",
+            "",
+            "## Promotion Checks",
+            "",
+            "| Check | Passed |",
+            "|---|---:|",
+        ]
+    )
     for key, value in readiness.items():
         lines.append(f"| `{key}` | `{value}` |")
     lines.extend(
@@ -1304,20 +1529,24 @@ def start_managed_server(config: BenchmarkRunConfig, *, run_dir: Path) -> Manage
     command = shlex.split(config.server_command or "")
     if not command:
         raise ExtractionBenchmarkError("--server-command did not contain a command")
-    log_path = run_dir / "server.log"
-    log_handle = log_path.open("w", encoding="utf-8")
+    validate_managed_server_command(command, config)
+    log_path = run_dir / "server.log" if config.capture_server_log else None
+    stdout = log_path.open("w", encoding="utf-8") if log_path else subprocess.DEVNULL
     process = subprocess.Popen(
         command,
         text=True,
-        stdout=log_handle,
+        stdout=stdout,
         stderr=subprocess.STDOUT,
+        env=managed_server_environment(),
     )
-    log_handle.close()
+    if log_path is not None and hasattr(stdout, "close"):
+        stdout.close()
     deadline = time.monotonic() + config.server_ready_timeout_seconds
     while time.monotonic() < deadline:
         if process.poll() is not None:
+            log_label = str(log_path) if log_path else "not captured"
             raise ExtractionBenchmarkError(
-                f"managed server exited before readiness; log: {log_path}"
+                f"managed server exited before readiness; log: {log_label}"
             )
         try:
             request_json(
@@ -1329,7 +1558,37 @@ def start_managed_server(config: BenchmarkRunConfig, *, run_dir: Path) -> Manage
         except LocalEndpointError:
             time.sleep(1)
     stop_managed_server(ManagedServer(process=process, command=command, log_path=log_path))
-    raise ExtractionBenchmarkError(f"managed server did not become ready; log: {log_path}")
+    log_label = str(log_path) if log_path else "not captured"
+    raise ExtractionBenchmarkError(f"managed server did not become ready; log: {log_label}")
+
+
+def validate_managed_server_command(
+    command: list[str],
+    config: BenchmarkRunConfig,
+) -> None:
+    parsed = urllib.parse.urlparse(config.base_url)
+    host = parsed.hostname or ""
+    port = str(parsed.port) if parsed.port is not None else ""
+    tokens = set(command)
+    joined = " ".join(command)
+    if host not in tokens and f"--host={host}" not in tokens and host not in joined:
+        raise ExtractionBenchmarkError(
+            "--server-command must visibly bind to the same loopback host as --base-url"
+        )
+    if port and port not in tokens and f"--port={port}" not in tokens:
+        raise ExtractionBenchmarkError(
+            "--server-command must visibly bind to the same port as --base-url"
+        )
+
+
+def managed_server_environment() -> dict[str, str]:
+    env = dict(os.environ)
+    env.setdefault("HF_HUB_OFFLINE", "1")
+    env.setdefault("TRANSFORMERS_OFFLINE", "1")
+    env.setdefault("VLLM_NO_USAGE_STATS", "1")
+    env.setdefault("DO_NOT_TRACK", "1")
+    env.setdefault("SGLANG_DISABLE_REQUEST_LOGGING", "true")
+    return env
 
 
 def stop_managed_server(server: ManagedServer) -> None:
@@ -1414,7 +1673,7 @@ def request_text(
     except urllib.error.HTTPError as exc:
         raw = exc.read().decode("utf-8", "replace")
         raise LocalEndpointError(
-            f"HTTP {exc.code} from local endpoint: {raw[:500]}",
+            f"HTTP {exc.code} from local endpoint; response body redacted",
             kind=classify_backend_error(raw, status=exc.code),
         ) from exc
     except TimeoutError as exc:
@@ -1547,6 +1806,14 @@ def classify_exception(exc: BaseException) -> str:
         return exc.kind
     text = str(exc).casefold()
     return classify_backend_error(text)
+
+
+def safe_failure_error(exc: BaseException) -> str:
+    if isinstance(exc, LocalEndpointError):
+        return f"local endpoint error: {exc.kind}"
+    if isinstance(exc, ExtractionError):
+        return str(exc)
+    return f"{type(exc).__name__}: redacted"
 
 
 def classify_backend_error(message: str, *, status: int | None = None) -> str:

@@ -280,3 +280,47 @@ Allow the deferred full-corpus pass to complete, then run targeted retries for:
 If any targeted retry repeats the same failure shape, stop and specify a
 narrow extractor repair for that shape before treating the corpus run as
 complete.
+
+## Targeted Rerun Outcome
+
+Update: `2026-05-07`.
+
+The deferred full-corpus pass completed with five deferred extractor scopes.
+Normal targeted retries were then run for all five conversations. All five
+normal retries repeated their prior failure classes.
+
+A second bounded targeted repair was run only for the three long-generation
+parse-failure scopes, using a deeper adaptive split budget and a higher retry
+budget:
+
+```bash
+ENGRAM_EXTRACTOR_ADAPTIVE_SPLIT_MAX_DEPTH=6 ENGRAM_EXTRACTOR_RETRIES=3 \
+.venv/bin/python -m engram.cli extract --conversation-id <conversation_id> --batch-size 5
+```
+
+Outcome:
+
+- `conversation:54c017c3-6e55-467f-a407-8b26648aec09` succeeded: `769`
+  claims created across `27` segments; consolidation created `737` beliefs,
+  superseded `136`, and recorded `31` contradictions.
+- `conversation:8d7a5f1f-38e8-4611-abf1-2ebdb020c6af` succeeded: `119`
+  claims created across `2` segments; consolidation created `118` beliefs,
+  superseded `3`, and recorded `3` contradictions.
+- `conversation:d01adc57-3353-4ac9-8c49-5ddef6876492` succeeded: `9`
+  claims created across `4` segments; consolidation created `9` beliefs,
+  superseded `1`, and recorded `0` contradictions.
+
+The two validation-repair-shaped failures remained deferred:
+
+- `conversation:82dbc95d-76a4-4972-82d9-47477fa066b0`
+- `conversation:ba53064d-53f3-44a7-8998-e38eead0b260`
+
+Final progress state after targeted reruns:
+
+- Completed extractor conversation scopes: `7775`
+- Failed extractor conversation scopes: `2`
+- Completed consolidator conversation scopes: `7775`
+- Failed consolidator conversation scopes: `2`
+
+Next repair should focus on the repeated validation-repair failure shape rather
+than further split-depth tuning.
