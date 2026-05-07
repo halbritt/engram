@@ -1,3 +1,6 @@
+<a id="rfc-0020"></a>
+# RFC 0020: Continuous-Batching Inference Server for Phase 2 Segmentation
+
 | Field | Value |
 |-------|-------|
 | RFC | 0020 |

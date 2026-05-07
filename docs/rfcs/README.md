@@ -33,7 +33,7 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0012](0012-python-agentic-coding-standard.md) | proposal | partial | Python agentic coding standard |
 | [0013](0013-development-operational-issue-loop.md) | accepted | partial | Development operational issue loop |
 | [0014](0014-operational-artifact-home.md) | proposal | partial | Operational artifact home (spec handoff) |
-| [0015](0015-test-coverage-improvements.md) | proposal | none | Test coverage improvements |
+| [0015](0015-test-coverage-improvements.md) | proposal | partial | Test coverage improvements |
 | [0016](0016-context-lane-reranker-slot.md) | proposal | none | Context lane reranker slot |
 | [0017](0017-extraction-prompt-versioning.md) | proposal | partial | Extraction prompt versioning and cross-corpus dry-run |
 | [0018](0018-evidence-to-claim-audit-cascade.md) | proposal | none | Evidence-to-claim audit cascade |
@@ -66,16 +66,31 @@ prescriptive — a `none` here is not a TODO unless promoted via
   exercised in code.
 - **0011** — full schema landed in `migrations/006_claims_beliefs.sql`;
   extractor, consolidator, transitions, and tests in place; D043–D047 accepted.
-- **0012** — code already follows the language rules (`from __future__
-  import annotations`, `SegmentationError` family, `ENGRAM_*` env vars), but
-  Phase 0 toolchain (ruff/pyright in `pyproject.toml`, `make lint|format|
-  typecheck` targets) is not wired.
+- **0012** — Phase 0 wired (2026-05-07): ruff and pyright pinned in
+  `pyproject.toml` with permissive baselines, `make lint`, `make format`,
+  `make typecheck` targets in place. Baseline scan: 211 ruff findings (107
+  E501 line-too-long, 46 RUF059, 23 I001, balance smaller categories) and
+  51 pyright errors at `typeCheckingMode = "basic"`. Phase 1 (green-on-touch),
+  Phase 2 (bounded sweeps), and Phase 3 (gate) follow incrementally per the
+  RFC's adoption plan.
 - **0013** — marker gates are scripted in `scripts/phase3_tmux_agents.sh`;
   redacted-report authoring and repair-plan synthesis remain coordinator-
   driven rather than fully automated.
 - **0014** — spec accepted (D066) and `phase3_tmux_agents.sh` already scans
   `docs/operations/phase3-postbuild/`, but the directory is not yet populated;
   legacy RFC 0013 per-loop paths still hold live markers.
+- **0015** — top-priority gaps and most secondary gaps landed 2026-05-07:
+  `tests/test_cli.py` (16 tests, all CLI subcommands except `pipeline-3`),
+  `tests/test_canonicalize_and_sanitize.py` (44 tests locking
+  `canonicalize_embeddable_text` and the `sanitize_*` family),
+  `tests/test_embedder_http_errors.py` (11 tests, mocked HTTP error paths),
+  `tests/test_gemini_html.py` (26 tests on `TextHTMLParser` + activity-id
+  helpers), `tests/test_progress.py` (9 tests on `upsert_progress`),
+  `tests/test_token_budget.py` (19 tests on context-budget math), and
+  `tests/test_pipeline_smoke.py` (1 compound 3-conversation e2e wiring
+  test). Total +126 tests; full suite 283 passed in 72s. Gaps 6 (loader
+  helpers, three loaders) and 7 (migration safety, touches conftest)
+  deferred as follow-ups.
 - **0017** — Part 1 versioning contract is live
   (`EXTRACTION_PROMPT_VERSION = "extractor.v8.d064.accounted-zero"` in
   `src/engram/extractor.py`); Part 2 (`engram re-extract` CLI) and Part 3
