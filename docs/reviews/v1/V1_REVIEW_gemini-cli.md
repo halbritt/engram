@@ -40,7 +40,7 @@ This review evaluates the [V1_ARCHITECTURE_DRAFT.md](../../design/V1_ARCHITECTUR
 
 ### P7: Why refusal of false precision is a contract
 - **Status:** Honors.
-- **Reasoning:** V1 includes `confidence` in the ranking formula and a dedicated "Uncertain / Conflicting" section in the context package. 
+- **Reasoning:** V1 includes `confidence` in the ranking formula and a dedicated "Uncertain / Conflicting" section in the context package.
 - **Delta:** Propose an explicit "Missing Data" response pattern. If a query targets a known entity with no current beliefs, `context_for` should emit a "No data found for [Entity]" marker rather than omitting the section, to satisfy the principle's "not silence" requirement.
 
 ---
@@ -78,7 +78,7 @@ My round-1 position has shifted on the following:
 
 ## 5. The Eval Gate Subset Size (Tiered Alternative)
 
-The proposed tiered alternative correctly identifies the gap. A random 100-conversation sample is statistically likely to miss the specific people and projects authored into a high-quality gold set. 
+The proposed tiered alternative correctly identifies the gap. A random 100-conversation sample is statistically likely to miss the specific people and projects authored into a high-quality gold set.
 
 **Recommendation:**
 1. **Smoke Test (100 random):** Validates the pipeline doesn't crash and extraction isn't gibberish.

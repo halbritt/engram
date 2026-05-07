@@ -2,7 +2,12 @@
 
 RFCs are proposal documents for ideas that may become accepted decisions later.
 They are not binding until promoted into `DECISION_LOG.md`, `BUILD_PHASES.md`,
-or a phase prompt.
+a phase prompt, or an accepted spec named by a recorded project decision.
+
+When an RFC produces an accepted spec handoff, mark the RFC `promoted` or
+`superseded`, link to the accepted spec, and target future implementation work
+at the spec. The RFC remains provenance; it should not keep being reviewed as
+the implementation contract.
 
 | RFC | Status | Topic |
 |-----|--------|-------|
@@ -19,7 +24,7 @@ or a phase prompt.
 | [0011](0011-phase-3-claims-beliefs.md) | proposal | Phase 3 claims and bitemporal beliefs |
 | [0012](0012-python-agentic-coding-standard.md) | proposal | Python agentic coding standard |
 | [0013](0013-development-operational-issue-loop.md) | accepted | Development operational issue loop |
-| [0014](0014-operational-artifact-home.md) | proposal | Operational artifact home |
+| [0014](0014-operational-artifact-home.md) | proposal | Operational artifact home (spec handoff) |
 | [0015](0015-test-coverage-improvements.md) | proposal | Test coverage improvements |
 | [0016](0016-context-lane-reranker-slot.md) | proposal | Context lane reranker slot |
 | [0017](0017-extraction-prompt-versioning.md) | proposal | Extraction prompt versioning and cross-corpus dry-run |

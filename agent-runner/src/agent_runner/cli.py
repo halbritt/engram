@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -28,12 +29,19 @@ from agent_runner.db import (
     latest_verdict,
     new_id,
     record_review_verdict,
+    repo_relative_path,
     row_by_id,
+    sha256_bytes,
     transaction,
     utc_now,
 )
 from agent_runner.errors import InvalidTransitionError, LeaseError, NotFoundError, WorkflowError
+from agent_runner.identity import artifact_author_identity
 from agent_runner.workflow import create_run, load_workflow
+
+
+EVIDENCE_FREE_TEXT_KEYS = {"description", "rationale"}
+EVIDENCE_FREE_TEXT_PLACEHOLDER = "<redacted-free-text>"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -167,6 +175,28 @@ def build_parser() -> argparse.ArgumentParser:
     verdict.add_argument("--rationale")
     verdict.add_argument("--json", action="store_true")
 
+    submit_review = sub.add_parser("submit-review")
+    submit_review.add_argument("--session-id", required=True)
+    submit_review.add_argument("--job-id", required=True)
+    submit_review.add_argument("--lease-id", required=True)
+    submit_review.add_argument("--path", required=True)
+    submit_review.add_argument(
+        "--verdict",
+        choices=["accept", "accept_with_findings", "needs_revision", "reject"],
+        required=True,
+    )
+    submit_review.add_argument("--logical-name", default="review")
+    submit_review.add_argument("--kind", default="finding")
+    submit_review.add_argument("--rationale")
+    submit_review.add_argument("--json", action="store_true")
+
+    evidence = sub.add_parser("evidence")
+    evidence_sub = evidence.add_subparsers(dest="evidence_command", required=True)
+    evidence_export = evidence_sub.add_parser("export")
+    evidence_export.add_argument("--run-id", required=True)
+    evidence_export.add_argument("--path", required=True)
+    evidence_export.add_argument("--json", action="store_true")
+
     status = sub.add_parser("status")
     status.add_argument("--run-id")
     status.add_argument("--json", action="store_true")
@@ -205,7 +235,7 @@ def dispatch(args: argparse.Namespace) -> object:
             with transaction(conn):
                 return create_run(conn, repo=repo, workflow_path=Path(args.workflow))
         if args.command == "branch" and args.branch_command == "confirm":
-            return branch_confirm(conn, run_id=args.run_id, branch=args.branch)
+            return branch_confirm(conn, repo=repo, run_id=args.run_id, branch=args.branch)
         if args.command == "run" and args.run_command == "start":
             return run_start(conn, run_id=args.run_id)
         if args.command == "register-session":
@@ -279,6 +309,21 @@ def dispatch(args: argparse.Namespace) -> object:
                 findings_artifact_id=args.findings_artifact_id,
                 rationale=args.rationale,
             )
+        if args.command == "submit-review":
+            return submit_review(
+                conn,
+                repo=repo,
+                session_id=args.session_id,
+                job_id=args.job_id,
+                lease_id=args.lease_id,
+                path_text=args.path,
+                verdict=args.verdict,
+                logical_name=args.logical_name,
+                kind=args.kind,
+                rationale=args.rationale,
+            )
+        if args.command == "evidence" and args.evidence_command == "export":
+            return evidence_export(conn, repo=repo, run_id=args.run_id, path_text=args.path)
         if args.command == "status":
             return status(conn, run_id=args.run_id)
         if args.command == "why":
@@ -288,12 +333,13 @@ def dispatch(args: argparse.Namespace) -> object:
     raise AgentRunnerError("unknown command", exit_code=2)
 
 
-def branch_confirm(conn: sqlite3.Connection, *, run_id: str, branch: str) -> JsonObject:
+def branch_confirm(conn: sqlite3.Connection, *, repo: Path, run_id: str, branch: str) -> JsonObject:
     """Record branch confirmation."""
     with transaction(conn):
         run = row_by_id(conn, "runs", "run_id", run_id)
         if run["state"] not in ("needs_branch_confirmation", "ready"):
             raise InvalidTransitionError("run is not waiting for branch confirmation")
+        current_branch = current_git_branch(repo)
         now = utc_now()
         conn.execute(
             """
@@ -305,7 +351,33 @@ def branch_confirm(conn: sqlite3.Connection, *, run_id: str, branch: str) -> Jso
             (branch, now, run_id),
         )
         insert_event(conn, run_id=run_id, event_type="run.branch_confirmed", payload={"branch": branch})
-        return {"run_id": run_id, "state": "ready", "branch": branch}
+        warning = None
+        if current_branch is not None and current_branch != branch:
+            warning = "current git branch differs from recorded branch confirmation"
+        return {
+            "run_id": run_id,
+            "state": "ready",
+            "branch": branch,
+            "requested_branch": branch,
+            "current_git_branch": current_branch,
+            "records_only": True,
+            "warning": warning,
+        }
+
+
+def current_git_branch(repo: Path) -> str | None:
+    """Return the current Git branch when detectable."""
+    result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    branch = result.stdout.strip()
+    if result.returncode != 0 or branch == "":
+        return None
+    return branch
 
 
 def run_start(conn: sqlite3.Connection, *, run_id: str) -> JsonObject:
@@ -623,6 +695,112 @@ def verdict_work(
     )
 
 
+def submit_review(
+    conn: sqlite3.Connection,
+    *,
+    repo: Path,
+    session_id: str,
+    job_id: str,
+    lease_id: str,
+    path_text: str,
+    verdict: str,
+    logical_name: str,
+    kind: str,
+    rationale: str | None,
+) -> JsonObject:
+    """Publish a review artifact and record its verdict in one command."""
+    job = row_by_id(conn, "jobs", "job_id", job_id)
+    prevalidate_submit_review(
+        conn,
+        job=job,
+        session_id=session_id,
+        lease_id=lease_id,
+        logical_name=logical_name,
+        kind=kind,
+        path_text=path_text,
+    )
+    if job["state"] == "claimed" and job["current_message_id"] is not None:
+        ack_work(
+            conn,
+            session_id=session_id,
+            message_id=str(job["current_message_id"]),
+            lease_id=lease_id,
+        )
+    artifact = publish_artifact(
+        conn,
+        repo=repo,
+        session_id=session_id,
+        job_id=job_id,
+        lease_id=lease_id,
+        kind=kind,
+        logical_name=logical_name,
+        path_text=path_text,
+    )
+    verdict_result = record_review_verdict(
+        conn,
+        session_id=session_id,
+        job_id=job_id,
+        lease_id=lease_id,
+        verdict=verdict,
+        findings_artifact_id=str(artifact["artifact_id"]),
+        rationale=rationale,
+    )
+    job = row_by_id(conn, "jobs", "job_id", job_id)
+    run = row_by_id(conn, "runs", "run_id", str(job["run_id"]))
+    return {
+        "artifact": artifact,
+        "verdict": verdict_result,
+        "job_state": job["state"],
+        "run_state": run["state"],
+        "blocker_id": verdict_result.get("blocker_id"),
+        "downstream_jobs": downstream_jobs(conn, job_id=job_id),
+    }
+
+
+def prevalidate_submit_review(
+    conn: sqlite3.Connection,
+    *,
+    job: sqlite3.Row,
+    session_id: str,
+    lease_id: str,
+    logical_name: str,
+    kind: str,
+    path_text: str,
+) -> None:
+    """Reject submit-review calls that would fail after artifact publication."""
+    if job["job_type"] != "review":
+        raise InvalidTransitionError("submit-review is valid only for review jobs")
+    if job["state"] not in {"claimed", "running"}:
+        raise InvalidTransitionError("review job must be claimed or running before submit-review")
+    if job["state"] == "claimed" and job["current_message_id"] is None:
+        raise InvalidTransitionError("claimed review job is missing its current message")
+    active_lease_for(conn, lease_id=lease_id, session_id=session_id, job_id=str(job["job_id"]))
+    expected = json.loads(str(job["expected_artifacts_json"]))
+    if not isinstance(expected, list):
+        raise InvalidTransitionError("expected artifacts must be a list")
+    for item in expected:
+        if not isinstance(item, dict) or item.get("required") is not True:
+            continue
+        expected_logical_name = item.get("logical_name")
+        expected_kind = item.get("kind")
+        expected_path = item.get("path")
+        if (expected_logical_name, expected_kind, expected_path) == (logical_name, kind, path_text):
+            continue
+        found = conn.execute(
+            """
+            SELECT 1 FROM artifacts
+            WHERE job_id = ? AND logical_name = ? AND artifact_kind = ? AND repo_path = ?
+            LIMIT 1
+            """,
+            (job["job_id"], expected_logical_name, expected_kind, expected_path),
+        ).fetchone()
+        if found is None:
+            raise InvalidTransitionError(
+                "required artifact would still be missing after submit-review: "
+                f"logical_name={expected_logical_name!r}, kind={expected_kind!r}, path={expected_path!r}"
+            )
+
+
 def status(conn: sqlite3.Connection, *, run_id: str | None) -> JsonObject:
     """Return current state summary."""
     if run_id is not None:
@@ -639,28 +817,607 @@ def status(conn: sqlite3.Connection, *, run_id: str | None) -> JsonObject:
         """,
         (run_id, run_id),
     ).fetchall()
+    open_blockers = blocker_summaries(conn, run_id=run_id, severity=None)
+    human_checkpoints = blocker_summaries(conn, run_id=run_id, severity="human_checkpoint")
+    non_accepting = latest_non_accepting_verdicts(conn, run_id=run_id)
+    claimable = claimable_jobs_by_role_lane(conn, run_id=run_id)
+    blocked_downstream = blocked_downstream_jobs(conn, run_id=run_id)
     return {
         "runs": [dict(row) for row in runs],
         "jobs": {str(row["state"]): int(row["count"]) for row in jobs},
+        "open_blockers": open_blockers,
+        "human_checkpoints": human_checkpoints,
+        "latest_non_accepting_review_verdicts": non_accepting,
+        "claimable_jobs": claimable,
+        "blocked_downstream_jobs": blocked_downstream,
+        "next_actions": next_actions(
+            open_blockers=open_blockers,
+            human_checkpoints=human_checkpoints,
+            non_accepting_verdicts=non_accepting,
+            claimable_jobs=claimable,
+        ),
     }
 
 
 def why(conn: sqlite3.Connection, *, target_id: str) -> JsonObject:
-    """Explain a job or message by returning related rows and events."""
+    """Explain a state id by returning related rows and events."""
+    run = conn.execute("SELECT * FROM runs WHERE run_id = ?", (target_id,)).fetchone()
+    if run is not None:
+        run_id = str(run["run_id"])
+        return {
+            "target_type": "run",
+            "run": dict(run),
+            "jobs": [dict(row) for row in jobs_for_run(conn, run_id=run_id)],
+            "open_blockers": blocker_summaries(conn, run_id=run_id, severity=None),
+            "events": events_for(conn, run_id=run_id),
+            "next_actions": status(conn, run_id=run_id)["next_actions"],
+        }
+
     job = conn.execute("SELECT * FROM jobs WHERE job_id = ? OR workflow_job_id = ?", (target_id, target_id)).fetchone()
     message = conn.execute("SELECT * FROM queue_messages WHERE message_id = ?", (target_id,)).fetchone()
-    if job is None and message is None:
-        raise NotFoundError("target id is not a known job or message")
-    job_id = job["job_id"] if job is not None else message["job_id"]
-    events = conn.execute(
-        "SELECT event_id, event_type, payload_json FROM events WHERE job_id = ? ORDER BY event_id",
+    if job is not None or message is not None:
+        job_id = str(job["job_id"] if job is not None else message["job_id"])
+        return {
+            "target_type": "job" if job is not None else "message",
+            "job": dict(job) if job is not None else dict(row_by_id(conn, "jobs", "job_id", job_id)),
+            "message": dict(message) if message is not None else None,
+            "verdict": latest_verdict_row(conn, job_id=job_id),
+            "blockers": blockers_for_job(conn, job_id=job_id),
+            "downstream_jobs": downstream_jobs(conn, job_id=job_id),
+            "events": events_for(conn, job_id=job_id),
+        }
+
+    blocker = conn.execute("SELECT * FROM blockers WHERE blocker_id = ?", (target_id,)).fetchone()
+    if blocker is not None:
+        job_id = str(blocker["job_id"]) if blocker["job_id"] is not None else None
+        run_id = str(blocker["run_id"])
+        return {
+            "target_type": "blocker",
+            "blocker": dict(blocker),
+            "run": dict(row_by_id(conn, "runs", "run_id", run_id)),
+            "job": dict(row_by_id(conn, "jobs", "job_id", job_id)) if job_id is not None else None,
+            "session": dict(row_by_id(conn, "sessions", "session_id", str(blocker["session_id"])))
+            if blocker["session_id"] is not None
+            else None,
+            "related_verdict": latest_verdict_row(conn, job_id=job_id) if job_id is not None else None,
+            "blocked_downstream_jobs": downstream_jobs(conn, job_id=job_id) if job_id is not None else [],
+            "next_actions": ["inspect_blocker", "resolve_human_checkpoint", "export_run_evidence"],
+            "events": events_for(conn, job_id=job_id) if job_id is not None else events_for(conn, run_id=run_id),
+        }
+
+    artifact = conn.execute("SELECT * FROM artifacts WHERE artifact_id = ?", (target_id,)).fetchone()
+    if artifact is not None:
+        job_id = str(artifact["job_id"]) if artifact["job_id"] is not None else None
+        return {
+            "target_type": "artifact",
+            "artifact": dict(artifact),
+            "job": dict(row_by_id(conn, "jobs", "job_id", job_id)) if job_id is not None else None,
+            "verdicts": verdicts_for_artifact(conn, artifact_id=target_id),
+            "events": events_for(conn, artifact_id=target_id),
+        }
+
+    verdict = conn.execute("SELECT * FROM verdicts WHERE verdict_id = ?", (target_id,)).fetchone()
+    if verdict is not None:
+        artifact_id = verdict["findings_artifact_id"]
+        return {
+            "target_type": "verdict",
+            "verdict": dict(verdict),
+            "job": dict(row_by_id(conn, "jobs", "job_id", str(verdict["job_id"]))),
+            "artifact": dict(row_by_id(conn, "artifacts", "artifact_id", str(artifact_id)))
+            if artifact_id is not None
+            else None,
+            "blockers": blockers_for_job(conn, job_id=str(verdict["job_id"])),
+            "events": events_for(conn, job_id=str(verdict["job_id"])),
+        }
+
+    session = conn.execute("SELECT * FROM sessions WHERE session_id = ? OR slug = ?", (target_id, target_id)).fetchone()
+    if session is not None:
+        return {
+            "target_type": "session",
+            "session": dict(session),
+            "jobs": jobs_for_session(conn, session_id=str(session["session_id"])),
+            "events": events_for(conn, session_id=str(session["session_id"])),
+        }
+
+    raise NotFoundError("target id is not a known run, job, message, blocker, artifact, verdict, or session")
+
+
+def evidence_export(conn: sqlite3.Connection, *, repo: Path, run_id: str, path_text: str) -> JsonObject:
+    """Write a redacted Markdown snapshot of runner state."""
+    run = row_by_id(conn, "runs", "run_id", run_id)
+    target = repo_relative_path(repo, path_text)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    status_payload = redact_evidence_payload(status(conn, run_id=run_id))
+    doctor_payload = redact_evidence_payload(doctor(conn, run_id=run_id))
+    snapshot = redact_evidence_payload(evidence_snapshot(conn, run_id=run_id))
+    body = render_evidence_markdown(
+        run=dict(run),
+        status_payload=status_payload,
+        doctor_payload=doctor_payload,
+        snapshot=snapshot,
+    )
+    target.write_text(body, encoding="utf-8")
+    digest = sha256_bytes(body.encode("utf-8"))
+    insert_event(
+        conn,
+        run_id=run_id,
+        event_type="evidence.exported",
+        payload={"path": path_text, "sha256": digest},
+    )
+    return {"status": "exported", "run_id": run_id, "path": path_text, "sha256": digest}
+
+
+def redact_evidence_payload(payload: JsonObject) -> JsonObject:
+    """Return a copy of evidence payload with free-text fields redacted."""
+    redacted: JsonObject = {}
+    for key, value in payload.items():
+        redacted[str(key)] = redact_evidence_value(str(key), value)
+    return redacted
+
+
+def redact_evidence_value(key: str, value: object) -> object:
+    """Redact nested evidence values that may contain agent or user prose."""
+    if key in EVIDENCE_FREE_TEXT_KEYS and value is not None:
+        return EVIDENCE_FREE_TEXT_PLACEHOLDER
+    if isinstance(value, dict):
+        redacted: JsonObject = {}
+        for child_key, child_value in value.items():
+            redacted[str(child_key)] = redact_evidence_value(str(child_key), child_value)
+        return redacted
+    if isinstance(value, list):
+        return [redact_evidence_value("", item) for item in value]
+    return value
+
+
+def blocker_summaries(conn: sqlite3.Connection, *, run_id: str | None, severity: str | None) -> list[JsonObject]:
+    """Return open blocker summaries."""
+    rows = conn.execute(
+        """
+        SELECT b.blocker_id, b.run_id, b.job_id, b.session_id, b.severity,
+               b.blocker_kind, b.description, b.state, j.workflow_job_id, j.state AS job_state
+        FROM blockers b
+        LEFT JOIN jobs j ON j.job_id = b.job_id
+        WHERE b.state = 'open'
+          AND (? IS NULL OR b.run_id = ?)
+          AND (? IS NULL OR b.severity = ?)
+        ORDER BY b.created_at
+        """,
+        (run_id, run_id, severity, severity),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def latest_non_accepting_verdicts(conn: sqlite3.Connection, *, run_id: str | None) -> list[JsonObject]:
+    """Return latest non-accepting verdicts on waiting or failed review jobs."""
+    rows = conn.execute(
+        """
+        SELECT v.verdict_id, v.run_id, v.job_id, j.workflow_job_id, j.state AS job_state,
+               v.session_id, v.verdict, v.findings_artifact_id, v.rationale
+        FROM verdicts v
+        JOIN jobs j ON j.job_id = v.job_id
+        WHERE j.job_type = 'review'
+          AND j.state IN ('waiting_human','failed')
+          AND v.verdict NOT IN ('accept','accept_with_findings')
+          AND (? IS NULL OR v.run_id = ?)
+          AND v.created_at = (
+            SELECT MAX(v2.created_at) FROM verdicts v2 WHERE v2.job_id = v.job_id
+          )
+        ORDER BY v.created_at
+        """,
+        (run_id, run_id),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def claimable_jobs_by_role_lane(conn: sqlite3.Connection, *, run_id: str | None) -> list[JsonObject]:
+    """Return pending work grouped by target role and lane."""
+    rows = conn.execute(
+        """
+        SELECT qm.target_role_id AS role_id, qm.target_lane_id AS lane_id,
+               COUNT(*) AS count, GROUP_CONCAT(j.workflow_job_id) AS workflow_job_ids
+        FROM queue_messages qm
+        JOIN jobs j ON j.job_id = qm.job_id
+        WHERE qm.kind = 'work' AND qm.state = 'pending'
+          AND (? IS NULL OR qm.run_id = ?)
+        GROUP BY qm.target_role_id, qm.target_lane_id
+        ORDER BY qm.target_role_id, qm.target_lane_id
+        """,
+        (run_id, run_id),
+    ).fetchall()
+    result: list[JsonObject] = []
+    for row in rows:
+        workflow_ids = str(row["workflow_job_ids"] or "").split(",") if row["workflow_job_ids"] else []
+        result.append(
+            {
+                "role_id": row["role_id"],
+                "lane_id": row["lane_id"],
+                "count": int(row["count"]),
+                "workflow_job_ids": workflow_ids,
+            }
+        )
+    return result
+
+
+def blocked_downstream_jobs(conn: sqlite3.Connection, *, run_id: str | None) -> list[JsonObject]:
+    """Return blocked jobs with unsatisfied upstream dependency context."""
+    jobs = conn.execute(
+        """
+        SELECT * FROM jobs
+        WHERE state = 'blocked' AND (? IS NULL OR run_id = ?)
+        ORDER BY workflow_job_id
+        """,
+        (run_id, run_id),
+    ).fetchall()
+    result: list[JsonObject] = []
+    for job in jobs:
+        dependencies = dependency_context(conn, job_id=str(job["job_id"]))
+        if not dependencies:
+            continue
+        result.append(
+            {
+                "job_id": job["job_id"],
+                "workflow_job_id": job["workflow_job_id"],
+                "state": job["state"],
+                "role_id": job["role_id"],
+                "lane": json_loads(str(job["lane_selector_json"])).get("lane_id"),
+                "blocked_by": dependencies,
+            }
+        )
+    return result
+
+
+def dependency_context(conn: sqlite3.Connection, *, job_id: str) -> list[JsonObject]:
+    """Return dependency rows with upstream state and verdict context."""
+    dependencies = conn.execute(
+        """
+        SELECT dep.depends_on_job_id, dep.gate_json, up.workflow_job_id, up.state, up.job_type
+        FROM job_dependencies dep
+        JOIN jobs up ON up.job_id = dep.depends_on_job_id
+        WHERE dep.job_id = ?
+        ORDER BY up.workflow_job_id
+        """,
         (job_id,),
     ).fetchall()
+    result: list[JsonObject] = []
+    for dependency in dependencies:
+        gate = json_loads(str(dependency["gate_json"]))
+        verdict = latest_verdict(conn, job_id=str(dependency["depends_on_job_id"]))
+        satisfied = dependency["state"] == "completed"
+        required = gate.get("requires_verdict")
+        if isinstance(required, list):
+            satisfied = satisfied and verdict in set(required)
+        if satisfied:
+            continue
+        result.append(
+            {
+                "depends_on_job_id": dependency["depends_on_job_id"],
+                "workflow_job_id": dependency["workflow_job_id"],
+                "state": dependency["state"],
+                "required_verdicts": required,
+                "latest_verdict": verdict,
+            }
+        )
+    return result
+
+
+def next_actions(
+    *,
+    open_blockers: list[JsonObject],
+    human_checkpoints: list[JsonObject],
+    non_accepting_verdicts: list[JsonObject],
+    claimable_jobs: list[JsonObject],
+) -> list[str]:
+    """Return deterministic coordinator next-action names."""
+    actions: list[str] = []
+    if claimable_jobs:
+        actions.append("claim_available_work")
+    if open_blockers:
+        actions.extend(["inspect_blocker", "export_run_evidence"])
+    if human_checkpoints:
+        actions.append("resolve_human_checkpoint")
+    if non_accepting_verdicts:
+        actions.append("revise_workflow_cycle")
+    return list(dict.fromkeys(actions))
+
+
+def downstream_jobs(conn: sqlite3.Connection, *, job_id: str) -> list[JsonObject]:
+    """Return immediate downstream jobs and their dependency context."""
+    rows = conn.execute(
+        """
+        SELECT j.* FROM job_dependencies dep
+        JOIN jobs j ON j.job_id = dep.job_id
+        WHERE dep.depends_on_job_id = ?
+        ORDER BY j.workflow_job_id
+        """,
+        (job_id,),
+    ).fetchall()
+    return [
+        {
+            "job_id": row["job_id"],
+            "workflow_job_id": row["workflow_job_id"],
+            "state": row["state"],
+            "blocked_by": dependency_context(conn, job_id=str(row["job_id"])),
+        }
+        for row in rows
+    ]
+
+
+def latest_verdict_row(conn: sqlite3.Connection, *, job_id: str | None) -> JsonObject | None:
+    """Return the latest verdict row for a job."""
+    if job_id is None:
+        return None
+    row = conn.execute(
+        "SELECT * FROM verdicts WHERE job_id = ? ORDER BY created_at DESC, verdict_id DESC LIMIT 1",
+        (job_id,),
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def blockers_for_job(conn: sqlite3.Connection, *, job_id: str) -> list[JsonObject]:
+    """Return blockers for a job."""
+    rows = conn.execute("SELECT * FROM blockers WHERE job_id = ? ORDER BY created_at", (job_id,)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def verdicts_for_artifact(conn: sqlite3.Connection, *, artifact_id: str) -> list[JsonObject]:
+    """Return verdicts that cite an artifact."""
+    rows = conn.execute(
+        "SELECT * FROM verdicts WHERE findings_artifact_id = ? ORDER BY created_at",
+        (artifact_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def jobs_for_run(conn: sqlite3.Connection, *, run_id: str) -> list[sqlite3.Row]:
+    """Return jobs for a run."""
+    return conn.execute(
+        "SELECT * FROM jobs WHERE run_id = ? ORDER BY workflow_job_id, attempt",
+        (run_id,),
+    ).fetchall()
+
+
+def jobs_for_session(conn: sqlite3.Connection, *, session_id: str) -> list[JsonObject]:
+    """Return jobs touched by a session."""
+    rows = conn.execute(
+        """
+        SELECT DISTINCT j.*
+        FROM jobs j
+        LEFT JOIN leases l ON l.resource_id = j.job_id
+        LEFT JOIN verdicts v ON v.job_id = j.job_id
+        WHERE l.owner_session_id = ? OR v.session_id = ?
+        ORDER BY j.workflow_job_id
+        """,
+        (session_id, session_id),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def events_for(
+    conn: sqlite3.Connection,
+    *,
+    run_id: str | None = None,
+    job_id: str | None = None,
+    session_id: str | None = None,
+    artifact_id: str | None = None,
+) -> list[JsonObject]:
+    """Return matching append-only events."""
+    clauses: list[str] = []
+    values: list[str] = []
+    if run_id is not None:
+        clauses.append("run_id = ?")
+        values.append(run_id)
+    if job_id is not None:
+        clauses.append("job_id = ?")
+        values.append(job_id)
+    if session_id is not None:
+        clauses.append("actor_session_id = ?")
+        values.append(session_id)
+    if artifact_id is not None:
+        clauses.append("artifact_id = ?")
+        values.append(artifact_id)
+    where = " AND ".join(clauses) if clauses else "1 = 1"
+    rows = conn.execute(
+        f"SELECT event_id, event_type, payload_json FROM events WHERE {where} ORDER BY event_id",
+        values,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def evidence_snapshot(conn: sqlite3.Connection, *, run_id: str) -> JsonObject:
+    """Return redacted run state for evidence export."""
+    run = row_by_id(conn, "runs", "run_id", run_id)
+    snapshot = row_by_id(conn, "workflow_snapshots", "workflow_snapshot_id", str(run["workflow_snapshot_id"]))
+    workflow = json_loads(str(snapshot["workflow_json"]))
+    jobs = evidence_job_summaries(conn, run_id=run_id, workflow=workflow)
+    artifacts = evidence_artifact_summaries(conn, run_id=run_id, workflow=workflow)
+    verdicts = conn.execute(
+        """
+        SELECT verdict_id, job_id, session_id, verdict, findings_artifact_id, rationale
+        FROM verdicts WHERE run_id = ? ORDER BY created_at
+        """,
+        (run_id,),
+    ).fetchall()
+    blockers = conn.execute(
+        """
+        SELECT blocker_id, job_id, session_id, severity, blocker_kind, description, state
+        FROM blockers WHERE run_id = ? ORDER BY created_at
+        """,
+        (run_id,),
+    ).fetchall()
     return {
-        "job": dict(job) if job is not None else None,
-        "message": dict(message) if message is not None else None,
-        "events": [dict(row) for row in events],
+        "schema_version": "agent-runner.evidence.v1",
+        "exported_at": utc_now(),
+        "workflow": {
+            "workflow_id": snapshot["workflow_id"],
+            "workflow_version": snapshot["workflow_version"],
+        },
+        "run": {
+            "run_id": run["run_id"],
+            "branch_name": run["branch_name"],
+            "state": run["state"],
+        },
+        "jobs": jobs,
+        "artifacts": artifacts,
+        "verdicts": [dict(row) for row in verdicts],
+        "blockers": [dict(row) for row in blockers],
+        "blocked_downstream_jobs": blocked_downstream_jobs(conn, run_id=run_id),
     }
+
+
+def evidence_job_summaries(
+    conn: sqlite3.Connection,
+    *,
+    run_id: str,
+    workflow: JsonObject,
+) -> list[JsonObject]:
+    """Return redacted job summaries for evidence export."""
+    summaries: list[JsonObject] = []
+    for job in jobs_for_run(conn, run_id=run_id):
+        lane = json_loads(str(job["lane_selector_json"])).get("lane_id")
+        lane_id = lane if isinstance(lane, str) else None
+        author = artifact_author_identity(
+            workflow,
+            role_id=str(job["role_id"]),
+            lane_id=lane_id,
+            workflow_job_id=str(job["workflow_job_id"]),
+        )
+        summaries.append(
+            {
+                "job_id": job["job_id"],
+                "workflow_job_id": job["workflow_job_id"],
+                "job_type": job["job_type"],
+                "role_id": job["role_id"],
+                "lane": lane_id,
+                "display_model": author["display_model"],
+                "author": author,
+                "state": job["state"],
+                "attempt": job["attempt"],
+                "max_attempts": job["max_attempts"],
+                "fresh_session_required": bool(job["fresh_session_required"]),
+                "dependencies": dependency_summary(conn, job_id=str(job["job_id"])),
+            }
+        )
+    return summaries
+
+
+def evidence_artifact_summaries(
+    conn: sqlite3.Connection,
+    *,
+    run_id: str,
+    workflow: JsonObject,
+) -> list[JsonObject]:
+    """Return artifact summaries with stable author identity."""
+    rows = conn.execute(
+        """
+        SELECT a.artifact_id, a.job_id, a.session_id, a.logical_name,
+               a.artifact_kind, a.repo_path, a.content_sha256,
+               j.workflow_job_id, j.role_id, j.lane_selector_json,
+               s.role_id AS session_role_id, s.lane_id AS session_lane_id,
+               s.ordinal AS session_ordinal
+        FROM artifacts a
+        LEFT JOIN jobs j ON j.job_id = a.job_id
+        LEFT JOIN sessions s ON s.session_id = a.session_id
+        WHERE a.run_id = ?
+        ORDER BY a.repo_path
+        """,
+        (run_id,),
+    ).fetchall()
+    artifacts: list[JsonObject] = []
+    for row in rows:
+        lane_id: str | None = None
+        if row["lane_selector_json"] is not None:
+            lane = json_loads(str(row["lane_selector_json"])).get("lane_id")
+            lane_id = lane if isinstance(lane, str) else None
+        artifact: JsonObject = {
+            "artifact_id": row["artifact_id"],
+            "job_id": row["job_id"],
+            "session_id": row["session_id"],
+            "logical_name": row["logical_name"],
+            "artifact_kind": row["artifact_kind"],
+            "repo_path": row["repo_path"],
+            "content_sha256": row["content_sha256"],
+        }
+        if row["workflow_job_id"] is not None and row["role_id"] is not None:
+            author_role = row["session_role_id"] or row["role_id"]
+            author_lane = row["session_lane_id"] or lane_id
+            author_ordinal = int(row["session_ordinal"]) if row["session_ordinal"] is not None else None
+            artifact["author"] = artifact_author_identity(
+                workflow,
+                role_id=str(author_role),
+                lane_id=str(author_lane) if author_lane is not None else None,
+                workflow_job_id=str(row["workflow_job_id"]),
+                ordinal=author_ordinal,
+            )
+        artifacts.append(artifact)
+    return artifacts
+
+
+def dependency_summary(conn: sqlite3.Connection, *, job_id: str) -> list[JsonObject]:
+    """Return all upstream dependency states for export."""
+    rows = conn.execute(
+        """
+        SELECT dep.depends_on_job_id, dep.gate_json, up.workflow_job_id, up.state
+        FROM job_dependencies dep
+        JOIN jobs up ON up.job_id = dep.depends_on_job_id
+        WHERE dep.job_id = ?
+        ORDER BY up.workflow_job_id
+        """,
+        (job_id,),
+    ).fetchall()
+    result: list[JsonObject] = []
+    for row in rows:
+        gate = json_loads(str(row["gate_json"]))
+        result.append(
+            {
+                "depends_on_job_id": row["depends_on_job_id"],
+                "workflow_job_id": row["workflow_job_id"],
+                "state": row["state"],
+                "required_verdicts": gate.get("requires_verdict"),
+                "latest_verdict": latest_verdict(conn, job_id=str(row["depends_on_job_id"])),
+            }
+        )
+    return result
+
+
+def render_evidence_markdown(
+    *,
+    run: JsonObject,
+    status_payload: JsonObject,
+    doctor_payload: JsonObject,
+    snapshot: JsonObject,
+) -> str:
+    """Render a redacted evidence snapshot as Markdown."""
+    return "\n".join(
+        [
+            "# Agent Runner Evidence Export",
+            "",
+            f"Run ID: `{run['run_id']}`",
+            f"Branch: `{run['branch_name']}`",
+            f"Run state: `{run['state']}`",
+            f"Exported at: `{snapshot['exported_at']}`",
+            "",
+            "Live SQLite state remains ignored under `.agent_runner/` and is not part of this export.",
+            "",
+            "## Status Output",
+            "",
+            "```json",
+            json_dumps(status_payload),
+            "```",
+            "",
+            "## Doctor Output",
+            "",
+            "```json",
+            json_dumps(doctor_payload),
+            "```",
+            "",
+            "## Snapshot",
+            "",
+            "```json",
+            json.dumps(snapshot, indent=2, sort_keys=True),
+            "```",
+            "",
+        ]
+    )
 
 
 def doctor(conn: sqlite3.Connection, *, run_id: str | None) -> JsonObject:

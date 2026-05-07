@@ -70,6 +70,18 @@ The validator enforces unique job ids, resolved role/lane references, valid
 edges, bounded cycles, repo-relative artifact paths, and declared parallelism
 with disjoint write scopes or review-only unique artifact paths.
 
+Lane configs may declare adapter constraints for network access, transcript
+handling, and repository scope. The validator accepts only known constraint
+names and values, and work packets expose both the requested constraint and the
+adapter's recorded enforcement level.
+
+Workflows may declare `review_revision_policy` for root review
+`needs_revision` verdicts. V1 supports the explicit
+`root_review_needs_revision: "human_checkpoint"` policy for RFC-style workflows
+that intentionally pause for human judgment instead of entering a revision
+loop. `root_review_needs_revision: "declared_cycle"` is accepted only when each
+root review job declares a matching `needs_revision` cycle.
+
 ## Sessions
 
 Agents must call `register-session` before claiming work. Database identity is
@@ -105,11 +117,37 @@ inspection before requeue.
 Published artifacts are curated outputs: prompts, findings, ledgers,
 syntheses, decisions, handoffs, markers, and test reports.
 
+Durable Markdown artifacts should include the work packet's privacy-safe
+`author: <role-name>-<model-name>-<ordinal>` line in their title block when
+one is provided.
+
 `publish-artifact` validates file existence, repo-relative path, write scope,
 artifact kind, and content hash. Transcript artifacts are rejected by default.
 
 `complete` and review `verdict` commands verify all required artifacts before
 terminal job transition.
+
+`submit-review` composes the common review path: it publishes the review
+artifact, records the verdict, applies review-gate behavior, and returns the
+artifact, verdict, blocker, run, and downstream state.
+
+`evidence export` writes a redacted Markdown snapshot of run, job, blocker,
+verdict, artifact, status, doctor, and downstream-blocking state. Export paths
+must stay inside the repository and outside `.agent_runner/`; SQLite state is
+not committed. Free-text fields that may contain agent or user prose, including
+blocker descriptions and verdict rationales, are redacted in the export.
+Workflow job titles are omitted by default; job and artifact authorship is
+reported through stable identity metadata: role id, lane id, declared model
+display name, and workflow job id.
+
+Work packets expose an exact lowercase `author:` line for agents to place in
+durable Markdown artifacts. This byline is distinct from evidence-export
+identity metadata: exports keep stable role id, lane id, declared model display
+name, and workflow job id; artifact files use the compact
+`author: <role-name>-<model-name>-<ordinal>` convention so workflow job titles
+or other project-specific prose do not leak into the artifact byline. The
+artifact publisher records and validates artifact references; it does not
+rewrite artifact files to insert headers.
 
 ## Branches And Commits
 
@@ -123,6 +161,10 @@ Workflow startup is confirmation-gated:
 
 No job is claimable before branch confirmation. V1 does not commit, push,
 merge, or rebase.
+
+`branch confirm --json` discloses that branch confirmation is records-only in
+V1, includes the requested branch and detected current git branch, and warns
+when they differ.
 
 ## CLI
 
@@ -142,8 +184,10 @@ agent_runner release
 agent_runner send
 agent_runner block
 agent_runner publish-artifact
+agent_runner submit-review
 agent_runner complete
 agent_runner verdict
+agent_runner evidence export
 agent_runner status
 agent_runner why
 agent_runner doctor
@@ -151,6 +195,15 @@ agent_runner doctor
 
 Human read commands can pretty-print. `--json` returns stable machine-readable
 JSON. Mutation commands support JSON output for agent use.
+
+`status --json` keeps aggregate run and job counts and also reports open
+blockers, human checkpoints, latest non-accepting review verdicts, claimable
+jobs grouped by role and lane, blocked downstream jobs, and deterministic
+`next_actions`.
+
+`why <id> --json` resolves run, job, queue message, blocker, artifact, verdict,
+and session ids. Blocker introspection includes owning context, related verdict
+when present, blocked downstream jobs, and next actions.
 
 ## Adapter Boundary
 

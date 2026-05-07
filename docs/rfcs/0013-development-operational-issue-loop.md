@@ -2,6 +2,8 @@
 
 Status: accepted
 Date: 2026-05-05
+Path guidance: superseded for future artifacts by accepted RFC 0014 on
+2026-05-06; legacy RFC 0013 marker paths remain scanned during migration.
 Context: D059, D061, RFC 0011, `docs/process/multi-agent-review-loop.md`,
 `docs/process/project-judgment.md`,
 `docs/reviews/phase3/PHASE_3_POSTBUILD_RUN_LIMIT10_2026_05_05.md`

@@ -1,14 +1,30 @@
 # RFC 0014: Operational Artifact Home
 
-Status: proposal
+Status: accepted for implementation
 Date: 2026-05-05
+Accepted: 2026-05-06 by owner for Phase 3 implementation
+Spec handoff: `docs/process/operational-artifact-home-spec.md` on 2026-05-06
+Spec revision: flat legacy markers, marker privacy, human-checkpoint
+resolution, and malformed marker handling tightened on 2026-05-06
 Context: D060, D062, D063, RFC 0013,
 `docs/process/multi-agent-review-loop.md`,
 `docs/process/phase-3-agent-runbook.md`
 
-This RFC proposes a clearer home for development operational artifacts. It is
-for later review. It does not move existing files and does not change the
-current RFC 0013 gate until accepted.
+This RFC defines the accepted implementation target for future development
+operational artifacts. Owner acceptance on 2026-05-06 authorizes Phase 3
+runbook and script updates, but it does not require rewriting or moving
+existing RFC 0013-era artifacts unless the owner explicitly requests history
+cleanup.
+
+The 2026-05-06 dogfood review showed that this RFC was still a proposal sketch:
+the layout choices needed to become explicit in a spec before implementation or
+final human disposition. The review-derived spec handoff is
+`docs/process/operational-artifact-home-spec.md`. Owner acceptance promotes the
+spec handoff into the Phase 3 runbook and script implementation scope.
+
+The spec handoff owns implementation-level details for flat legacy marker
+gates, marker private-content rejection, human-checkpoint resolution,
+`created_at` parsing, and malformed front-matter handling.
 
 ## Problem
 
@@ -47,8 +63,9 @@ searching through review artifacts. It also led to confusion about whether an
 - This RFC does not replace `logs/operational/` for untracked local-only
   diagnostics.
 - This RFC does not change Phase 3 expansion gates by itself.
+- This RFC does not make repository markers an `agent_runner` control plane.
 
-## Proposal
+## Proposal Sketch
 
 Use a tracked operations root for committed, redacted operational artifacts:
 
@@ -82,7 +99,7 @@ docs/operations/phase3-postbuild/<YYYYMMDD>_<run_slug>/
 Review artifacts remain under `docs/reviews/`, for example:
 
 ```text
-docs/reviews/phase3/RFC_0013_OPERATIONAL_ARTIFACT_HOME_REVIEW_<model_slug>_2026_05_05.md
+docs/reviews/phase3/RFC_0014_OPERATIONAL_ARTIFACT_HOME_REVIEW_<model_slug>_2026_05_05.md
 ```
 
 Untracked local-only diagnostics remain under ignored paths such as:
@@ -91,36 +108,41 @@ Untracked local-only diagnostics remain under ignored paths such as:
 logs/operational/<YYYYMMDD>_<run_slug>/
 ```
 
+This section is the original proposal sketch, not the final implementation
+contract. The spec handoff records the chosen root, loop layout, marker
+compatibility semantics, and `agent_runner` boundary.
+
 ## Artifact Rules
 
-Committed operational artifacts under `docs/operations/` follow the same
-redaction rules as RFC 0013:
-
-- allowed: command names, bounded arguments, row counts, IDs, timestamps, status
-  values, error classes, table/column/function names, and repository-relative
-  paths;
-- forbidden without explicit owner approval: raw message text, segment text,
-  prompt payloads, model completion payloads, extracted claim/belief values,
-  private names, exact conversation titles, corpus-derived prose summaries,
-  machine-specific absolute paths, and home-directory names.
-
-Markers should never contain private corpus content.
+Committed operational artifacts under `docs/operations/` follow RFC 0013
+Section 3 redaction rules unchanged. The spec handoff records the package-level
+tightening that marker files must never contain private corpus content, even
+when owner approval allows private detail in a tracked prose artifact.
 
 ## Migration Plan If Accepted
 
-1. Update RFC 0013 to point committed operational reports and markers to
-   `docs/operations/`.
-2. Update `docs/process/phase-3-agent-runbook.md`.
-3. Update `scripts/phase3_tmux_agents.sh` to read blocked/ready markers from
-   the new operations root.
-4. Add compatibility handling for the existing legacy path:
-   `docs/reviews/phase3/postbuild/markers/`.
-5. Optionally add a historical index entry in `docs/operations/README.md`
+1. Promote a concrete spec for the operational artifact home. The 2026-05-06
+   handoff spec is `docs/process/operational-artifact-home-spec.md`.
+2. Record that accepted RFC 0014 supersedes RFC 0013's committed operational
+   artifact path guidance for future artifacts. Do not rewrite RFC 0013 as
+   though its historical text always pointed to `docs/operations/`; at most,
+   add a deprecation cross-reference.
+3. Update `docs/process/phase-3-agent-runbook.md`.
+4. Update `scripts/phase3_tmux_agents.sh` to read blocked/ready markers from
+   the new operations root, legacy RFC 0013 per-loop marker roots, and flat
+   legacy marker files as one logical marker set.
+5. Preserve marker front matter and cross-root `supersedes` semantics from
+   RFC 0013.
+6. Optionally add a historical index entry in `docs/operations/README.md`
    linking to legacy RFC 0013-era artifacts.
-6. Do not rewrite or move existing artifacts unless the owner explicitly asks
+7. Do not rewrite or move existing artifacts unless the owner explicitly asks
    for that history cleanup.
 
 ## Open Questions
+
+The initial RFC left these questions open. The spec handoff resolves them so
+they can be reviewed as explicit choices rather than inferred during
+implementation.
 
 - Should the root be `docs/operations/`, `docs/ops/`, or
   `docs/operational/`?
@@ -140,4 +162,11 @@ This RFC is accepted only after review confirms:
 - old markers remain as audit provenance;
 - scripts can read both the new operations path and legacy RFC 0013 markers
   during transition;
-- D060 path hygiene remains enforced.
+- flat legacy blocked and human-checkpoint markers remain gate-active until
+  explicitly superseded by exact path;
+- marker files never contain private corpus content;
+- human-checkpoint resolution requires exact-path supersession and explicit
+  owner-decision evidence;
+- malformed or invalid marker front matter fails closed;
+- D060 path hygiene remains enforced;
+- the spec handoff has resolved open layout choices explicitly.

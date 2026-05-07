@@ -41,6 +41,31 @@ edit is enough.
    Do not delete the critique after synthesis. It is provenance for why the
    artifact changed.
 
+## RFC-To-Spec Promotion
+
+RFCs are proposal and provenance artifacts. They are useful for framing a
+problem, collecting review pressure, and explaining why a concrete contract
+exists. They should not remain the implementation target after an accepted spec
+or equivalent handoff exists.
+
+When review turns an RFC into a spec handoff:
+
+1. Put the explicit implementation choices in the spec, not in scattered review
+   comments or coordinator memory.
+2. Review the RFC and spec as a package until the spec is clear enough to be
+   accepted or rejected.
+3. When the spec is accepted, record the project decision in `DECISION_LOG.md`
+   or another canonical decision surface named by the project.
+4. Mark the RFC as `promoted` or `superseded` and link to the accepted spec.
+   The RFC remains historical context.
+5. Future implementation prompts and reviews target the accepted spec. They may
+   cite the RFC for provenance, but should not ask whether the historical RFC is
+   self-contained unless the task is explicitly to revise that RFC.
+
+If a spec is not accepted yet, the package remains in proposal/revision state.
+An agent should not implement from it merely because the RFC exists or because
+review artifacts recommended a direction.
+
 ## Context-Window Rule
 
 After synthesis, prefer a fresh context window for execution. The synthesis
@@ -56,6 +81,7 @@ already obvious and the review debate will not pollute the worker's attention.
 ```text
 Raw feedback -> docs/reviews/
 Accepted deltas -> original artifact
+Accepted RFC-to-spec handoff -> accepted spec + promoted/superseded RFC
 Binding architecture -> DECISION_LOG.md
 Sequencing changes -> BUILD_PHASES.md / ROADMAP.md
 Execution handoff -> prompts/

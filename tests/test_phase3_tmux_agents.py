@@ -8,6 +8,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "phase3_tmux_agents.sh"
 POSTBUILD = Path("docs/reviews/phase3/postbuild/markers")
+OPERATIONS = Path("docs/operations/phase3-postbuild")
 
 
 def copy_script(tmp_path: Path) -> Path:
@@ -23,10 +24,26 @@ def write_marker(root: Path, rel: Path, front_matter: dict[str, str] | None = No
     if front_matter is None:
         path.write_text("# Legacy blocked marker\n", encoding="utf-8")
         return rel.as_posix()
+    defaults = {
+        "loop": "postbuild",
+        "scope": "phase3 test",
+        "bound": "limit0",
+        "classes": "[]",
+        "linked_report": "docs/operations/phase3-postbuild/test/reports/01_RUN_REPORT.md",
+        "corpus_content_included": "none",
+    }
+    front_matter = {**defaults, **front_matter}
     lines = ["---"]
     lines.extend(f"{key}: {value}" for key, value in front_matter.items())
     lines.extend(["---", "", "# Marker", ""])
     path.write_text("\n".join(lines), encoding="utf-8")
+    return rel.as_posix()
+
+
+def write_report(root: Path, rel: Path) -> str:
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("# Owner decision\n", encoding="utf-8")
     return rel.as_posix()
 
 
@@ -164,3 +181,311 @@ def test_legacy_blocker_can_be_superseded_by_explicit_path(tmp_path):
 
     assert result.returncode == 0
     assert result.stdout == "01_SPEC_DRAFT.ready.md\n"
+
+
+def test_operations_root_blocker_blocks_expansion(tmp_path):
+    write_marker(
+        tmp_path,
+        OPERATIONS / "issue_a" / "markers" / "01_RUN.blocked.md",
+        {
+            "issue_id": "issue_a",
+            "family": "run",
+            "state": "blocked",
+            "gate": "blocked",
+            "created_at": "2026-05-06T01:00:00Z",
+        },
+    )
+
+    result = run_next(tmp_path)
+
+    assert result.returncode == 1
+    assert "docs/operations/phase3-postbuild/issue_a/markers/01_RUN.blocked.md" in result.stdout
+
+
+def test_operations_ready_marker_supersedes_legacy_per_loop_blocker(tmp_path):
+    blocked = write_marker(
+        tmp_path,
+        POSTBUILD / "issue_a" / "01_RUN.blocked.md",
+        {
+            "issue_id": "issue_a",
+            "family": "run",
+            "state": "blocked",
+            "gate": "blocked",
+            "created_at": "2026-05-06T01:00:00Z",
+        },
+    )
+    write_marker(
+        tmp_path,
+        OPERATIONS / "issue_a" / "markers" / "05_REPAIR_VERIFIED.ready.md",
+        {
+            "issue_id": "issue_a",
+            "family": "run",
+            "state": "ready",
+            "gate": "ready_for_next_bound",
+            "created_at": "2026-05-06T02:00:00Z",
+            "supersedes": blocked,
+        },
+    )
+
+    result = run_next(tmp_path)
+
+    assert result.returncode == 0
+    assert result.stdout == "01_SPEC_DRAFT.ready.md\n"
+
+
+def test_schema_bearing_marker_cannot_be_superseded_from_different_loop(tmp_path):
+    blocked = write_marker(
+        tmp_path,
+        POSTBUILD / "issue_a" / "01_RUN.blocked.md",
+        {
+            "issue_id": "issue_a",
+            "family": "run",
+            "state": "blocked",
+            "gate": "blocked",
+            "created_at": "2026-05-06T01:00:00Z",
+        },
+    )
+    write_marker(
+        tmp_path,
+        OPERATIONS / "other_loop" / "markers" / "05_REPAIR_VERIFIED.ready.md",
+        {
+            "issue_id": "issue_a",
+            "family": "run",
+            "state": "ready",
+            "gate": "ready_for_next_bound",
+            "created_at": "2026-05-06T02:00:00Z",
+            "supersedes": blocked,
+        },
+    )
+
+    result = run_next(tmp_path)
+
+    assert result.returncode == 1
+    assert "docs/reviews/phase3/postbuild/markers/issue_a/01_RUN.blocked.md" in result.stdout
+
+
+def test_front_matterless_flat_legacy_blocker_can_be_superseded_from_operations_root(tmp_path):
+    blocked = write_marker(tmp_path, POSTBUILD / "03_LIMIT10_RUN.blocked.md")
+    write_marker(
+        tmp_path,
+        OPERATIONS / "issue_a" / "markers" / "05_REPAIR_VERIFIED.ready.md",
+        {
+            "issue_id": "issue_a",
+            "family": "repair_verified",
+            "state": "ready",
+            "gate": "ready_for_next_bound",
+            "created_at": "2026-05-06T02:00:00Z",
+            "supersedes": blocked,
+        },
+    )
+
+    result = run_next(tmp_path)
+
+    assert result.returncode == 0
+    assert result.stdout == "01_SPEC_DRAFT.ready.md\n"
+
+
+def test_human_checkpoint_resolves_by_exact_path_and_owner_decision(tmp_path):
+    evidence = write_report(tmp_path, Path("docs/reviews/phase3/OWNER_DECISION.md"))
+    checkpoint = write_marker(
+        tmp_path,
+        POSTBUILD / "issue_a" / "11_POLICY.human_checkpoint.md",
+        {
+            "issue_id": "issue_a",
+            "family": "human_checkpoint",
+            "state": "human_checkpoint",
+            "gate": "human_checkpoint",
+            "created_at": "2026-05-06T01:00:00Z",
+        },
+    )
+    write_marker(
+        tmp_path,
+        POSTBUILD / "issue_a" / "12_POLICY_ACCEPTED.ready.md",
+        {
+            "issue_id": "issue_a",
+            "family": "human_checkpoint_resolution",
+            "state": "ready",
+            "gate": "ready_for_next_bound",
+            "created_at": "2026-05-06T02:00:00Z",
+            "linked_decision": "docs/reviews/phase3/OWNER_DECISION.md",
+            "owner_decision": "recorded",
+            "owner_decision_evidence": evidence,
+            "supersedes": checkpoint,
+        },
+    )
+
+    result = run_next(tmp_path)
+
+    assert result.returncode == 0
+    assert result.stdout == "01_SPEC_DRAFT.ready.md\n"
+
+
+def test_malformed_operations_marker_fails_closed(tmp_path):
+    path = tmp_path / OPERATIONS / "issue_a" / "markers" / "02_REPAIR_PLAN.ready.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("# Missing front matter\n", encoding="utf-8")
+
+    result = run_next(tmp_path)
+
+    assert result.returncode == 1
+    assert "docs/operations/phase3-postbuild/issue_a/markers/02_REPAIR_PLAN.ready.md" in result.stdout
+
+
+def test_schema_bearing_marker_missing_required_field_fails_closed(tmp_path):
+    write_marker(
+        tmp_path,
+        OPERATIONS / "issue_a" / "markers" / "02_REPAIR_PLAN.ready.md",
+        {
+            "issue_id": "issue_a",
+            "family": "repair_plan",
+            "state": "ready",
+            "gate": "ready_for_next_bound",
+            "created_at": "2026-05-06T01:00:00Z",
+            "linked_report": "",
+        },
+    )
+
+    result = run_next(tmp_path)
+
+    assert result.returncode == 1
+    assert "docs/operations/phase3-postbuild/issue_a/markers/02_REPAIR_PLAN.ready.md" in result.stdout
+
+
+def test_schema_bearing_marker_invalid_state_fails_closed(tmp_path):
+    write_marker(
+        tmp_path,
+        OPERATIONS / "issue_a" / "markers" / "02_REPAIR_PLAN.ready.md",
+        {
+            "issue_id": "issue_a",
+            "family": "repair_plan",
+            "state": "done",
+            "gate": "ready_for_next_bound",
+            "created_at": "2026-05-06T01:00:00Z",
+        },
+    )
+
+    result = run_next(tmp_path)
+
+    assert result.returncode == 1
+    assert "docs/operations/phase3-postbuild/issue_a/markers/02_REPAIR_PLAN.ready.md" in result.stdout
+
+
+def test_schema_bearing_marker_invalid_gate_fails_closed(tmp_path):
+    write_marker(
+        tmp_path,
+        OPERATIONS / "issue_a" / "markers" / "02_REPAIR_PLAN.ready.md",
+        {
+            "issue_id": "issue_a",
+            "family": "repair_plan",
+            "state": "ready",
+            "gate": "unknown_gate",
+            "created_at": "2026-05-06T01:00:00Z",
+        },
+    )
+
+    result = run_next(tmp_path)
+
+    assert result.returncode == 1
+    assert "docs/operations/phase3-postbuild/issue_a/markers/02_REPAIR_PLAN.ready.md" in result.stdout
+
+
+def test_schema_bearing_marker_naive_created_at_fails_closed(tmp_path):
+    write_marker(
+        tmp_path,
+        OPERATIONS / "issue_a" / "markers" / "02_REPAIR_PLAN.ready.md",
+        {
+            "issue_id": "issue_a",
+            "family": "repair_plan",
+            "state": "ready",
+            "gate": "ready_for_next_bound",
+            "created_at": "2026-05-06T01:00:00",
+        },
+    )
+
+    result = run_next(tmp_path)
+
+    assert result.returncode == 1
+    assert "docs/operations/phase3-postbuild/issue_a/markers/02_REPAIR_PLAN.ready.md" in result.stdout
+
+
+def test_timezone_offset_created_at_is_valid(tmp_path):
+    blocked = write_marker(
+        tmp_path,
+        OPERATIONS / "issue_a" / "markers" / "01_RUN.blocked.md",
+        {
+            "issue_id": "issue_a",
+            "family": "run",
+            "state": "blocked",
+            "gate": "blocked",
+            "created_at": "2026-05-06T01:00:00+00:00",
+        },
+    )
+    write_marker(
+        tmp_path,
+        OPERATIONS / "issue_a" / "markers" / "05_REPAIR_VERIFIED.ready.md",
+        {
+            "issue_id": "issue_a",
+            "family": "run",
+            "state": "ready",
+            "gate": "ready_for_next_bound",
+            "created_at": "2026-05-06T02:00:00+00:00",
+            "supersedes": blocked,
+        },
+    )
+
+    result = run_next(tmp_path)
+
+    assert result.returncode == 0
+    assert result.stdout == "01_SPEC_DRAFT.ready.md\n"
+
+
+def test_marker_with_users_home_path_fails_closed(tmp_path):
+    write_marker(
+        tmp_path,
+        OPERATIONS / "issue_a" / "markers" / "02_REPAIR_PLAN.ready.md",
+        {
+            "issue_id": "issue_a",
+            "family": "repair_plan",
+            "state": "ready",
+            "gate": "ready_for_next_bound",
+            "created_at": "2026-05-06T01:00:00Z",
+            "linked_report": "/Users/alice/engram/report.md",
+        },
+    )
+
+    result = run_next(tmp_path)
+
+    assert result.returncode == 1
+    assert "docs/operations/phase3-postbuild/issue_a/markers/02_REPAIR_PLAN.ready.md" in result.stdout
+
+
+def test_human_checkpoint_requires_explicit_owner_decision_evidence(tmp_path):
+    checkpoint = write_marker(
+        tmp_path,
+        POSTBUILD / "issue_a" / "11_POLICY.human_checkpoint.md",
+        {
+            "issue_id": "issue_a",
+            "family": "human_checkpoint",
+            "state": "human_checkpoint",
+            "gate": "human_checkpoint",
+            "created_at": "2026-05-06T01:00:00Z",
+        },
+    )
+    write_marker(
+        tmp_path,
+        POSTBUILD / "issue_a" / "12_POLICY_ACCEPTED.ready.md",
+        {
+            "issue_id": "issue_a",
+            "family": "human_checkpoint_resolution",
+            "state": "ready",
+            "gate": "ready_for_next_bound",
+            "created_at": "2026-05-06T02:00:00Z",
+            "linked_decision": "docs/reviews/phase3/OWNER_DECISION.md",
+            "supersedes": checkpoint,
+        },
+    )
+
+    result = run_next(tmp_path)
+
+    assert result.returncode == 1
+    assert "docs/reviews/phase3/postbuild/markers/issue_a/11_POLICY.human_checkpoint.md" in result.stdout

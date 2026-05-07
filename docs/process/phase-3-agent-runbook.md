@@ -167,10 +167,25 @@ scripts/phase3_tmux_agents.sh status
 scripts/phase3_tmux_agents.sh next
 ```
 
-`status` and `next` also surface post-build operational blockers under
-`docs/reviews/phase3/postbuild/markers/`. A `.blocked.md` or
-`.human_checkpoint.md` marker blocks expansion until a later reviewed repair
-creates an accepted ready marker for that operational loop.
+`status` and `next` also surface post-build operational blockers from the
+accepted RFC 0014 marker set:
+
+```text
+docs/operations/phase3-postbuild/<loop_id>/markers/
+docs/reviews/phase3/postbuild/markers/<loop_id>/
+docs/reviews/phase3/postbuild/markers/*.md
+```
+
+A `.blocked.md` or `.human_checkpoint.md` marker blocks expansion until a
+later reviewed repair creates an accepted ready marker that supersedes the
+exact blocked marker path. Flat legacy markers without front matter remain
+gate-active by exact repository-relative path; flat `.ready.md` files are audit
+provenance only.
+
+Human-checkpoint markers require stronger evidence than ordinary blockers. A
+ready marker may clear one only when it names the exact checkpoint path in
+`supersedes` and records `owner_decision: recorded` plus
+`owner_decision_evidence: <repo-relative path>`.
 
 ## Post-Build Operational Issue Loop
 
@@ -178,16 +193,36 @@ RFC 0013 governs operational issues found after build review, including bounded
 runtime failures, schema/preflight drift, marker mismatches, and unsafe
 downstream transitions.
 
+RFC 0014 is accepted for implementation by owner decision on 2026-05-06 and
+supersedes RFC 0013's future-path guidance for committed operational artifacts.
+For new Phase 3 post-build operational loops, use:
+
+```text
+docs/operations/phase3-postbuild/<YYYYMMDD>_<run_slug>/
+  reports/
+  markers/
+```
+
+Review feedback, findings ledgers, synthesis, and final-review artifacts stay
+under `docs/reviews/`. Untracked private diagnostics stay under ignored paths
+such as `logs/operational/`.
+
 When a bounded post-build run hits a stop condition:
 
 - stop expansion immediately;
-- write a redacted run report under `docs/reviews/phase3/`;
+- write a redacted run report under
+  `docs/operations/phase3-postbuild/<loop_id>/reports/`;
 - write a blocked or human-checkpoint marker under
-  `docs/reviews/phase3/postbuild/markers/`;
+  `docs/operations/phase3-postbuild/<loop_id>/markers/`;
 - classify the issue using RFC 0013 issue classes;
 - keep old markers as provenance instead of deleting them;
 - use `docs/process/multi-agent-review-loop.md` for any non-trivial repair,
   run-gate change, derived-state policy change, or human-checkpoint change.
+
+During migration, automation reads operations-root markers, legacy RFC 0013
+per-loop markers, and flat legacy marker files as one logical marker set. Do
+not move, rename, or delete legacy markers unless the owner explicitly asks for
+history cleanup.
 
 Tracked run reports and markers must not contain private corpus content: no raw
 message text, segment text, prompt/completion payloads, extracted claim/belief
@@ -196,6 +231,13 @@ summaries. If private content is needed for diagnosis, store it only in an
 untracked local diagnostics path and reference a redacted summary from tracked
 docs. Do not introduce machine-specific home-directory paths; use `~/`,
 environment variables, or repository-relative paths.
+
+Markers are stricter than prose reports: marker files must always use
+`corpus_content_included: none`, must use repository-relative POSIX-style paths
+in front matter, and must have timezone-aware `created_at` values ending in
+`Z` or a numeric offset. The RFC 0013 `owner_approved` exception is available
+only for tracked prose reports that explicitly need it and record the owner
+approval.
 
 Same-model re-review is required when any reviewer returns
 `reject_for_revision`. A still-rejecting re-review is a human checkpoint.
