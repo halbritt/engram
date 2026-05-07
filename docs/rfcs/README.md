@@ -50,6 +50,10 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0030](0030-public-dataset-entity-grounding.md) | proposal | none | Public-dataset entity grounding for claim extraction |
 | [0031](0031-suspect-autonomous-work-audit.md) | superseded | none | Suspect autonomous work audit (authored inside the suspect commit; superseded by [RFC 0032](0032-suspect-autonomous-work-recovery.md)) |
 | [0032](0032-suspect-autonomous-work-recovery.md) | proposal | none | Recovery and audit of the suspect autonomous work checkpoint |
+| [0033](0033-multimodal-observation-layer.md) | proposal | none | Multimodal observation layer |
+| [0034](0034-photo-library-ingestion.md) | proposal | none | Photo library ingestion and local vision derivations |
+| [0035](0035-location-timeline-place-model.md) | proposal | none | Location timeline and place model |
+| [0036](0036-daily-biography-compiler.md) | proposal | none | Daily biography compiler |
 
 ## Implementation notes (2026-05-07 sweep)
 
