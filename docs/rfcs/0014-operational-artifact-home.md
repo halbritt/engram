@@ -165,7 +165,7 @@ This RFC is accepted only after review confirms:
 - flat legacy blocked and human-checkpoint markers remain gate-active until
   explicitly superseded by exact path;
 - marker files never contain private corpus content;
-- human-checkpoint resolution requires exact-path supersession and linked
+- human-checkpoint resolution requires exact-path supersession and explicit
   owner-decision evidence;
 - malformed or invalid marker front matter fails closed;
 - D060 path hygiene remains enforced;

@@ -182,6 +182,11 @@ exact blocked marker path. Flat legacy markers without front matter remain
 gate-active by exact repository-relative path; flat `.ready.md` files are audit
 provenance only.
 
+Human-checkpoint markers require stronger evidence than ordinary blockers. A
+ready marker may clear one only when it names the exact checkpoint path in
+`supersedes` and records `owner_decision: recorded` plus
+`owner_decision_evidence: <repo-relative path>`.
+
 ## Post-Build Operational Issue Loop
 
 RFC 0013 governs operational issues found after build review, including bounded
@@ -228,9 +233,11 @@ docs. Do not introduce machine-specific home-directory paths; use `~/`,
 environment variables, or repository-relative paths.
 
 Markers are stricter than prose reports: marker files must always use
-`corpus_content_included: none`. The RFC 0013 `owner_approved` exception is
-available only for tracked prose reports that explicitly need it and record the
-owner approval.
+`corpus_content_included: none`, must use repository-relative POSIX-style paths
+in front matter, and must have timezone-aware `created_at` values ending in
+`Z` or a numeric offset. The RFC 0013 `owner_approved` exception is available
+only for tracked prose reports that explicitly need it and record the owner
+approval.
 
 Same-model re-review is required when any reviewer returns
 `reject_for_revision`. A still-rejecting re-review is a human checkpoint.

@@ -7,8 +7,10 @@ bound: limit10
 state: ready
 gate: blocked
 verdict: reject_for_revision
+classes: [validation_repair_review]
 created_at: 2026-05-05T21:23:00Z
 review_file: docs/reviews/phase3/PHASE_3_D063_LIMIT10_REPAIR_REVIEW_codex_gpt5_5_2026_05_05.md
+linked_report: docs/reviews/phase3/PHASE_3_D063_LIMIT10_REPAIR_REVIEW_codex_gpt5_5_2026_05_05.md
 corpus_content_included: none
 ---
 

@@ -8,9 +8,11 @@ state: ready
 gate: ready_for_human_checkpoint
 model: claude_opus_4_7
 verdict: accept_with_findings
+classes: [validation_repair_still_invalid, derived_state_policy_change, quality_gate_unverified]
 created_at: 2026-05-06T06:20:11Z
 linked_prompt: prompts/P045_review_phase_3_limit500_still_invalid_problem.md
 linked_review: docs/reviews/phase3/PHASE_3_LIMIT500_STILL_INVALID_PROBLEM_REVIEW_claude_opus_4_7_2026_05_06.md
+linked_report: docs/reviews/phase3/PHASE_3_LIMIT500_STILL_INVALID_PROBLEM_REVIEW_claude_opus_4_7_2026_05_06.md
 corpus_content_included: none
 ---
 

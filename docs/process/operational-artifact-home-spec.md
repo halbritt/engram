@@ -87,7 +87,7 @@ docs/operations/<area>/<loop_id>/
   reports/
     01_RUN_REPORT.md
     02_REPAIR_PLAN.md
-    05_REPAIR_VERIFICATION.md
+    05_REPAIR_VERIFIED.md
   markers/
     01_RUN.blocked.md
     02_REPAIR_PLAN.ready.md
@@ -143,9 +143,11 @@ The `owner_approved` exception from RFC 0013 remains available only for
 tracked prose artifacts that explicitly need it and record the owner approval
 as RFC 0013 requires. It is not valid for marker files.
 
-D060 path hygiene applies. Tracked documentation and artifacts should use
+D060 path hygiene applies. Tracked documentation and artifacts must use
 repository-relative paths, environment variables, or generalized `~/` paths
-instead of hardcoded home-directory absolute paths.
+instead of hardcoded home-directory absolute paths such as `/home/<user>/...`,
+`/Users/<user>/...`, or the current user's `$HOME` path. Marker front matter is
+stricter: marker paths must be repository-relative POSIX-style paths.
 
 ## Marker Schema
 
@@ -164,7 +166,7 @@ bound: <limit0|limit10|targeted|none>
 state: blocked | ready | human_checkpoint
 gate: blocked | ready_for_same_bound_rerun | ready_for_next_bound | human_checkpoint
 classes: [upstream_runtime_failure]
-created_at: <ISO-8601 timestamp>
+created_at: <RFC3339 timestamp with Z or +/-HH:MM offset>
 linked_report: docs/operations/<area>/<loop_id>/reports/01_RUN_REPORT.md
 supersedes: docs/reviews/<legacy-area>/postbuild/markers/<loop_id>/01_RUN.blocked.md
 corpus_content_included: none
@@ -175,11 +177,23 @@ During transition, `linked_report` and `supersedes` may point to either new
 `docs/operations/...` paths or legacy RFC 0013 `docs/reviews/...` paths. All
 paths in marker front matter must be repository-relative POSIX-style paths.
 
-New and per-loop migrated markers must have parseable front matter with all
-fields shown above. Missing or invalid front matter in those markers is a
-schema failure and blocks as a human checkpoint until corrected or explicitly
-superseded. Front-matterless flat legacy markers are handled by the special
-legacy rules below; they are not a template for new markers.
+New and per-loop migrated markers must have parseable front matter with these
+required scalar fields: `loop`, `issue_id`, `family`, `scope`, `bound`,
+`state`, `gate`, `classes`, `created_at`, `linked_report`, and
+`corpus_content_included`. `supersedes` is required when a marker resolves a
+prior blocker or checkpoint; it is otherwise optional. Missing, duplicate, or
+invalid required fields are schema failures.
+
+`loop` must be `postbuild`. `state` must be one of `blocked`, `ready`, or
+`human_checkpoint`. `gate` must be a blocked, ready, or human-checkpoint gate
+identifier. `created_at` must be timezone-aware RFC3339/ISO-8601 with either
+`Z` or a numeric offset such as `+00:00`; naive timestamps are invalid.
+`corpus_content_included` must be exactly `none`.
+
+Missing or invalid front matter in new or per-loop migrated markers blocks as
+a human checkpoint until corrected or explicitly superseded. Front-matterless
+flat legacy markers are handled by the special legacy rules below; they are
+not a template for new markers.
 
 ## Compatibility Semantics
 
@@ -223,8 +237,9 @@ Precedence rules:
 2. Group schema-bearing markers by `(issue_id, family)` across all scanned
    roots.
 3. For schema-bearing markers, `created_at` is required and must be a valid
-   ISO-8601 timestamp. Missing or invalid `created_at` is not an ordering hint;
-   it is a malformed marker and blocks as a human checkpoint.
+   timezone-aware RFC3339/ISO-8601 timestamp with `Z` or a numeric offset.
+   Missing, naive, or invalid `created_at` is not an ordering hint; it is a
+   malformed marker and blocks as a human checkpoint.
 4. For each valid group, order markers by `created_at`, then by repository path.
    File modification time may be used only for display ordering of
    front-matterless flat legacy markers, not for resolving schema-bearing
@@ -234,10 +249,12 @@ Precedence rules:
    marker path in `supersedes`, even when the two markers live in different
    roots.
 6. A `human_checkpoint` marker remains blocking until a later `ready` marker
-   explicitly supersedes it by exact repository-relative path and the linked
-   redacted report records the owner decision that resolved the checkpoint.
-   Timestamp order, matching filenames, or a generic ready marker are not
-   enough to clear a human checkpoint.
+   explicitly supersedes it by exact repository-relative path and records
+   `owner_decision: recorded` plus `owner_decision_evidence:
+   <repo-relative path>` for the owner decision that resolved the checkpoint.
+   Timestamp order, matching filenames, a generic ready marker, or a bare
+   `linked_report`/`linked_decision` value are not enough to clear a human
+   checkpoint.
 7. A newer unsuperseded `blocked` or `human_checkpoint` marker blocks
    expansion even if older ready markers exist.
 8. If schema-bearing marker front matter is malformed, missing required fields,
@@ -296,12 +313,13 @@ An implementation prompt should include deterministic fixtures for:
   until a later ready marker supersedes its exact path;
 - a new operations-root `ready` marker plus newer legacy `blocked` marker that
   remains blocking;
-- malformed, ambiguous, missing, or invalid `created_at` front matter that
+- malformed, ambiguous, missing, invalid, or naive marker front matter that
   fails closed;
 - a marker with forbidden private-content fields, `corpus_content_included:
   owner_approved`, or hardcoded home-directory path rejected by validation;
 - a `human_checkpoint` marker that remains blocking until exact-path
-  supersession plus linked owner-decision report;
+  supersession plus explicit `owner_decision: recorded` and
+  `owner_decision_evidence` front matter;
 - `linked_report` pointing to a legacy report path and to a new operations-root
   report path;
 - status output surfacing the newest blocking marker before older ready
@@ -323,8 +341,9 @@ The spec is implementation-ready when review confirms:
 - flat legacy blocked and human-checkpoint markers remain gate-active until
   explicitly superseded by exact path;
 - marker files reject private corpus content absolutely;
-- human-checkpoint markers require exact-path supersession and linked
+- human-checkpoint markers require exact-path supersession and explicit
   owner-decision evidence;
-- malformed or invalid `created_at` front matter fails closed;
+- malformed or invalid marker front matter, including missing, invalid, or
+  naive `created_at`, fails closed;
 - D060 path hygiene remains enforced;
 - the `agent_runner` live-state boundary remains explicit.

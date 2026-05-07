@@ -9,6 +9,7 @@ gate: ready_for_smoke
 classes: [validation_repair_still_invalid, derived_state_policy_change, quality_gate_unverified]
 created_at: 2026-05-06T07:36:00Z
 linked_synthesis: docs/reviews/phase3/PHASE_3_LIMIT500_STILL_INVALID_REPAIR_REVIEW_SYNTHESIS_2026_05_06.md
+linked_report: docs/reviews/phase3/PHASE_3_LIMIT500_STILL_INVALID_REPAIR_REVIEW_SYNTHESIS_2026_05_06.md
 supersedes: docs/reviews/phase3/postbuild/markers/20260506_limit500_run/15_STILL_INVALID_REPAIR_REVIEW_claude_opus_4_7.ready.md
 corpus_content_included: none
 ---

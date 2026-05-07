@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION="${PHASE3_SESSION:-engram-phase3}"
 RUN_MODE="${PHASE3_RUN_MODE:-print}"
+PYTHON_BIN="${PYTHON:-python3}"
 MARKERS_DIR="docs/reviews/phase3/markers"
 OPERATIONS_PHASE3_ROOT="${PHASE3_OPERATIONS_ROOT:-docs/operations/phase3-postbuild}"
 LEGACY_POSTBUILD_MARKERS_DIR="${PHASE3_LEGACY_POSTBUILD_MARKERS_DIR:-${POSTBUILD_MARKERS_DIR:-docs/reviews/phase3/postbuild/markers}}"
@@ -167,14 +168,137 @@ marker_loop_id() {
   esac
 }
 
+timestamp_epoch() {
+  local timestamp="$1"
+  "$PYTHON_BIN" - "$timestamp" <<'PY'
+from __future__ import annotations
+
+import datetime as dt
+import re
+import sys
+
+value = sys.argv[1].strip()
+if not re.search(r"(Z|[+-]\d{2}:\d{2})$", value):
+    sys.exit(1)
+if value.endswith("Z"):
+    value = f"{value[:-1]}+00:00"
+try:
+    parsed = dt.datetime.fromisoformat(value)
+except ValueError:
+    sys.exit(1)
+if parsed.tzinfo is None or parsed.utcoffset() is None:
+    sys.exit(1)
+print(int(parsed.timestamp()))
+PY
+}
+
+file_epoch() {
+  local path="$1"
+  "$PYTHON_BIN" - "$path" <<'PY'
+from __future__ import annotations
+
+import os
+import sys
+
+try:
+    print(int(os.path.getmtime(sys.argv[1])))
+except OSError:
+    sys.exit(1)
+PY
+}
+
 marker_epoch() {
   local path="$1"
   local created_at
   created_at="$(marker_front_matter_value "$path" "created_at")"
   if [[ -n "$created_at" ]]; then
-    date -u -d "$created_at" +%s 2>/dev/null && return 0
+    timestamp_epoch "$created_at" 2>/dev/null && return 0
   fi
-  stat -c '%Y' "$path"
+  file_epoch "$path" 2>/dev/null || printf "0\n"
+}
+
+marker_front_matter_key_count() {
+  local path="$1"
+  local key="$2"
+  awk -v key="$key" '
+    NR == 1 && $0 == "---" { in_front_matter = 1; next }
+    in_front_matter && $0 == "---" { exit }
+    in_front_matter && index($0, key ":") == 1 { count++ }
+    END { print count + 0 }
+  ' "$path"
+}
+
+marker_has_duplicate_schema_key() {
+  local path="$1"
+  local key
+  local count
+  for key in \
+    loop issue_id family scope bound state gate classes created_at \
+    linked_report supersedes owner_decision owner_decision_evidence \
+    corpus_content_included
+  do
+    count="$(marker_front_matter_key_count "$path" "$key")"
+    (( count <= 1 )) || return 0
+  done
+  return 1
+}
+
+marker_required_fields_present() {
+  local path="$1"
+  local key
+  for key in \
+    loop issue_id family scope bound state gate classes created_at \
+    linked_report corpus_content_included
+  do
+    [[ -n "$(marker_front_matter_value "$path" "$key")" ]] || return 1
+  done
+}
+
+is_repo_relative_marker_path() {
+  local value="$1"
+  [[ -n "$value" ]] || return 1
+  [[ "$value" != /* ]] || return 1
+  [[ "$value" != "~"* ]] || return 1
+  [[ "$value" != *"\\"* ]] || return 1
+  [[ "$value" != "." && "$value" != ".." ]] || return 1
+  [[ "$value" != "../"* && "$value" != *"/../"* && "$value" != *"/.." ]] || return 1
+}
+
+marker_has_hardcoded_home_path() {
+  local path="$1"
+  local home="${HOME:-}"
+  if [[ -n "$home" ]] && grep -Fq "$home" "$path"; then
+    return 0
+  fi
+  grep -Eq '/home/[^[:space:]]+|/Users/[^[:space:]]+' "$path"
+}
+
+marker_state_valid() {
+  case "$1" in
+    blocked|ready|human_checkpoint) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+marker_gate_valid() {
+  case "$1" in
+    blocked|blocked_*|ready|ready_*|human_checkpoint|human_checkpoint_*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+marker_path_fields_valid() {
+  local path="$1"
+  local key
+  local value
+  for key in \
+    linked_report supersedes owner_decision_evidence linked_decision \
+    linked_problem linked_prompt linked_review linked_spec linked_synthesis \
+    review_file
+  do
+    value="$(marker_front_matter_value "$path" "$key")"
+    [[ -z "$value" ]] || is_repo_relative_marker_path "$value" || return 1
+  done
 }
 
 marker_schema_error() {
@@ -183,6 +307,9 @@ marker_schema_error() {
   local kind
   local created_at
   local corpus_content
+  local loop
+  local state
+  local gate
   kind="$(marker_kind "$rel")"
 
   if [[ "$kind" == "legacy_flat" ]] && ! marker_has_front_matter "$path"; then
@@ -191,14 +318,20 @@ marker_schema_error() {
 
   if [[ "$kind" == "operations" || "$kind" == "legacy_loop" || "$kind" == "legacy_flat" ]]; then
     marker_has_front_matter "$path" || return 0
+    marker_has_duplicate_schema_key "$path" && return 0
+    marker_required_fields_present "$path" || return 0
     created_at="$(marker_front_matter_value "$path" "created_at")"
-    [[ -n "$created_at" ]] || return 0
-    date -u -d "$created_at" +%s >/dev/null 2>&1 || return 0
+    timestamp_epoch "$created_at" >/dev/null 2>&1 || return 0
     corpus_content="$(marker_front_matter_value "$path" "corpus_content_included")"
     [[ "$corpus_content" == "none" ]] || return 0
-    if grep -Eq '(^|[[:space:]])/home/[^[:space:]]+' "$path"; then
-      return 0
-    fi
+    loop="$(marker_front_matter_value "$path" "loop")"
+    [[ "$loop" == "postbuild" ]] || return 0
+    state="$(marker_front_matter_value "$path" "state")"
+    marker_state_valid "$state" || return 0
+    gate="$(marker_front_matter_value "$path" "gate")"
+    marker_gate_valid "$gate" || return 0
+    marker_path_fields_valid "$path" || return 0
+    marker_has_hardcoded_home_path "$path" && return 0
   fi
 
   return 1
@@ -279,9 +412,11 @@ marker_is_human_checkpoint() {
 
 marker_has_owner_decision_evidence() {
   local path="$1"
-  [[ -n "$(marker_front_matter_value "$path" "linked_report")" ]] && return 0
-  [[ -n "$(marker_front_matter_value "$path" "linked_decision")" ]] && return 0
-  return 1
+  local evidence
+  [[ "$(marker_front_matter_value "$path" "owner_decision")" == "recorded" ]] || return 1
+  evidence="$(marker_front_matter_value "$path" "owner_decision_evidence")"
+  is_repo_relative_marker_path "$evidence" || return 1
+  [[ -f "$ROOT/$evidence" ]]
 }
 
 is_operational_marker_superseded() {
@@ -366,11 +501,16 @@ has_blocked_operational_markers() {
 }
 
 print_blocked_operational_markers() {
+  print_blocked_operational_marker_lines "$(blocked_operational_markers)"
+}
+
+print_blocked_operational_marker_lines() {
+  local lines="$1"
   local line
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     printf "[blocked] %s\n" "${line#* }"
-  done < <(blocked_operational_markers)
+  done <<< "$lines"
 }
 
 all_markers() {
@@ -653,9 +793,11 @@ start_session() {
 status_markers() {
   cd "$ROOT"
   mkdir -p "$MARKERS_DIR"
-  if has_blocked_operational_markers; then
+  local blocked_markers
+  blocked_markers="$(blocked_operational_markers)"
+  if [[ -n "$blocked_markers" ]]; then
     printf "Post-build operational blockers:\n"
-    print_blocked_operational_markers
+    print_blocked_operational_marker_lines "$blocked_markers"
     printf "\n"
   fi
   local marker
@@ -670,9 +812,11 @@ status_markers() {
 
 next_marker() {
   cd "$ROOT"
-  if has_blocked_operational_markers; then
+  local blocked_markers
+  blocked_markers="$(blocked_operational_markers)"
+  if [[ -n "$blocked_markers" ]]; then
     printf "blocked by post-build operational marker:\n"
-    print_blocked_operational_markers
+    print_blocked_operational_marker_lines "$blocked_markers"
     return 1
   fi
   local marker
