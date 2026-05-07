@@ -1,0 +1,488 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "phase-4-build-spec-review",
+  "workflow_version": "2026-05-07+initial",
+  "name": "Engram Phase 4 Build-Spec Multi-Agent Review",
+  "branch": {
+    "mode": "confirm",
+    "suggested_name": "engram/phase4-spec-review",
+    "allow_dirty": false
+  },
+  "coordinator": {
+    "role_id": "coordinator",
+    "lane_id": "codex"
+  },
+  "review_revision_policy": {
+    "root_review_needs_revision": "human_checkpoint",
+    "description": "Root-review needs_revision verdicts surface as human checkpoints; downstream ledger, synthesis, and final-review jobs remain blocked until a human revises the spec inputs or workflow."
+  },
+  "lanes": {
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": [
+        "codex",
+        "exec",
+        "--model",
+        "gpt-5.5",
+        "-"
+      ],
+      "capabilities": [
+        "review",
+        "write",
+        "synthesis"
+      ],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    },
+    "gemini": {
+      "adapter": "process",
+      "display_model": "Gemini 3.1 Pro Preview",
+      "command": [
+        "gemini",
+        "--model",
+        "gemini-3.1-pro-preview"
+      ],
+      "capabilities": [
+        "review"
+      ],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    },
+    "claude": {
+      "adapter": "process",
+      "display_model": "Claude Opus",
+      "command": [
+        "claude",
+        "--model",
+        "opus",
+        "-p"
+      ],
+      "capabilities": [
+        "review",
+        "synthesis"
+      ],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    }
+  },
+  "roles": {
+    "reviewer": {
+      "definition_path": "prompts/phase4/roles/reviewer.md"
+    },
+    "ledger": {
+      "definition_path": "prompts/phase4/roles/ledger.md"
+    },
+    "synthesizer": {
+      "definition_path": "prompts/phase4/roles/synthesizer.md"
+    },
+    "coordinator": {
+      "definition_path": "prompts/phase4/roles/coordinator.md"
+    }
+  },
+  "context_docs": [
+    {
+      "path": "AGENTS.md",
+      "required": true
+    },
+    {
+      "path": "BUILD_PHASES.md",
+      "required": true
+    },
+    {
+      "path": "HUMAN_REQUIREMENTS.md",
+      "required": true
+    },
+    {
+      "path": "DECISION_LOG.md",
+      "required": true
+    },
+    {
+      "path": "docs/rfcs/README.md",
+      "required": true
+    },
+    {
+      "path": "docs/process/multi-agent-review-loop.md",
+      "required": true
+    },
+    {
+      "path": "docs/process/project-judgment.md",
+      "required": true
+    }
+  ],
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 3,
+    "require_disjoint_write_scopes": true
+  },
+  "jobs": [
+    {
+      "id": "review_claude",
+      "type": "review",
+      "title": "Review Phase 4 build-spec inputs with Claude",
+      "role_id": "reviewer",
+      "lane_id": "claude",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Review the Phase 4 build-spec inputs (BUILD_PHASES.md Phase 4 row, HUMAN_REQUIREMENTS, relevant decisions) for entity-canonicalization correctness risks, review-queue UX gaps, and current_beliefs view design risks.",
+      "task_prompt": {
+        "path": "prompts/phase4/prompts/review.md"
+      },
+      "inputs": [
+        {
+          "path": "BUILD_PHASES.md",
+          "kind": "phase_spec_root"
+        },
+        {
+          "path": "HUMAN_REQUIREMENTS.md",
+          "kind": "principles"
+        },
+        {
+          "path": "DECISION_LOG.md",
+          "kind": "decision_log"
+        },
+        {
+          "path": "docs/rfcs/0007-artifact-id-and-subref-model.md",
+          "kind": "upstream_rfc"
+        },
+        {
+          "path": "docs/rfcs/0011-phase-3-claims-beliefs.md",
+          "kind": "upstream_rfc"
+        },
+        {
+          "path": "docs/rfcs/0018-evidence-to-claim-audit-cascade.md",
+          "kind": "upstream_rfc"
+        }
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/reviews/phase4/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "docs/rfcs/",
+          "BUILD_PHASES.md",
+          "DECISION_LOG.md"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "review",
+          "kind": "finding",
+          "path": "docs/reviews/phase4/PHASE_4_SPEC_REVIEW_claude.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_codex",
+      "type": "review",
+      "title": "Review Phase 4 build-spec inputs with Codex",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Review the Phase 4 build-spec inputs for implementation feasibility, schema-migration risk, and the recursive-CTE 1\u20132 hop entity-edge query plan.",
+      "task_prompt": {
+        "path": "prompts/phase4/prompts/review.md"
+      },
+      "inputs": [
+        {
+          "path": "BUILD_PHASES.md",
+          "kind": "phase_spec_root"
+        },
+        {
+          "path": "HUMAN_REQUIREMENTS.md",
+          "kind": "principles"
+        },
+        {
+          "path": "DECISION_LOG.md",
+          "kind": "decision_log"
+        },
+        {
+          "path": "docs/rfcs/0007-artifact-id-and-subref-model.md",
+          "kind": "upstream_rfc"
+        },
+        {
+          "path": "docs/rfcs/0011-phase-3-claims-beliefs.md",
+          "kind": "upstream_rfc"
+        },
+        {
+          "path": "docs/rfcs/0018-evidence-to-claim-audit-cascade.md",
+          "kind": "upstream_rfc"
+        }
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/reviews/phase4/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "docs/rfcs/",
+          "BUILD_PHASES.md",
+          "DECISION_LOG.md"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "review",
+          "kind": "finding",
+          "path": "docs/reviews/phase4/PHASE_4_SPEC_REVIEW_codex.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_gemini",
+      "type": "review",
+      "title": "Review Phase 4 build-spec inputs with Gemini",
+      "role_id": "reviewer",
+      "lane_id": "gemini",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Review the Phase 4 build-spec inputs for HITL surface ergonomics, the accept/reject/correct/promote-to-pinned semantics, and provenance-chain implications of corrections-as-captures (D017).",
+      "task_prompt": {
+        "path": "prompts/phase4/prompts/review.md"
+      },
+      "inputs": [
+        {
+          "path": "BUILD_PHASES.md",
+          "kind": "phase_spec_root"
+        },
+        {
+          "path": "HUMAN_REQUIREMENTS.md",
+          "kind": "principles"
+        },
+        {
+          "path": "DECISION_LOG.md",
+          "kind": "decision_log"
+        },
+        {
+          "path": "docs/rfcs/0007-artifact-id-and-subref-model.md",
+          "kind": "upstream_rfc"
+        },
+        {
+          "path": "docs/rfcs/0011-phase-3-claims-beliefs.md",
+          "kind": "upstream_rfc"
+        },
+        {
+          "path": "docs/rfcs/0018-evidence-to-claim-audit-cascade.md",
+          "kind": "upstream_rfc"
+        }
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/reviews/phase4/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "docs/rfcs/",
+          "BUILD_PHASES.md",
+          "DECISION_LOG.md"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "review",
+          "kind": "finding",
+          "path": "docs/reviews/phase4/PHASE_4_SPEC_REVIEW_gemini.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "findings_ledger",
+      "type": "ledger",
+      "title": "Record Phase 4 build-spec findings ledger",
+      "role_id": "ledger",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Normalize the three independent Phase 4 build-spec reviews into a stable findings ledger without deciding readiness.",
+      "task_prompt": {
+        "path": "prompts/phase4/prompts/findings_ledger.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/reviews/phase4/PHASE_4_SPEC_REVIEW_claude.md",
+          "kind": "review"
+        },
+        {
+          "path": "docs/reviews/phase4/PHASE_4_SPEC_REVIEW_codex.md",
+          "kind": "review"
+        },
+        {
+          "path": "docs/reviews/phase4/PHASE_4_SPEC_REVIEW_gemini.md",
+          "kind": "review"
+        }
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/reviews/phase4/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "docs/rfcs/",
+          "BUILD_PHASES.md",
+          "DECISION_LOG.md"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "ledger",
+          "kind": "findings_ledger",
+          "path": "docs/reviews/phase4/PHASE_4_SPEC_FINDINGS_LEDGER.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "synthesis",
+      "type": "synthesis",
+      "title": "Synthesize Phase 4 build-spec findings",
+      "role_id": "synthesizer",
+      "lane_id": "claude",
+      "fresh_session_required": true,
+      "objective": "Synthesize Phase 4 build-spec findings and recommend whether to author a Phase 4 RFC, an implementation spec, or to revise the Phase 4 row in BUILD_PHASES.md before proceeding.",
+      "task_prompt": {
+        "path": "prompts/phase4/prompts/synthesis.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/reviews/phase4/PHASE_4_SPEC_FINDINGS_LEDGER.md",
+          "kind": "findings_ledger"
+        },
+        {
+          "path": "BUILD_PHASES.md",
+          "kind": "phase_spec_root"
+        },
+        {
+          "path": "HUMAN_REQUIREMENTS.md",
+          "kind": "principles"
+        }
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/reviews/phase4/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "BUILD_PHASES.md",
+          "DECISION_LOG.md"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "synthesis",
+          "kind": "synthesis",
+          "path": "docs/reviews/phase4/PHASE_4_SPEC_SYNTHESIS.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "final_review",
+      "type": "review",
+      "title": "Final review of Phase 4 build-spec synthesis",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Review whether the synthesis is internally supported by the ledger, whether Phase 4 inputs need revision before a build spec is authored, and whether human checkpoints are appropriately surfaced.",
+      "task_prompt": {
+        "path": "prompts/phase4/prompts/final_review.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/reviews/phase4/PHASE_4_SPEC_SYNTHESIS.md",
+          "kind": "synthesis"
+        },
+        {
+          "path": "docs/reviews/phase4/PHASE_4_SPEC_FINDINGS_LEDGER.md",
+          "kind": "findings_ledger"
+        },
+        {
+          "path": "BUILD_PHASES.md",
+          "kind": "phase_spec_root"
+        },
+        {
+          "path": "HUMAN_REQUIREMENTS.md",
+          "kind": "principles"
+        }
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/reviews/phase4/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "docs/rfcs/",
+          "BUILD_PHASES.md",
+          "DECISION_LOG.md"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "review",
+          "kind": "finding",
+          "path": "docs/reviews/phase4/PHASE_4_SPEC_FINAL_REVIEW.md",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "review_claude",
+      "to": "findings_ledger",
+      "on": "completed"
+    },
+    {
+      "from": "review_codex",
+      "to": "findings_ledger",
+      "on": "completed"
+    },
+    {
+      "from": "review_gemini",
+      "to": "findings_ledger",
+      "on": "completed"
+    },
+    {
+      "from": "findings_ledger",
+      "to": "synthesis",
+      "on": "completed"
+    },
+    {
+      "from": "synthesis",
+      "to": "final_review",
+      "on": "completed"
+    }
+  ],
+  "cycles": [
+    {
+      "from": "final_review",
+      "to": "synthesis",
+      "on_verdict": "needs_revision",
+      "max_iterations": 1
+    }
+  ]
+}
