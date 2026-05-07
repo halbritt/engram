@@ -1,8 +1,18 @@
+<a id="rfc-0008"></a>
 # RFC 0008: Segmentation Benchmark Early-Signal Revision
 
 Status: specified
 Date: 2026-05-04
 Context: RFC 0006; D034, D039, D041; short public model benchmark on 2026-05-03
+Decision refs:
+  - D034
+  - D039
+  - D041
+  - D042
+Review refs:
+  - none
+Phase refs:
+  - PHASE-0002
 
 Promoted: benchmarks/segmentation/SPEC.md and D042 on 2026-05-04
 
@@ -75,6 +85,7 @@ verdict. That makes the result too easy to misread.
 - Do not require hosted APIs, telemetry, or external judging services.
 - Do not require a local LLM judge as part of the first revision.
 
+<a id="benchmark-ladder"></a>
 ## Benchmark Ladder
 
 The benchmark should have three distinct tiers.
@@ -158,6 +169,7 @@ Record:
 This avoids accidentally choosing a slice that rewards one segmentation habit,
 such as aggressive short-topic splitting.
 
+<a id="fragmentation-aware-scoring"></a>
 ## Fragmentation-Aware Scoring
 
 Tier 1 should report raw metrics and a normalized early-signal score. The raw
@@ -219,6 +231,7 @@ Score fixtures with:
 These fixtures should not dominate public metrics, but they should veto a
 candidate that is clearly incompatible with Engram's memory-unit requirements.
 
+<a id="early-signal-verdict-rules"></a>
 ## Early-Signal Verdict Rules
 
 Tier 1 should produce one of four verdicts:

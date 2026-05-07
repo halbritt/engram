@@ -1,7 +1,15 @@
+<a id="rfc-0001"></a>
 # RFC 0001: Supervisor Controller Loop
 
 Status: proposal
 Date: 2026-05-02
+Context: Possible future shape for Engram's supervisor as a long-running controller around stage workers.
+Decision refs:
+  - none
+Review refs:
+  - none
+Phase refs:
+  - none
 
 This is an idea-capture RFC, not an accepted architecture decision. It records a
 possible future shape for Engram's supervisor after the basic ingest,
@@ -92,6 +100,7 @@ Examples of decisions a batcher cannot make:
 None of these examples is a commitment. They are the shape of the value the
 supervisor exists to capture.
 
+<a id="desired-state"></a>
 ## Desired State
 
 Desired state is not "run everything all the time." It is a set of versioned
@@ -112,6 +121,7 @@ invariants, for example:
 Desired state should be declarative enough that the supervisor can explain why
 it is doing work.
 
+<a id="stage-workers"></a>
 ## Stage Workers
 
 The supervisor should orchestrate workers; it should not bury all logic inside
@@ -394,6 +404,7 @@ After failure triage, the next candidate is shadow-mode scheduling:
 5. Only after the LLM earns trust does the controller execute approved action
    types from the LLM plan.
 
+<a id="dry-run-mode"></a>
 ### Dry-Run Mode
 
 One primitive worth specifying early: a dry-run mode for the entire reconcile

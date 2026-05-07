@@ -1,3 +1,4 @@
+<a id="rfc-0016"></a>
 # RFC 0016: Context Lane Reranker Slot
 
 Status: proposal
@@ -5,6 +6,12 @@ Date: 2026-05-05
 Context: SPEC.md § Live Ranking; docs/design/V1_ARCHITECTURE_DRAFT.md:207-226;
 README.md § Explicitly Not V1; PHASE_3_CLAIMS_BELIEFS spec; deferred from
 adversarial review 2026-05-05
+Decision refs:
+  - none
+Review refs:
+  - none
+Phase refs:
+  - none
 
 This is an idea-capture RFC, not an accepted architecture decision. It proposes
 a typed seam in the lane compiler so a cross-encoder reranker can be A/B-tested
@@ -59,8 +66,10 @@ local cross-encoder is worth evaluating, the experiment requires invasive
 edits to `context_for` and its budget logic, discouraging the experiment
 itself.
 
+<a id="proposal"></a>
 ## Proposal
 
+<a id="typed-scorer-interface"></a>
 ### Typed scorer interface
 
 Define a single typed seam between candidate generation and budgeted lane
@@ -84,6 +93,7 @@ external scorer to operate without a second DB round-trip: the segment id,
 belief ids, evidence snippet, embedding distance, stability class, and the
 factor inputs the weighted scorer already needs.
 
+<a id="pre-budget-placement"></a>
 ### Pre-budget placement
 
 Scoring happens *before* the lane budgeter, not after. This RFC fixes the
@@ -101,6 +111,7 @@ relative quality calls; the budgeter then trims by lane budget given the
 final scores. Putting the scorer post-budget would force two scoring passes
 when an experiment swaps in a cross-encoder.
 
+<a id="ab-harness"></a>
 ### A/B harness, not a feature flag
 
 The seam supports a `compare` mode, not a runtime toggle. Given two scorers,
@@ -138,6 +149,7 @@ the eval substrate will need.
    labeling source for the eval set rather than a scorer input, but worth
    pinning before the harness is built.
 
+<a id="acceptance-criteria"></a>
 ## Acceptance criteria for promotion
 
 This RFC is ready to promote into `BUILD_PHASES.md` once:

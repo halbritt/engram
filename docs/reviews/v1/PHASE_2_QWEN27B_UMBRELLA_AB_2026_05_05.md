@@ -1,4 +1,15 @@
+<a id="review-0015"></a>
 # Phase 2 Qwen 27B Umbrella A/B - 2026-05-05
+
+Review ID: REVIEW-0015
+Status: findings
+Date: 2026-05-05
+RFC refs:
+  - none
+Decision refs:
+  - none
+Phase refs:
+  - PHASE-0002
 
 ## Scope
 

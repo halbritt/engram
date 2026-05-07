@@ -1,8 +1,20 @@
+<a id="rfc-0006"></a>
 # RFC 0006: Public-First Segmentation Model Benchmark
 
 Status: specified
 Date: 2026-05-03
 Context: Phase 2 model/profile selection; D005, D034, D037, D039, D041
+Decision refs:
+  - D005
+  - D034
+  - D037
+  - D039
+  - D041
+  - D042
+Review refs:
+  - none
+Phase refs:
+  - PHASE-0002
 
 Promoted: benchmarks/segmentation/SPEC.md and D041 on 2026-05-03; refined by
 RFC 0008 and D042 on 2026-05-04
@@ -118,6 +130,7 @@ dataset must be isolated to local benchmark runs, not redistributed, and never
 mixed into Engram's production corpus. Download and license acceptance happen
 outside any no-egress Engram corpus-reading runtime.
 
+<a id="synthetic-fixture-set"></a>
 ## Synthetic Fixture Set
 
 Create a small set of synthetic parent conversations with deterministic,
@@ -166,6 +179,7 @@ Recommended fixture families:
 The expected output should be verifiable by code. Avoid vague judgments such as
 "good topic split." Prefer explicit spans and explicit claims.
 
+<a id="candidate-strategies"></a>
 ## Candidate Strategies
 
 The first benchmark round should compare:
@@ -185,6 +199,7 @@ The deterministic baselines are cheap insurance. Even when LLM topic
 segmentation wins, their gap matters for model portability and fallback
 planning when the segmenter model is unavailable.
 
+<a id="metrics"></a>
 ## Metrics
 
 Report operational metrics per model/profile/strategy:
@@ -244,6 +259,7 @@ as a Phase 3 readiness signal. Each result file should reproduce the
 benchmark-extractor prompt version verbatim so cross-run claim-utility
 comparisons are unambiguous.
 
+<a id="decision-rules"></a>
 ## Decision Rules
 
 Do not choose a model by throughput alone.

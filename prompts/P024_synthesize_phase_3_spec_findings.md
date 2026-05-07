@@ -1,4 +1,15 @@
+<a id="prompt-024"></a>
 # P024: Synthesize Phase 3 Spec Findings
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - RFC-0011
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P024. Introduced: pending first commit. Source commit: pending.
 

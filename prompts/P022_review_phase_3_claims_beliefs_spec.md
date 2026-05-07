@@ -1,4 +1,15 @@
+<a id="prompt-022"></a>
 # P022: Review Phase 3 Claims And Beliefs Spec
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - RFC-0011
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P022. Introduced: pending first commit. Source commit: pending.
 

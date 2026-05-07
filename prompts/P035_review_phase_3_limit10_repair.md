@@ -1,4 +1,16 @@
+<a id="prompt-035"></a>
 # P035: Review Phase 3 Limit-10 Repair
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - RFC-0013
+  - RFC-0014
+Decision refs:
+  - D063
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P035. Introduced: 2026-05-05. Source commit: pending.
 

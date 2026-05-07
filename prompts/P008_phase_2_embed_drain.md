@@ -1,4 +1,15 @@
+<a id="prompt-008"></a>
 # P008: Phase 2 Embed Drain
+
+Status: done
+Phase: Phase 2
+RFC refs:
+  - none
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P008. Introduced: 2026-05-02T16:57:55+00:00. Source commit: 77051b7.
 

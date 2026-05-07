@@ -1,4 +1,18 @@
+<a id="review-0018"></a>
 # Phase 3 Claims and Beliefs Spec Findings Ledger
+
+Review ID: REVIEW-0018
+Status: findings
+Date: 2026-05-05
+RFC refs:
+  - RFC-0011
+Decision refs:
+  - D010
+  - D038
+  - D045
+  - D046
+Phase refs:
+  - PHASE-0003
 
 Date: 2026-05-05
 Recorder: codex_gpt5_5

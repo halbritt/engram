@@ -1,4 +1,15 @@
+<a id="review-0026"></a>
 # Phase 3 Limit-500 Schema Rejection Findings
+
+Review ID: REVIEW-0026
+Status: findings
+Date: 2026-05-06
+RFC refs:
+  - RFC-0013
+Decision refs:
+  - none
+Phase refs:
+  - PHASE-0003
 
 Date: 2026-05-06
 

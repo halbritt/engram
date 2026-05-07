@@ -1,4 +1,15 @@
+<a id="prompt-031"></a>
 # P031: Begin Phase 3 Pipeline
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - none
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P031. Introduced: pending first commit. Source commit: pending.
 

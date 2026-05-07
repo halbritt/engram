@@ -1,4 +1,21 @@
+<a id="prompt-017"></a>
 # P017: Implement Segmentation Benchmark Early Signal
+
+Status: done
+Phase: Phase 2
+RFC refs:
+  - RFC-0006
+  - RFC-0008
+Decision refs:
+  - D034
+  - D037
+  - D038
+  - D039
+  - D041
+  - D042
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P017. Introduced: 2026-05-04T02:39:21+00:00. Source commit: 89d58f2.
 

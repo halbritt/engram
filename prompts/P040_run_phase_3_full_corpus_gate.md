@@ -1,4 +1,15 @@
+<a id="prompt-040"></a>
 # P040: Run Phase 3 Full-Corpus Gate
+
+Status: ready
+Phase: Phase 3
+RFC refs:
+  - RFC-0013
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: no
 
 This prompt is recorded for continuity but is inactive until the coordinator
 confirms that `P039` produced a clean `pipeline-3 --limit 500` report under RFC

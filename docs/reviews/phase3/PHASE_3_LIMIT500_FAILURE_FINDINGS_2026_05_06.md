@@ -1,4 +1,15 @@
+<a id="review-0024"></a>
 # Phase 3 Limit-500 Failure Findings
+
+Review ID: REVIEW-0024
+Status: findings
+Date: 2026-05-06
+RFC refs:
+  - RFC-0013
+Decision refs:
+  - none
+Phase refs:
+  - PHASE-0003
 
 Date: 2026-05-06
 

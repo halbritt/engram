@@ -1,4 +1,15 @@
+<a id="review-0023"></a>
 # Phase 3 Full-Run Extractor Parse Failure Findings
+
+Review ID: REVIEW-0023
+Status: findings
+Date: 2026-05-06
+RFC refs:
+  - RFC-0013
+Decision refs:
+  - none
+Phase refs:
+  - PHASE-0003
 
 Date: 2026-05-06
 Updated: 2026-05-07
@@ -109,6 +120,53 @@ conversations.
 - Dropped claims recorded before failure: `0`
 - Failed model-response payload length: `29594` characters
 
+## Fourth Deferred-Resume Failure
+
+During the same deferred full-corpus pass, a fourth extractor failure was
+observed. The supervisor marked only that conversation's consolidator scope
+failed and continued processing subsequent conversations.
+
+- Stage: `extractor`
+- Scope: `conversation:ba53064d-53f3-44a7-8998-e38eead0b260`
+- Failed segment: `6da61ec8-35b3-45a6-b4e8-1117edfe630c`
+- Failed extraction row: `22339403-4d25-428f-977c-5d601796f7da`
+- Status: `failed`
+- Failure kind: `parse_error`
+- Last error: `all extracted claims failed pre-validation`
+- Validation-repair error: `extractor returned invalid JSON: Unterminated string starting at: line 796 column 7 (char 22798)`
+- Elapsed time before failure: `106.8s`
+- Chunked: `false`
+- Chunk count: `1`
+- Dropped claims before repair: `54`
+- Dropped claims after repair: `0`
+- Dropped-claim error class: `exactly one of object_text or object_json is required`
+- Failed model-response payload length: `18172` characters
+
+## Fifth Deferred-Resume Failure
+
+During the same deferred full-corpus pass, a fifth extractor failure was
+observed after a long generation. The supervisor marked only that
+conversation's consolidator scope failed and continued processing subsequent
+conversations.
+
+- Stage: `extractor`
+- Scope: `conversation:d01adc57-3353-4ac9-8c49-5ddef6876492`
+- Failed segment: `f2c48148-8e7e-44bb-9681-1bea5189353f`
+- Failed extraction row: `d1b3bf23-ce26-4ece-9b26-205c82531bd6`
+- Status: `failed`
+- Failure kind: `parse_error`
+- Last error: `extractor returned invalid JSON: Unterminated string starting at: line 790 column 7 (char 21980)`
+- Elapsed time before failure: `353.2s`
+- Split path: `[1, 1, 2, 2, 1]`
+- Split depth: `4`
+- Root chunk count: `1`
+- Root chunk index: `1`
+- Leaf chunk message count: `1`
+- Attempts recorded for the failed leaf: `1`
+- Attempt max tokens: `[8192]`
+- Dropped claims recorded before failure: `0`
+- Failed model-response payload length: `25183` characters
+
 ## Findings
 
 ### F1 - Blocker: full-corpus expansion hit an extractor prompt/model contract failure
@@ -176,6 +234,39 @@ Impact:
 - likely repair candidates are deeper adaptive split budget for pathological
   leaves, more constrained retry on unterminated JSON, or both.
 
+### F6 - Major: validation-repair failure has now repeated
+
+The fourth deferred failure repeats the F4 shape. The extractor produced claims,
+but all `54` were dropped by pre-validation because each violated the same
+object payload invariant: exactly one of `object_text` or `object_json` is
+required. The validation-repair pass then attempted recovery, but returned
+malformed JSON instead of a valid repaired claim set.
+
+Impact:
+
+- this is a repeated repair-path failure mode, not a one-off isolated miss;
+- the failed scope remains suitable for targeted rerun after the corpus pass;
+- if either validation-repair-shaped failure repeats during targeted rerun,
+  the next repair should focus on enforcing the `object_text`/`object_json`
+  invariant before repair output is accepted, or on treating an all-dropped
+  repair miss as a bounded zero-claim extraction when that is semantically
+  safer than blocking the corpus.
+
+### F7 - Major: long-generation parse failure has now repeated across three deferred scopes
+
+The fifth deferred failure repeats the F1/F5 shape. It failed with malformed
+JSON after a long generation on a one-message adaptive leaf at split depth `4`.
+No dropped-claim validation set was recorded before the parse failure.
+
+Impact:
+
+- this adds a fifth targeted rerun candidate after the main corpus pass;
+- the repeated shape makes a transient retry less certain than it was after the
+  first occurrence;
+- if any of the long-generation parse failures repeat during targeted rerun,
+  the next repair should focus on deeper adaptive split budget for pathological
+  leaves, a constrained malformed-JSON retry path, or both.
+
 ## Recommended Next Step
 
 Allow the deferred full-corpus pass to complete, then run targeted retries for:
@@ -183,7 +274,9 @@ Allow the deferred full-corpus pass to complete, then run targeted retries for:
 - `conversation:54c017c3-6e55-467f-a407-8b26648aec09`
 - `conversation:82dbc95d-76a4-4972-82d9-47477fa066b0`
 - `conversation:8d7a5f1f-38e8-4611-abf1-2ebdb020c6af`
+- `conversation:ba53064d-53f3-44a7-8998-e38eead0b260`
+- `conversation:d01adc57-3353-4ac9-8c49-5ddef6876492`
 
-If either targeted retry repeats the same failure shape, stop and specify a
+If any targeted retry repeats the same failure shape, stop and specify a
 narrow extractor repair for that shape before treating the corpus run as
 complete.

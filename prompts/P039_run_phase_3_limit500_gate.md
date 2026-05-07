@@ -1,4 +1,15 @@
+<a id="prompt-039"></a>
 # P039: Run Phase 3 Limit-500 Gate
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - RFC-0013
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 You are operating the Phase 3 post-limit-50 bounded expansion run.
 

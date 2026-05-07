@@ -1,4 +1,30 @@
+<a id="prompt-007"></a>
 # P007: Phase 2 Prompt — Segmentation + Embeddings
+
+Status: done
+Phase: Phase 2
+RFC refs:
+  - none
+Decision refs:
+  - D005
+  - D009
+  - D019
+  - D020
+  - D021
+  - D023
+  - D026
+  - D027
+  - D028
+  - D029
+  - D030
+  - D031
+  - D032
+  - D033
+  - D034
+  - D039
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P007. Introduced: 2026-04-28T07:33:52+00:00. Source commit: 3e5d115.
 

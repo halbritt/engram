@@ -1,4 +1,15 @@
+<a id="prompt-047"></a>
 # P047 - Build Phase 3 Limit-500 Still-Invalid Repair
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - RFC-0013
+Decision refs:
+  - D064
+Review refs:
+  - none
+Safe to execute: superseded
 
 You are the builder for the Phase 3 limit-500 still-invalid repair. Implement
 the accepted spec. This is a code and test task.

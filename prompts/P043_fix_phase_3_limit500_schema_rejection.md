@@ -1,4 +1,15 @@
+<a id="prompt-043"></a>
 # Fix Phase 3 Limit-500 Schema Rejection
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - none
+Decision refs:
+  - D063
+Review refs:
+  - none
+Safe to execute: superseded
 
 You are implementing a Phase 3 repair for Engram. Engram is local-first: do
 not use or request raw corpus content, prompt payloads, model completions,

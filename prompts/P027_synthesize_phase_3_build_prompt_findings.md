@@ -1,4 +1,15 @@
+<a id="prompt-027"></a>
 # P027: Synthesize Phase 3 Build Prompt Findings
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - none
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P027. Introduced: pending first commit. Source commit: pending.
 

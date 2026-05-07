@@ -1,4 +1,15 @@
+<a id="prompt-015"></a>
 # P015: Fix Benchmark Segmentation Harness Review Findings
+
+Status: done
+Phase: Phase 2
+RFC refs:
+  - RFC-0006
+Decision refs:
+  - D041
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P015. Introduced: 2026-05-03T20:09:37+00:00. Source commit: 5aeb589.
 

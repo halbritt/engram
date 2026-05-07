@@ -1,10 +1,19 @@
+<a id="rfc-0005"></a>
 # RFC 0005: Supervisor Event Triggers and Queue Prioritization
 Status: proposal
 Date: 2026-05-02
 Context: Augments RFC 0001 (Supervisor Controller Loop)
+Decision refs:
+  - D004
+  - D008
+Review refs:
+  - none
+Phase refs:
+  - none
 
 This RFC augments the supervisor controller pattern proposed in RFC 0001. It resolves specific computational and operational bottlenecks regarding semantic observation, re-derivation prioritization, and context state thrashing.
 
+<a id="vector-grounded-observers"></a>
 ## 1. Vector-Grounded Observers (Resolving Semantic Drift Detection)
 
 RFC 0001 introduces the concept of "observers" to detect when desired state shifts independently of system actions (e.g., semantic tension emerging between previously independent beliefs).
@@ -16,6 +25,7 @@ RFC 0001 introduces the concept of "observers" to detect when desired state shif
 * When new raw evidence is ingested and embedded into `segment_embeddings`, the system executes an immediate `pgvector` nearest-neighbor (HNSW) scan against the existing belief index.
 * Only if a high-similarity match surpasses a defined distance threshold does the supervisor queue an LLM worker to evaluate for tension, contradiction, or reinforcement.
 
+<a id="stability-class-priority-heuristic"></a>
 ## 2. Stability-Class Priority Heuristic (Resolving Re-derivation Queues)
 
 RFC 0001 notes the risk of wasting compute by re-embedding archival material after a model bump, suggesting a "recent-and-active" priority signal.
@@ -27,6 +37,7 @@ RFC 0001 notes the risk of wasting compute by re-embedding archival material aft
 * **Sort Order:** `identity` > `relationship` > `preference` > `goal` > `project_status` > `mood` > `task`.
 * This guarantees that fundamental, long-lived canonical context is restored first when compute is constrained, while ephemeral signals fall to the background or maintenance tier.
 
+<a id="debounced-jit-context-snapshotting"></a>
 ## 3. Debounced and JIT Context Snapshotting (Resolving State Thrashing)
 
 RFC 0001 proposes immediate snapshot refreshes when a newly ingested conversation contradicts a high-confidence belief.

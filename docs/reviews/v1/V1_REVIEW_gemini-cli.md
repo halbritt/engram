@@ -1,4 +1,16 @@
+<a id="review-0005"></a>
 # V1 Architecture Review: engram
+
+Review ID: REVIEW-0005
+Status: individual
+Date: 2026-04-28
+RFC refs:
+  - none
+Decision refs:
+  - none
+Phase refs:
+  - none
+
 **Reviewer:** Gemini CLI
 **Date:** April 28, 2026
 

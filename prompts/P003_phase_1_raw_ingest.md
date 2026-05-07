@@ -1,4 +1,18 @@
+<a id="prompt-003"></a>
 # P003: Phase 1 Prompt — Raw Evidence Layer
+
+Status: done
+Phase: Phase 1
+RFC refs:
+  - none
+Decision refs:
+  - D002
+  - D013
+  - D019
+  - D020
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P003. Introduced: 2026-04-28T03:55:54+00:00. Source commit: dfbd654.
 

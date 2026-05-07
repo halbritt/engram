@@ -1,4 +1,15 @@
+<a id="review-0011"></a>
 # Benchmark Segmentation Harness Implementation Review Synthesis
+
+Review ID: REVIEW-0011
+Status: synthesis
+Date: 2026-05-03
+RFC refs:
+  - none
+Decision refs:
+  - D041
+Phase refs:
+  - PHASE-0002
 
 Date: 2026-05-03
 Scope: public-first benchmark harness implementation

@@ -1,4 +1,15 @@
+<a id="prompt-026"></a>
 # P026: Review Phase 3 Build Prompt
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - none
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P026. Introduced: pending first commit. Source commit: pending.
 

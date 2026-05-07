@@ -1,4 +1,16 @@
+<a id="prompt-037"></a>
 # Review Phase 3 Limit50 Validation-Repair Patch
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - RFC-0013
+Decision refs:
+  - D058
+  - D063
+Review refs:
+  - none
+Safe to execute: superseded
 
 You are reviewing a Phase 3 post-build repair for Engram. Engram is local-first:
 do not use or request raw corpus content, prompt payloads, model completions,

@@ -1,4 +1,15 @@
+<a id="prompt-044"></a>
 # Review Phase 3 Limit-500 Schema Rejection Repair
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - none
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 You are reviewing an uncommitted Phase 3 repair implementation for Engram.
 Engram is local-first: do not use or request raw corpus content, prompt

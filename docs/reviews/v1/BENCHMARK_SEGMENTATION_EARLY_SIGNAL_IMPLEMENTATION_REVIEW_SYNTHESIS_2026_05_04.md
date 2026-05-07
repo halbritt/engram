@@ -1,4 +1,15 @@
+<a id="review-0013"></a>
 # Benchmark Segmentation Early-Signal Implementation Review Synthesis
+
+Review ID: REVIEW-0013
+Status: synthesis
+Date: 2026-05-04
+RFC refs:
+  - RFC-0008
+Decision refs:
+  - D042
+Phase refs:
+  - PHASE-0002
 
 Date: 2026-05-04
 Scope: RFC 0008 / D042 Tier 0 + Tier 1 benchmark implementation

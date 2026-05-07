@@ -1,4 +1,16 @@
+<a id="review-0012"></a>
 # Benchmark Segmentation Early-Signal Spec Review Synthesis
+
+Review ID: REVIEW-0012
+Status: synthesis
+Date: 2026-05-04
+RFC refs:
+  - RFC-0006
+  - RFC-0008
+Decision refs:
+  - D042
+Phase refs:
+  - PHASE-0002
 
 Date: 2026-05-04
 Scope: RFC 0008 / D042 early-signal benchmark specification

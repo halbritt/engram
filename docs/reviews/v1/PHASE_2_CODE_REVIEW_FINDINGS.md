@@ -1,4 +1,18 @@
+<a id="review-0009"></a>
 # Phase 2 Code Review Findings
+
+Review ID: REVIEW-0009
+Status: findings
+Date: 2026-05-01
+RFC refs:
+  - none
+Decision refs:
+  - D027
+  - D029
+  - D034
+  - D035
+Phase refs:
+  - PHASE-0002
 
 Date: 2026-05-01
 Consistency pass: 2026-05-02T00:20:16Z

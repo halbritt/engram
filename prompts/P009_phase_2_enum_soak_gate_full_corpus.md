@@ -1,4 +1,15 @@
+<a id="prompt-009"></a>
 # P009: Phase 2 Enum-ID Soak Gate To Full AI-Conversation Corpus
+
+Status: done
+Phase: Phase 2
+RFC refs:
+  - none
+Decision refs:
+  - D034
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P009. Introduced: 2026-05-02T16:57:55+00:00. Source commit: ef4c080.
 

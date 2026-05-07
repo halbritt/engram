@@ -1,4 +1,19 @@
+<a id="review-0014"></a>
 # Phase 2 Span Expansion Audit — 2026-05-04
+
+Review ID: REVIEW-0014
+Status: findings
+Date: 2026-05-04
+RFC refs:
+  - none
+Decision refs:
+  - D002
+  - D031
+  - D037
+  - D038
+  - D042
+Phase refs:
+  - PHASE-0002
 
 ## Scope
 

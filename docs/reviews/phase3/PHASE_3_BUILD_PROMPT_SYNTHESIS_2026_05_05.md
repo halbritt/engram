@@ -1,4 +1,21 @@
+<a id="review-0016"></a>
 # Phase 3 Build Prompt Synthesis
+
+Review ID: REVIEW-0016
+Status: synthesis
+Date: 2026-05-05
+RFC refs:
+  - none
+Decision refs:
+  - D048
+  - D049
+  - D052
+  - D054
+  - D055
+  - D057
+  - D058
+Phase refs:
+  - PHASE-0003
 
 Date: 2026-05-05
 Synthesizer: codex_gpt5_5

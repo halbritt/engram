@@ -1,7 +1,18 @@
+<a id="rfc-0003"></a>
 # RFC: Decoupling Micro-Architecture in the Segmentation Pipeline
 
 Status: proposal
 **Date:** 2026-05-02
+Context: Decompose `src/engram/segmenter.py` along separation-of-concerns lines for testability and maintainability.
+Decision refs:
+  - D002
+  - D017
+  - D020
+  - D034
+Review refs:
+  - none
+Phase refs:
+  - none
 
 ## 1. Context
 Engram's macro-architecture demonstrates a rigorous application of the Principle of Separation of Concerns (SoC). Core invariants—such as epistemological separation (D002), treating corrections as append-only captures (D017), and OS-level execution isolation (D020)—successfully isolate distinct conceptual domains. The data ontology effectively prevents hallucination cascading and ensures provenance.
@@ -16,17 +27,21 @@ The micro-architecture within Phase 2, specifically `src/engram/segmenter.py`, v
 
 This coupling degrades testability, makes the chunking algorithms brittle to schema changes, and contradicts the architectural rigor established in Phase 1.
 
+<a id="proposed-architecture"></a>
 ## 3. Proposed Architecture
 Decompose `segmenter.py` into isolated operational layers.
 
+<a id="data-access-layer"></a>
 ### 3.1 Data Access Layer (Repository Pattern)
 * Extract all `psycopg` imports, raw SQL queries, and telemetry/progress writes into a dedicated repository boundary (e.g., `segmenter_repo.py`).
 * Core algorithms must consume immutable data structures (`Conversation`, `MessageWindow`) and return domain objects (`SegmentationResult`), completely abstracted from the Postgres persistence layer.
 
+<a id="pure-domain-logic"></a>
 ### 3.2 Pure Domain Logic
 * Extract the context boundary calculus (`context_safe_window_char_budget`, `assert_context_budget`), token estimation, and windowing math into pure functions.
 * These modules must accept primitives (integers, strings, lists) and return primitives, containing zero database, disk, or network dependencies.
 
+<a id="transport-and-orchestration-isolation"></a>
 ### 3.3 Transport and Orchestration Isolation
 * **LLM Client:** Reduce the client to pure transport and protocol enforcement (executing the payload, handling timeouts, parsing the JSON schema).
 * **Orchestrator:** Implement a distinct coordinator function that manages the high-level pipeline: pulling from the repository, passing data to the pure domain logic, routing prompts to the LLM client, and handing the outputs back to the repository.

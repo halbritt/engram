@@ -1,8 +1,21 @@
+<a id="rfc-0009"></a>
 # RFC 0009: Distributed Segmenter Work Leasing
 
 Status: proposal
 Date: 2026-05-04
 Context: Phase 2 segmentation; RFC 0001; RFC 0004; D005, D027, D029, D030, D031, D034, D040
+Decision refs:
+  - D005
+  - D027
+  - D029
+  - D030
+  - D031
+  - D034
+  - D040
+Review refs:
+  - none
+Phase refs:
+  - PHASE-0002
 
 This RFC captures a possible future shape for running Engram's segmenter across
 multiple owned local machines while keeping the database on one machine. It is
@@ -53,6 +66,7 @@ from the database.
 - Do not change D031's activation rule: new segment generations become
   retrieval-visible only after required embeddings exist.
 
+<a id="proposed-work-unit"></a>
 ## Proposed Work Unit
 
 The natural work identity is:
@@ -81,6 +95,7 @@ splitting one parent across machines complicates:
 - provenance expansion;
 - generation completion and activation.
 
+<a id="lease-model"></a>
 ## Lease Model
 
 Workers should claim work through a database-backed lease. A lease is a
@@ -108,6 +123,7 @@ extension of `consolidation_progress`. A dedicated table is cleaner for
 multi-worker leasing because `consolidation_progress` currently mixes stage
 status, error counters, and human-readable position state.
 
+<a id="claim-query-shape"></a>
 ## Claim Query Shape
 
 The database should claim and return work in one transaction using
@@ -175,6 +191,7 @@ For a terminal failure, such as invalid provenance after retries:
 2. set the lease status to `terminal_failed`;
 3. keep diagnostics for review.
 
+<a id="required-database-guards"></a>
 ## Required Database Guards
 
 The lease table prevents most duplicate work, but the segment tables still need

@@ -1,4 +1,20 @@
+<a id="review-0010"></a>
 # Benchmark Segmentation Harness Review Synthesis
+
+Review ID: REVIEW-0010
+Status: synthesis
+Date: 2026-05-03
+RFC refs:
+  - RFC-0006
+Decision refs:
+  - D005
+  - D034
+  - D037
+  - D038
+  - D039
+  - D041
+Phase refs:
+  - PHASE-0002
 
 Date: 2026-05-03
 Scope: `benchmarks/segmentation/` skeleton

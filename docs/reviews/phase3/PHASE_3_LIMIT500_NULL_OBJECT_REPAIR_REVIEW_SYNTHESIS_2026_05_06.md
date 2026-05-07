@@ -1,4 +1,15 @@
+<a id="review-0025"></a>
 # Phase 3 Limit-500 Null-Object Repair Implementation Review Synthesis
+
+Review ID: REVIEW-0025
+Status: synthesis
+Date: 2026-05-06
+RFC refs:
+  - RFC-0013
+Decision refs:
+  - none
+Phase refs:
+  - PHASE-0003
 
 Date: 2026-05-06
 

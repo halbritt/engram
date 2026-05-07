@@ -1,4 +1,26 @@
+<a id="review-0019"></a>
 # Phase 3 Claims and Beliefs Spec Synthesis
+
+Review ID: REVIEW-0019
+Status: synthesis
+Date: 2026-05-05
+RFC refs:
+  - RFC-0011
+Decision refs:
+  - D047
+  - D048
+  - D049
+  - D050
+  - D051
+  - D052
+  - D053
+  - D054
+  - D055
+  - D056
+  - D057
+  - D058
+Phase refs:
+  - PHASE-0003
 
 Date: 2026-05-05
 Synthesizer: claude_opus_4_7

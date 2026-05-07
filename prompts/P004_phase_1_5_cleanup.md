@@ -1,4 +1,15 @@
+<a id="prompt-004"></a>
 # P004: Phase 1.5 Prompt — Phase 1 Cleanup
+
+Status: done
+Phase: Phase 1.5
+RFC refs:
+  - none
+Decision refs:
+  - D023
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P004. Introduced: 2026-04-28T05:19:06+00:00. Source commit: 1430f77.
 

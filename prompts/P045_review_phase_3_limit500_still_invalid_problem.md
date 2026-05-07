@@ -1,4 +1,15 @@
+<a id="prompt-045"></a>
 # P045 - Review Phase 3 Limit-500 Still-Invalid Problem
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - RFC-0013
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 You are reviewing a redacted Phase 3 post-build operational problem
 description. This is a review-only task.

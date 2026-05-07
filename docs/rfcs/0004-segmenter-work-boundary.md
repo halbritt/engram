@@ -1,9 +1,17 @@
+<a id="rfc-0004"></a>
 # RFC 0004: Segmenter Worker Boundary (Augments RFC 0003)
 
 Status: proposal
 **Date:** 2026-05-02
+Context: Refines RFC 0003 so the segmenter shape is directly consumable by the RFC 0001 supervisor.
 **Augments:** RFC 0003 (Decoupling Micro-Architecture in the Segmentation Pipeline)
 **Relates to:** RFC 0001 (Supervisor Controller Loop)
+Decision refs:
+  - D034
+Review refs:
+  - none
+Phase refs:
+  - none
 
 ## 1. Context
 
@@ -48,6 +56,7 @@ Three concrete deltas against RFC 0003:
   segment row. This metadata is load-bearing for replayability and the
   supervisor’s audit story.
 
+<a id="proposed-refinements"></a>
 ## 3. Proposed Refinements
 
 ### 3.1 Remove Progress/Telemetry from the Segmenter
@@ -68,6 +77,7 @@ It should **not** include:
 These are supervisor-owned. The worker entry point returns a structured
 result; the supervisor is responsible for recording the attempt.
 
+<a id="worker-entry-point"></a>
 ### 3.2 Rename “Orchestrator” to “Worker Entry Point”
 
 Replace RFC 0003 §3.3’s “Orchestrator” with a single typed worker entry point.
@@ -124,6 +134,7 @@ transport failure. It does not build prompts, does not consult the repository,
 and does not know about `RequestProfile` semantics beyond passing the model
 identifier through.
 
+<a id="stamp-request-profile"></a>
 ### 3.5 Stamp the Request Profile on Persisted Rows
 
 `SegmenterRepository.write_result()` must accept and persist the
@@ -141,6 +152,7 @@ This requires either:
 The choice is deferred to whichever supervisor schema work lands first;
 RFC 0004 commits only that the worker emits the triple as part of its result.
 
+<a id="resulting-layering"></a>
 ## 4. Resulting Layering
 
 ```

@@ -1,4 +1,15 @@
+<a id="review-0004"></a>
 # V1 Principle Review - Codex
+
+Review ID: REVIEW-0004
+Status: individual
+Date: 2026-04-28
+RFC refs:
+  - none
+Decision refs:
+  - D013
+Phase refs:
+  - none
 
 Date: 2026-04-28
 

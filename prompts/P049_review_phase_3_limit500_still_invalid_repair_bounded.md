@@ -1,4 +1,15 @@
+<a id="prompt-049"></a>
 # P049 - Bounded Review Phase 3 Limit-500 Still-Invalid Repair
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - RFC-0013
+Decision refs:
+  - D064
+Review refs:
+  - none
+Safe to execute: superseded
 
 You are Claude Opus reviewing the implemented Phase 3 limit-500
 still-invalid repair. This is a bounded review-only task.

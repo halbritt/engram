@@ -1,4 +1,25 @@
+<a id="review-0008"></a>
 # Pre-Phase-2 Adversarial Synthesis
+
+Review ID: REVIEW-0008
+Status: synthesis
+Date: 2026-04-30
+RFC refs:
+  - none
+Decision refs:
+  - D019
+  - D021
+  - D023
+  - D026
+  - D027
+  - D028
+  - D029
+  - D030
+  - D031
+  - D032
+  - D033
+Phase refs:
+  - PHASE-0002
 
 Date: 2026-04-30
 Scope: D026 pre-Phase-2 gate

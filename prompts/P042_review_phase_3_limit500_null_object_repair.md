@@ -1,4 +1,15 @@
+<a id="prompt-042"></a>
 # Review Phase 3 Limit-500 Null-Object Repair Implementation
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - RFC-0013
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 You are reviewing an uncommitted Phase 3 repair implementation for Engram.
 Engram is local-first: do not use or request raw corpus content, prompt

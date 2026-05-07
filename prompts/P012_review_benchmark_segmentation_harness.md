@@ -1,4 +1,18 @@
+<a id="prompt-012"></a>
 # P012: Review Benchmark Segmentation Harness
+
+Status: done
+Phase: Phase 2
+RFC refs:
+  - RFC-0006
+Decision refs:
+  - D005
+  - D034
+  - D037
+  - D039
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P012. Introduced: 2026-05-03T18:33:36+00:00. Source commit: 49f09c7.
 

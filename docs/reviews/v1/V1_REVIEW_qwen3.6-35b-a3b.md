@@ -1,4 +1,17 @@
+<a id="review-0002"></a>
 # V1 Review: Qwen3.6-35B-A3B (Claw)
+
+Review ID: REVIEW-0002
+Status: individual
+Date: 2026-04-27
+RFC refs:
+  - none
+Decision refs:
+  - D002
+  - D003
+  - D010
+Phase refs:
+  - none
 
 Date: 2026-04-27
 Inputs: HUMAN_REQUIREMENTS.md, V1_ARCHITECTURE_DRAFT.md,

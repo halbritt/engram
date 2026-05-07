@@ -1,8 +1,20 @@
+<a id="rfc-0010"></a>
 # RFC 0010: Segmenter Server Throughput Profile
 
 Status: proposal
 Date: 2026-05-04
 Context: Phase 2 segmentation; RFC 0006; RFC 0008; D034, D035, D036, D037, D040, D042
+Decision refs:
+  - D034
+  - D035
+  - D036
+  - D037
+  - D040
+  - D042
+Review refs:
+  - none
+Phase refs:
+  - PHASE-0002
 
 This RFC rewrites the proposed async topic-segmentation server configuration
 as a benchmark-first throughput experiment. It is not an accepted production
@@ -52,6 +64,7 @@ In particular:
   increases unordered spans, context-shift errors, truncation runaways, or
   fragmentation is worse than the slower baseline.
 
+<a id="goals"></a>
 ## Goals
 
 - Evaluate model-server flags with local, reproducible evidence.
@@ -75,6 +88,7 @@ In particular:
   calls.
 - Do not write benchmark outputs into retrieval-visible production rows.
 
+<a id="current-baseline"></a>
 ## Current Baseline
 
 The current comparable server baseline from recent benchmark runs is:
@@ -150,6 +164,7 @@ overrides the model-selection ladder. A model/profile still needs schema
 validity, provenance validity, fragmentation controls, and a Tier 2 decision
 run before production promotion.
 
+<a id="benchmark-shape"></a>
 ## Benchmark Shape
 
 Each candidate server profile should run the same sequence:
@@ -167,6 +182,7 @@ Each candidate server profile should run the same sequence:
 The benchmark may add a longer operational soak only after the profile passes
 the shorter gates.
 
+<a id="metrics"></a>
 ## Metrics
 
 Every run should report:
@@ -186,6 +202,7 @@ Every run should report:
   adjacent tiny fragments, and no-boundary false splits where the harness can
   score them.
 
+<a id="promotion-criteria"></a>
 ## Promotion Criteria
 
 A server profile may be proposed for production only if all of the following

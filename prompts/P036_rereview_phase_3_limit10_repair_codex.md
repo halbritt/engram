@@ -1,4 +1,16 @@
+<a id="prompt-036"></a>
 # Prompt P036: Re-Review Phase 3 D063 Limit-10 Repair
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - RFC-0013
+  - RFC-0014
+Decision refs:
+  - D063
+Review refs:
+  - none
+Safe to execute: superseded
 
 You are Codex GPT-5.5 performing the same-model re-review required after a
 `reject_for_revision` finding.

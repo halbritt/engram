@@ -1,3 +1,4 @@
+<a id="rfc-0014"></a>
 # RFC 0014: Operational Artifact Home
 
 Status: accepted for implementation
@@ -9,6 +10,14 @@ resolution, and malformed marker handling tightened on 2026-05-06
 Context: D060, D062, D063, RFC 0013,
 `docs/process/multi-agent-review-loop.md`,
 `docs/process/phase-3-agent-runbook.md`
+Decision refs:
+  - D060
+  - D062
+  - D063
+Review refs:
+  - none
+Phase refs:
+  - PHASE-0003
 
 This RFC defines the accepted implementation target for future development
 operational artifacts. Owner acceptance on 2026-05-06 authorizes Phase 3
@@ -65,6 +74,7 @@ searching through review artifacts. It also led to confusion about whether an
 - This RFC does not change Phase 3 expansion gates by itself.
 - This RFC does not make repository markers an `agent_runner` control plane.
 
+<a id="proposal-sketch"></a>
 ## Proposal Sketch
 
 Use a tracked operations root for committed, redacted operational artifacts:
@@ -112,6 +122,7 @@ This section is the original proposal sketch, not the final implementation
 contract. The spec handoff records the chosen root, loop layout, marker
 compatibility semantics, and `agent_runner` boundary.
 
+<a id="artifact-rules"></a>
 ## Artifact Rules
 
 Committed operational artifacts under `docs/operations/` follow RFC 0013
@@ -119,6 +130,7 @@ Section 3 redaction rules unchanged. The spec handoff records the package-level
 tightening that marker files must never contain private corpus content, even
 when owner approval allows private detail in a tracked prose artifact.
 
+<a id="migration-plan"></a>
 ## Migration Plan If Accepted
 
 1. Promote a concrete spec for the operational artifact home. The 2026-05-06
@@ -152,6 +164,7 @@ implementation.
 - Should the operation area be phase-scoped (`phase3-postbuild`) or
   process-scoped (`postbuild/phase3`)?
 
+<a id="acceptance-criteria"></a>
 ## Acceptance Criteria
 
 This RFC is accepted only after review confirms:

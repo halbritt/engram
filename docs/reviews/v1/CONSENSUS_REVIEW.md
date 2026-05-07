@@ -1,4 +1,15 @@
+<a id="review-0001"></a>
 # Consensus Review
+
+Review ID: REVIEW-0001
+Status: synthesis
+Date: 2026-04-27
+RFC refs:
+  - none
+Decision refs:
+  - none
+Phase refs:
+  - none
 
 Status: synthesis of round 1 reviews
 Date: 2026-04-27

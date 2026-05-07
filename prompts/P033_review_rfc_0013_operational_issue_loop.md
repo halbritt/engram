@@ -1,4 +1,15 @@
+<a id="prompt-033"></a>
 # P033: Review RFC 0013 Operational Issue Loop
+
+Status: done
+Phase: cross-cutting
+RFC refs:
+  - RFC-0013
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 You are reviewing an RFC for Engram, a local-first personal memory system.
 

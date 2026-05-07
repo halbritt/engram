@@ -1,4 +1,15 @@
+<a id="review-0020"></a>
 # Phase 3 D063 Limit-10 Repair Review Synthesis
+
+Review ID: REVIEW-0020
+Status: synthesis
+Date: 2026-05-05
+RFC refs:
+  - none
+Decision refs:
+  - D063
+Phase refs:
+  - PHASE-0003
 
 Date: 2026-05-05
 Coordinator verdict: repaired, pending same-model Codex re-review

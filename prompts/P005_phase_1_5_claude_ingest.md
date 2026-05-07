@@ -1,4 +1,15 @@
+<a id="prompt-005"></a>
 # P005: Phase 1.5 Prompt — Claude.ai Export Ingestion
+
+Status: done
+Phase: Phase 1.5
+RFC refs:
+  - none
+Decision refs:
+  - D024
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P005. Introduced: 2026-04-28T05:45:48+00:00. Source commit: 618b5bc.
 

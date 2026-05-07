@@ -1,4 +1,15 @@
+<a id="prompt-023"></a>
 # P023: Record Phase 3 Spec Findings
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - none
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P023. Introduced: pending first commit. Source commit: pending.
 

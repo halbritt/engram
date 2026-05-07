@@ -1,4 +1,18 @@
+<a id="review-0017"></a>
 # Phase 3 Build Review Synthesis
+
+Review ID: REVIEW-0017
+Status: synthesis
+Date: 2026-05-05
+RFC refs:
+  - none
+Decision refs:
+  - D034
+  - D035
+  - D052
+  - D054
+Phase refs:
+  - PHASE-0003
 
 Date: 2026-05-05
 Synthesis owner: Codex GPT-5.5 (`codex_gpt5_5`)

@@ -1,7 +1,19 @@
+<a id="rfc-0002"></a>
 # RFC 0002: Prior-Art Ideas To Revisit
 
 Status: proposal
 Date: 2026-05-02
+Context: Idea pile from a generated prior-art note, recorded as candidate design prompts for later phases.
+Decision refs:
+  - D004
+  - D009
+  - D018
+  - D022
+  - D025
+Review refs:
+  - none
+Phase refs:
+  - none
 
 This RFC captures useful ideas from a generated prior-art note that appears to
 conflate this Engram project with unrelated systems. Treat the source note as an
@@ -10,6 +22,7 @@ idea pile, not as evidence about Engram's current architecture or capabilities.
 Nothing here changes the accepted build plan. These are candidate design prompts
 for later phases or eval-driven experiments.
 
+<a id="useful-ideas"></a>
 ## Useful Ideas
 
 ### Temporal Anchoring
@@ -126,6 +139,7 @@ Possible maintenance classes:
 - rebuild derived summaries for long notes or conversations;
 - run eval probes on known failure slices.
 
+<a id="ideas-not-promoted"></a>
 ## Ideas Not Promoted
 
 ### Ebbinghaus Decay As Deletion Or Confidence Decay

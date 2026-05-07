@@ -1,4 +1,20 @@
+<a id="prompt-013"></a>
 # P013: Build Benchmark Segmentation Harness
+
+Status: done
+Phase: Phase 2
+RFC refs:
+  - RFC-0006
+Decision refs:
+  - D005
+  - D034
+  - D037
+  - D038
+  - D039
+  - D041
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P013. Introduced: 2026-05-03T18:56:51+00:00. Source commit: 71efa23.
 

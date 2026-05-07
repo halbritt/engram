@@ -1,7 +1,15 @@
+<a id="rfc-0012"></a>
 # RFC 0012: Python Agentic Coding Standard
 
 Status: proposal
 Date: 2026-05-05
+Context: Python coding standard for `src/engram` aimed at human and agentic contributors.
+Decision refs:
+  - none
+Review refs:
+  - none
+Phase refs:
+  - none
 
 This is an idea-capture RFC, not an accepted decision. It proposes a small,
 explicit, pattern-driven coding standard for the Python source under
@@ -64,6 +72,7 @@ agentic codebase has a different job:
 
 The standard below tries to satisfy all four.
 
+<a id="toolchain"></a>
 ## Toolchain
 
 Pin the following dev dependencies in `pyproject.toml`'s `[project.optional-dependencies].dev`:
@@ -111,6 +120,7 @@ These tools are local, do not require network, and do not introduce hosted
 services, so they are compatible with the project's local-first
 constraint.
 
+<a id="language-rules"></a>
 ## Language Rules
 
 These are written as imperative do/don't pairs. Where the codebase already
@@ -230,6 +240,7 @@ except Exception:        # too broad; loses traceback context
 - Raw evidence tables are append-only. New code must not issue
   `UPDATE`/`DELETE` against them; derived tables get rebuilt instead.
 
+<a id="worker-pipeline-rules"></a>
 ## Worker / Pipeline Rules
 
 These restate the contracts in RFC 0001, expressed at the code level so an
@@ -247,6 +258,7 @@ agent can apply them without reading the architecture RFC first.
   (`ENGRAM_IK_LLAMA_BASE_URL`) is bound to `127.0.0.1` and is the only
   permitted outbound destination.
 
+<a id="test-rules"></a>
 ## Test Rules
 
 - Tests are deterministic. A flaky test is a bug, not a tolerated cost.
@@ -305,6 +317,7 @@ rules above with copy-paste-ready examples. The literature is consistent
 on this: agents perform better against an explicit example than against a
 prose rule.[^so][^minimaxir]
 
+<a id="adoption-plan"></a>
 ## Adoption Plan
 
 Adoption is incremental and follows existing change discipline (see

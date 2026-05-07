@@ -1,3 +1,4 @@
+<a id="rfc-0013"></a>
 # RFC 0013: Development Operational Issue Loop
 
 Status: accepted
@@ -7,6 +8,15 @@ Path guidance: superseded for future artifacts by accepted RFC 0014 on
 Context: D059, D061, RFC 0011, `docs/process/multi-agent-review-loop.md`,
 `docs/process/project-judgment.md`,
 `docs/reviews/phase3/PHASE_3_POSTBUILD_RUN_LIMIT10_2026_05_05.md`
+Decision refs:
+  - D023
+  - D059
+  - D061
+  - D062
+Review refs:
+  - none
+Phase refs:
+  - PHASE-0003
 
 This RFC proposes a repeatable loop for operational issues found while building,
 reviewing, and running bounded development pipelines. It is process
@@ -52,8 +62,10 @@ and what must be true before a bounded run can expand.
 - This RFC does not authorize raw corpus content in committed operational
   artifacts.
 
+<a id="proposal"></a>
 ## Proposal
 
+<a id="issue-loop-trigger"></a>
 ### 1. Use an issue loop whenever bounded development finds a stop condition
 
 A bounded run enters the operational issue loop when any of these happen:
@@ -155,6 +167,7 @@ For Phase 3 post-build reports, canonical counts are:
 Markers are audit provenance. Do not remove old markers to make the queue look
 clean. Add new blocked/ready markers that describe the current state.
 
+<a id="marker-schema"></a>
 ### 5. Marker schema and precedence
 
 Operational markers use a per-loop directory:
@@ -221,6 +234,7 @@ Same-model re-review semantics are governed by
 reviewer before implementation proceeds. A still-rejecting re-review is a human
 checkpoint.
 
+<a id="verification-ladder"></a>
 ### 7. Verification ladder
 
 A repair is not ready for a larger bounded run until it has passed the smallest
@@ -270,6 +284,7 @@ rows. A ready marker requires proof that affected partial downstream rows either
 
 If neither is true, the loop remains `blocked` or `human_checkpoint`.
 
+<a id="expansion-gates"></a>
 ### 9. Expansion gates
 
 Bounded run expansion uses explicit gates:
@@ -358,6 +373,7 @@ exclusion.
 3. Should the initial 10% dropped-claim threshold vary by stability class or
    predicate family after more bounded runs?
 
+<a id="acceptance-criteria"></a>
 ## Acceptance Criteria
 
 - Multi-agent review completed on 2026-05-05.

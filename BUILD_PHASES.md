@@ -6,6 +6,19 @@
 > test that runs at the end of Phase 5 against a ~200-conversation
 > subset, not a per-phase test.
 
+## Phase ID index
+
+| ID | Section | Slug anchor |
+|----|---------|-------------|
+| PHASE-0001 | Phase 1 — Raw evidence layer | `phase-0001` |
+| PHASE-0001-5 | Phase 1.5 — Cleanup + multi-source ingestion | `phase-0001-5` |
+| PHASE-0002-PRE | Pre-Phase-2 adversarial gate (D026) | `phase-0002-pre` |
+| PHASE-0002 | Phase 2 — Segmentation + embeddings | `phase-0002` |
+| PHASE-0003 | Phase 3 — Claim extraction + bitemporal beliefs | `phase-0003` |
+| PHASE-0004 | Phase 4 — Entity canonicalization + review surface | `phase-0004` |
+| PHASE-0005 | Phase 5 — `context_for` + serving path | `phase-0005` |
+| PHASE-SMOKE | Smoke gate (D016) — runs after Phase 5 | `phase-smoke` |
+
 ## Why these boundaries
 
 The phases break on natural dependency seams:
@@ -25,6 +38,7 @@ The phases break on natural dependency seams:
 - **Phase 5 adds the serving path.** `context_for` + ranking + MCP +
   feedback are the integration point where smoke can finally run.
 
+<a id="phase-0001"></a>
 ## Phase 1 — Raw evidence layer
 
 **Scope:** Postgres + pgvector baseline; raw schema (`sources`,
@@ -53,6 +67,7 @@ every raw row preserves the original.
 **Leaves for next phase:** raw rows ready to be segmented; no
 derivations yet.
 
+<a id="phase-0001-5"></a>
 ## Phase 1.5 — Cleanup + multi-source ingestion (interstitial)
 
 Closes Phase 1 cleanup and brings the other two AI-conversation sources
@@ -70,6 +85,7 @@ later claim / belief extraction richer evidence to ground against.
   [prompts/P006_phase_1_5_gemini_ingest.md](prompts/P006_phase_1_5_gemini_ingest.md).
   Completed before Phase 2 implementation.
 
+<a id="phase-0002-pre"></a>
 ## Pre-Phase-2 adversarial gate (D026)
 
 Phase 2 is the first model-derived stage: segmentation prompt output becomes
@@ -100,6 +116,7 @@ D026 synthesis landed in
 [docs/reviews/v1/PRE_PHASE_2_ADVERSARIAL_SYNTHESIS_2026_04_30.md](docs/reviews/v1/PRE_PHASE_2_ADVERSARIAL_SYNTHESIS_2026_04_30.md)
 and produced D027-D033.
 
+<a id="phase-0002"></a>
 ## Phase 2 — Segmentation + embeddings
 
 **Scope:** topic segmentation of the full AI-conversation corpus — ChatGPT,
@@ -152,6 +169,7 @@ similarity; ready for claim extraction.
 See [prompts/P007_phase_2_segments_embeddings.md](prompts/P007_phase_2_segments_embeddings.md)
 for the operational handoff.
 
+<a id="phase-0003"></a>
 ## Phase 3 — Claim extraction + bitemporal beliefs
 
 **Scope:** LLM-driven claim extraction; belief consolidation with
@@ -208,6 +226,7 @@ amended spec; the test suite there pins concrete acceptance tests.
 **Leaves for next phase:** beliefs ready for entity canonicalization
 and HITL review.
 
+<a id="phase-0004"></a>
 ## Phase 4 — Entity canonicalization + review surface
 
 **Scope:** entity resolution; entity edges; `current_beliefs`
@@ -233,6 +252,7 @@ needed (per O003).
 **Leaves for next phase:** beliefs are reviewable, queryable, and
 canonicalized — ready to compose into context.
 
+<a id="phase-0005"></a>
 ## Phase 5 — `context_for` + serving path
 
 **Scope:** multi-lane candidate generation; weighted ranking;
@@ -264,6 +284,7 @@ weighted scorer; LLM reranker deferred per F003).
 **Leaves for the smoke gate:** the full pipeline is end-to-end
 runnable on the ~200-conversation smoke subset.
 
+<a id="phase-smoke"></a>
 ## Smoke gate (D016) — runs after Phase 5
 
 The integrated test. On a ~200 random-conversation subset:

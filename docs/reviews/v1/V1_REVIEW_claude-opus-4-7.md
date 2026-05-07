@@ -1,4 +1,16 @@
+<a id="review-0003"></a>
 # V1 Review — Claude Opus 4.7
+
+Review ID: REVIEW-0003
+Status: individual
+Date: 2026-04-28
+RFC refs:
+  - none
+Decision refs:
+  - D005
+  - D010
+Phase refs:
+  - none
 
 Reviewer: Claude Opus 4.7 (1M context)
 Date: 2026-04-28

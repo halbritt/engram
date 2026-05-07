@@ -1,4 +1,23 @@
+<a id="prompt-028"></a>
 # P028: Build Phase 3 Claims and Beliefs
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - none
+Decision refs:
+  - D031
+  - D034
+  - D035
+  - D037
+  - D046
+  - D048
+  - D049
+  - D054
+  - D058
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P028. Introduced: pending first commit. Source commit:
 > pending.

@@ -1,4 +1,16 @@
+<a id="review-0030"></a>
 # RFC 0014 Spec Handoff Synthesis
+
+Review ID: REVIEW-0030
+Status: synthesis
+Date: 2026-05-06
+RFC refs:
+  - RFC-0013
+  - RFC-0014
+Decision refs:
+  - D060
+Phase refs:
+  - none
 
 author: synthesizer-claude-opus-002
 

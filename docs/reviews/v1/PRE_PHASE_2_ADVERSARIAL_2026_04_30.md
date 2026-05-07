@@ -1,4 +1,16 @@
+<a id="review-0006"></a>
 # Pre-Phase-2 Adversarial Review
+
+Review ID: REVIEW-0006
+Status: individual
+Date: 2026-04-30
+RFC refs:
+  - none
+Decision refs:
+  - D023
+  - D027
+Phase refs:
+  - PHASE-0002
 
 Date: 2026-04-30
 Round: Round 0 (Phase 2 Segmentation + Embeddings Adversary)

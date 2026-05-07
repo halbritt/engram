@@ -1,3 +1,4 @@
+<a id="rfc-0011"></a>
 # RFC 0011: Phase 3 Claims and Bitemporal Beliefs
 
 Status: proposal
@@ -6,6 +7,36 @@ Context: BUILD_PHASES.md Phase 3 row; D002, D003, D004, D008, D009, D010,
 D014, D017, D019, D020, D021, D028, D032, D034, D035, D040, D042; O001,
 O007; PHASE_2_SPAN_EXPANSION_AUDIT_2026_05_04;
 PHASE_2_QWEN27B_UMBRELLA_AB_2026_05_05
+Decision refs:
+  - D002
+  - D003
+  - D004
+  - D006
+  - D008
+  - D009
+  - D010
+  - D014
+  - D017
+  - D019
+  - D020
+  - D021
+  - D026
+  - D028
+  - D032
+  - D034
+  - D035
+  - D036
+  - D040
+  - D042
+  - D043
+  - D044
+  - D045
+  - D046
+  - D047
+Review refs:
+  - none
+Phase refs:
+  - PHASE-0003
 
 This RFC proposes the schema and contracts for Phase 3 — claim extraction
 over the active Phase 2 segments, plus bitemporal belief consolidation
@@ -70,8 +101,10 @@ invariants — but several decisions are not pinned:
 This RFC proposes a cohesive answer to all of the above and surfaces
 the genuinely-open ones for review.
 
+<a id="proposal"></a>
 ## Proposal
 
+<a id="stage-division"></a>
 ### Stage division
 
 Phase 3 splits into two stages, both implemented in this phase:
@@ -94,6 +127,7 @@ The consolidator is deterministic Python in V1 (no LLM call). Its
 version string so the schema column has consistent semantics with the
 extractor.
 
+<a id="schema"></a>
 ### Schema
 
 `consolidation_progress` extension: nothing new required — Phase 2's
@@ -230,6 +264,7 @@ new `stage` values (`extractor`, `consolidator`).
 - Allow UPDATE only on `resolution_status` / `resolution_kind` /
   `resolved_at`; block DELETE.
 
+<a id="extractor-contract"></a>
 ### Extractor contract
 
 - D034 deterministic structured request: `stream=false`,
@@ -254,6 +289,7 @@ new `stage` values (`extractor`, `consolidator`).
   If a segment exceeds budget, fail-closed with a context-budget
   error rather than invent a per-claim chunking strategy.
 
+<a id="consolidator-contract"></a>
 ### Consolidator contract
 
 - Grouping key: `(normalize(subject_text), normalize(predicate))`.
@@ -305,6 +341,7 @@ new `stage` values (`extractor`, `consolidator`).
 - `consolidation_progress` checkpoints make extraction and
   consolidation resumable; reuses Phase 2's row shape.
 
+<a id="proposed-decisions"></a>
 ## Proposed Decisions (require DECISION_LOG entries before build)
 
 The following are not currently in DECISION_LOG and propagate into

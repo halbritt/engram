@@ -1,4 +1,15 @@
+<a id="prompt-024"></a>
 # P024B: Review Phase 3 Spec Synthesis After Codex Rejection
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - none
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P024B. Introduced: 2026-05-05. Source commit: pending.
 

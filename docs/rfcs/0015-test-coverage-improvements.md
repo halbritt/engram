@@ -1,7 +1,15 @@
+<a id="rfc-0015"></a>
 # RFC 0015: Test Coverage Improvements
 
 Status: proposal
 Date: 2026-05-05
+Context: Coverage-gap audit of `tests/` and a prioritized list of additions.
+Decision refs:
+  - D016
+Review refs:
+  - none
+Phase refs:
+  - none
 
 This is an idea-capture RFC, not an accepted architecture decision. It records
 a coverage-gap audit of the current test suite under `tests/` and proposes a
@@ -41,8 +49,10 @@ Source surface vs coverage:
 | `progress.py` | 60 | indirect | `consolidation_progress` increment logic untested |
 | `db.py` | 16 | indirect | OK given size |
 
+<a id="gaps-ranked"></a>
 ## Gaps, ranked by risk
 
+<a id="cli-untested"></a>
 ### 1. CLI is entirely untested (`src/engram/cli.py`)
 
 All subcommands — `migrate`, `ingest-chatgpt`, `ingest-claude`,
@@ -130,6 +140,7 @@ model context.
 Proposed: isolated unit tests on the token-budget math with synthetic message
 windows.
 
+<a id="smoke-pipeline-test"></a>
 ### 10. Smoke / pipeline integration test
 
 There's no test that runs `ingest → segment → embed` end-to-end on a tiny
@@ -138,6 +149,7 @@ fixture corpus, even though `BUILD_PHASES.md` D016 calls for it.
 Proposed: a small (~3 conversation) golden-pipeline test that catches wiring
 regressions between phases without needing the 200-conversation smoke gate.
 
+<a id="recommended-ordering"></a>
 ## Recommended ordering
 
 If picking three to do first:

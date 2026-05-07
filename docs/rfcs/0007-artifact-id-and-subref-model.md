@@ -1,8 +1,17 @@
+<a id="rfc-0007"></a>
 # RFC 0007: Artifact ID And Subref Model
 
-Status: proposal
+Status: promoted
 Date: 2026-05-03
+Promoted: D068 and `docs/process/artifact-id-conventions.md` on 2026-05-07
 Context: Documentation traceability; DECISION_LOG; docs/rfcs; docs/reviews; docs/phases; prompts
+Decision refs:
+  - D065
+  - D068
+Review refs:
+  - none
+Phase refs:
+  - none
 
 This RFC replaces the abandoned operational prompt
 `prompts/engram-artifact-refactor.md`. The idea is worth considering, but it

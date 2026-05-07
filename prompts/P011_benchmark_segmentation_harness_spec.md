@@ -1,4 +1,18 @@
+<a id="prompt-011"></a>
 # P011: Benchmark Segmentation Harness Spec Prompt
+
+Status: done
+Phase: Phase 2
+RFC refs:
+  - RFC-0006
+Decision refs:
+  - D005
+  - D034
+  - D037
+  - D039
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P011. Introduced: 2026-05-03T17:53:24+00:00. Source commit: 85a1c9b.
 

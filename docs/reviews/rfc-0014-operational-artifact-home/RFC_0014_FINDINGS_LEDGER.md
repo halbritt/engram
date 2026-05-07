@@ -1,4 +1,16 @@
+<a id="review-0028"></a>
 # RFC 0014 Findings Ledger
+
+Review ID: REVIEW-0028
+Status: findings
+Date: 2026-05-06
+RFC refs:
+  - RFC-0013
+  - RFC-0014
+Decision refs:
+  - D060
+Phase refs:
+  - none
 
 Status: recorded; spec handoff created
 Date: 2026-05-06

@@ -1,4 +1,20 @@
+<a id="prompt-014"></a>
 # P014: Review Benchmark Segmentation Harness Implementation
+
+Status: done
+Phase: Phase 2
+RFC refs:
+  - RFC-0006
+Decision refs:
+  - D005
+  - D034
+  - D037
+  - D038
+  - D039
+  - D041
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P014. Introduced: 2026-05-03T19:57:04+00:00. Source commit: b23d400.
 

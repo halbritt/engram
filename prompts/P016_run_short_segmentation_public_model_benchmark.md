@@ -1,4 +1,19 @@
+<a id="prompt-016"></a>
 # P016: Run Short Public Segmentation Model Benchmark
+
+Status: done
+Phase: Phase 2
+RFC refs:
+  - RFC-0006
+Decision refs:
+  - D034
+  - D037
+  - D038
+  - D039
+  - D041
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P016. Introduced: 2026-05-03T22:36:01+00:00. Source commit: c3bd353.
 

@@ -1,4 +1,15 @@
+<a id="prompt-046"></a>
 # P046 - Synthesize Phase 3 Limit-500 Still-Invalid Repair Spec
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - RFC-0013
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 You are a fresh Codex synthesis context. This is a spec-writing task, not a
 code implementation task.

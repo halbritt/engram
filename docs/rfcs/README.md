@@ -25,7 +25,7 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0004](0004-segmenter-work-boundary.md) | proposal | partial | Segmenter worker boundary |
 | [0005](0005-supervisor-event-triggers.md) | proposal | none | Supervisor event triggers and queue prioritization |
 | [0006](0006-segmentation-model-benchmark.md) | specified | implemented | Public-first segmentation model benchmark |
-| [0007](0007-artifact-id-and-subref-model.md) | proposal | none | Artifact ID and subref model |
+| [0007](0007-artifact-id-and-subref-model.md) | promoted | implemented | Artifact ID and subref model |
 | [0008](0008-segmentation-benchmark-early-signal.md) | specified | implemented | Segmentation benchmark early-signal revision |
 | [0009](0009-distributed-segmenter-work-leasing.md) | proposal | partial | Distributed segmenter work leasing |
 | [0010](0010-segmenter-server-throughput-profile.md) | proposal | partial | Segmenter server throughput profile |
@@ -40,6 +40,13 @@ prescriptive — a `none` here is not a TODO unless promoted via
 
 ## Implementation notes (2026-05-07 sweep)
 
+- **0007** — promoted via D068 to spec at `docs/process/artifact-id-conventions.md`.
+  RFC headers, file-level anchors, `D###` row anchors in `DECISION_LOG.md`,
+  `PHASE-####` anchors in `BUILD_PHASES.md`, `REVIEW-####` registry at
+  `docs/artifacts/review-id-registry.md`, prompt status headers, and the local
+  reference checker at `scripts/check_artifact_refs.py` (`make check-refs`)
+  all landed in the same sweep. Existing `D###` IDs stay canonical; no file
+  renames.
 - **0002** — non-implementable as a single deliverable; constituent ideas land
   separately (e.g. dimension-flexible embeddings via D033, predicate vocabulary
   via D046/D057). Marked `n/a` in the table.

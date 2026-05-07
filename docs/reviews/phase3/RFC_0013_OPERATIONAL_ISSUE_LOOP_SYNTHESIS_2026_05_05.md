@@ -1,4 +1,16 @@
+<a id="review-0022"></a>
 # RFC 0013 Review Synthesis
+
+Review ID: REVIEW-0022
+Status: synthesis
+Date: 2026-05-05
+RFC refs:
+  - RFC-0013
+Decision refs:
+  - D060
+  - D061
+Phase refs:
+  - PHASE-0003
 
 Date: 2026-05-05
 Artifact: `docs/rfcs/0013-development-operational-issue-loop.md`

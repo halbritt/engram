@@ -1,3 +1,4 @@
+<a id="phase-0001-review-findings"></a>
 # Phase 1 Review Findings
 
 The Phase 1 implementation successfully achieves the baseline requirements without overstepping into future phases. The schema cleanly implements the requested raw evidence tables, immutability constraints, and the `consolidation_progress` control table while successfully refraining from adding segmentation, embeddings, beliefs, or MCP functionality.

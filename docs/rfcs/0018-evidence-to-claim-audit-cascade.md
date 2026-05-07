@@ -1,3 +1,4 @@
+<a id="rfc-0018"></a>
 # RFC 0018: Evidence-to-Claim Audit Cascade
 
 Status: proposal
@@ -7,6 +8,27 @@ set against consolidated corpus); RFC 0011 §§ Stage A / Stage B;
 DECISION_LOG D002, D003, D008, D010, D019, D043, D049, D050, D052, D056,
 D058, D064; `HUMAN_REQUIREMENTS.md` § refusal of false precision; prior
 art: arXiv:2605.03042 § 3.1 (ARIS evidence-to-claim audit cascade)
+Decision refs:
+  - D002
+  - D003
+  - D008
+  - D010
+  - D019
+  - D020
+  - D043
+  - D044
+  - D049
+  - D050
+  - D052
+  - D055
+  - D056
+  - D057
+  - D058
+  - D064
+Review refs:
+  - none
+Phase refs:
+  - PHASE-0003
 
 This RFC proposes an automated, advisory **audit cascade** that runs over
 already-extracted claims and consolidated beliefs to surface integrity
@@ -91,6 +113,7 @@ This RFC proposes an automated audit cascade that produces those
 findings as structured, versioned artifacts derivable from raw evidence
 plus claims plus beliefs.
 
+<a id="proposal"></a>
 ## Proposal
 
 The cascade has three stages, each independently invocable, each
@@ -99,6 +122,7 @@ three stages is a gate at the schema level; verdicts propagate as
 status fields that downstream consumers (gold-set runner, lane
 compiler, Phase 5 ranking) can read.
 
+<a id="stage-1-extraction-integrity"></a>
 ### Stage 1: Extraction-integrity audit
 
 **Input.** A `claim_extractions.id` (or a sample drawn from a
@@ -140,6 +164,7 @@ The advisory bit: Stage 1 does not block; the `claim_extractions` row
 is not edited. Status propagates downstream (Stage 2 reads Stage 1
 findings).
 
+<a id="stage-2-claim-verdict"></a>
 ### Stage 2: Claim-to-evidence verdict (claim ledger)
 
 **Input.** A `claim_id` plus its Stage 1 audit row (if any).
@@ -174,6 +199,7 @@ prioritize them. No automatic demotion: per D044, no auto-promotion
 **or** auto-demotion in V1; the audit produces a signal, not a
 transition.
 
+<a id="stage-3-projection-audit"></a>
 ### Stage 3: Projection-claim audit
 
 **Input.** Any projection-level output that synthesizes claims into
@@ -270,6 +296,7 @@ operationally rather than by relative cost — engram operators want to
 say what they're auditing, not how much compute they're willing to
 spend.
 
+<a id="schema-additions"></a>
 ## Schema additions
 
 A new migration `migrations/00X_claim_audits.sql` adds three tables.

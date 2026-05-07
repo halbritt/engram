@@ -1,4 +1,15 @@
+<a id="prompt-034"></a>
 # P034: Re-review RFC 0013 Operational Issue Loop
+
+Status: done
+Phase: cross-cutting
+RFC refs:
+  - RFC-0013
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 You are the same reviewer that returned `reject_for_revision` on RFC 0013.
 

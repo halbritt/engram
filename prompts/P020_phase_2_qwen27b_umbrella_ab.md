@@ -1,4 +1,21 @@
+<a id="prompt-020"></a>
 # P020: Targeted Qwen 27B A/B for the Umbrella-Overlap Pattern
+
+Status: done
+Phase: Phase 2
+RFC refs:
+  - none
+Decision refs:
+  - D030
+  - D031
+  - D034
+  - D036
+  - D038
+  - D040
+  - D042
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P020. Introduced: 2026-05-05T04:33:08+00:00. Source commit: 6f24fc9.
 

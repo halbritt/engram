@@ -1,4 +1,18 @@
+<a id="review-0029"></a>
 # RFC 0014 Synthesis: Operational Artifact Home
+
+Review ID: REVIEW-0029
+Status: synthesis
+Date: 2026-05-06
+RFC refs:
+  - RFC-0013
+  - RFC-0014
+Decision refs:
+  - D060
+  - D062
+  - D063
+Phase refs:
+  - PHASE-0003
 
 author: synthesizer-claude-opus-001
 

@@ -1,4 +1,15 @@
+<a id="prompt-021"></a>
 # P021: Generate Phase 3 Claims And Beliefs Spec
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - RFC-0011
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P021. Introduced: pending first commit. Source commit: pending.
 

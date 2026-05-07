@@ -1,4 +1,15 @@
+<a id="prompt-006"></a>
 # P006: Phase 1.5 Prompt — Gemini Takeout Ingestion
+
+Status: done
+Phase: Phase 1.5
+RFC refs:
+  - none
+Decision refs:
+  - D024
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P006. Introduced: 2026-04-28T05:45:48+00:00. Source commit: 618b5bc.
 

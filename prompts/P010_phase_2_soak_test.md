@@ -1,4 +1,15 @@
+<a id="prompt-010"></a>
 # P010: Phase 2 Soak Test (2-hour bounded run)
+
+Status: done
+Phase: Phase 2
+RFC refs:
+  - none
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P010. Introduced: 2026-05-02T16:57:55+00:00. Source commit: 64eb7e3.
 

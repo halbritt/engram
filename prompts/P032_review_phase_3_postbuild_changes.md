@@ -1,4 +1,15 @@
+<a id="prompt-032"></a>
 # P032: Review Phase 3 Post-Build Guard and Repair Changes
+
+Status: done
+Phase: Phase 3
+RFC refs:
+  - none
+Decision refs:
+  - none
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P032. Introduced: 2026-05-05. Source commit: pending.
 

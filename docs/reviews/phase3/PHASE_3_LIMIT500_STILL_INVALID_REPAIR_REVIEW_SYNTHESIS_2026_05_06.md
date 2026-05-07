@@ -1,4 +1,15 @@
+<a id="review-0027"></a>
 # Phase 3 Limit-500 Still-Invalid Repair Review Synthesis
+
+Review ID: REVIEW-0027
+Status: synthesis
+Date: 2026-05-06
+RFC refs:
+  - RFC-0013
+Decision refs:
+  - none
+Phase refs:
+  - PHASE-0003
 
 Date: 2026-05-06
 

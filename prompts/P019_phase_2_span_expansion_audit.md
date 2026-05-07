@@ -1,4 +1,19 @@
+<a id="prompt-019"></a>
 # P019: Audit Phase 2 Span Expansion Before Claim Extraction
+
+Status: done
+Phase: Phase 2
+RFC refs:
+  - none
+Decision refs:
+  - D030
+  - D034
+  - D036
+  - D040
+  - D042
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P019. Introduced: 2026-05-04T12:22:41-07:00. Source commit: 6f39341.
 

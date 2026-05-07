@@ -1,4 +1,21 @@
+<a id="prompt-018"></a>
 # P018: Run Segmentation Early-Signal Benchmark
+
+Status: done
+Phase: Phase 2
+RFC refs:
+  - RFC-0006
+  - RFC-0008
+Decision refs:
+  - D034
+  - D037
+  - D038
+  - D039
+  - D041
+  - D042
+Review refs:
+  - none
+Safe to execute: superseded
 
 > Prompt ordinal: P018. Introduced: 2026-05-04T07:25:58+00:00. Source commit: 56c7237.
 

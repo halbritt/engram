@@ -1,4 +1,24 @@
+<a id="review-0007"></a>
 # Pre-Phase-2 Adversarial Review — Round 2 (post-D027/D028)
+
+Review ID: REVIEW-0007
+Status: individual
+Date: 2026-04-30
+RFC refs:
+  - none
+Decision refs:
+  - D003
+  - D005
+  - D019
+  - D021
+  - D023
+  - D026
+  - D027
+  - D028
+  - D029
+  - D030
+Phase refs:
+  - PHASE-0002
 
 Date: 2026-04-30
 Reviewer: claude-opus-4-7

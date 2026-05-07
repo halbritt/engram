@@ -1,3 +1,4 @@
+<a id="rfc-0017"></a>
 # RFC 0017: Extraction Prompt Versioning and Cross-Corpus Dry-Run
 
 Status: proposal
@@ -5,6 +6,12 @@ Date: 2026-05-05
 Context: src/engram/extractor.py:31 (`EXTRACTION_PROMPT_VERSION`); migrations/006_claims_beliefs.sql;
 RFC 0011 § Stage A; D040 (Phase 3 substrate scope); README.md § Current Status;
 deferred from adversarial review 2026-05-05
+Decision refs:
+  - D040
+Review refs:
+  - none
+Phase refs:
+  - PHASE-0003
 
 This is an idea-capture RFC, not an accepted architecture decision. It proposes
 (a) formalizing the extraction-prompt versioning contract that already exists
@@ -45,8 +52,10 @@ This RFC does not claim the schema is wrong. It proposes a cheap test —
 running the existing extractor against a small Obsidian sample — to surface
 misfits while the schema is still pre-load-bearing for downstream stages.
 
+<a id="proposal"></a>
 ## Proposal
 
+<a id="part-1-versioning-contract"></a>
 ### Part 1: Formalize the prompt versioning contract
 
 The version string is the join key between an extraction artifact and its
@@ -71,6 +80,7 @@ The contract is documentation of existing behavior; no code change is
 required for Part 1 beyond the prompt artifact directory and a short
 section in `docs/claims_beliefs.md` describing the rule.
 
+<a id="part-2-reextraction-protocol"></a>
 ### Part 2: Re-extraction protocol
 
 When `EXTRACTION_PROMPT_VERSION` increments, the protocol is:
@@ -91,6 +101,7 @@ When `EXTRACTION_PROMPT_VERSION` increments, the protocol is:
 This part is design-time guidance for a CLI subcommand that does not yet
 exist. It is in scope for the Phase 3 → Phase 4 seam, not Phase 3 itself.
 
+<a id="part-3-cross-corpus-dryrun"></a>
 ### Part 3: Cross-corpus dry-run gate
 
 Before the claim/belief schema is treated as load-bearing for the lane
@@ -165,6 +176,7 @@ prompt is written.
    without operator-private data, but probably belongs in RFC 0015's test
    coverage scope, not here.
 
+<a id="acceptance-criteria"></a>
 ## Acceptance criteria for promotion
 
 Promotion paths are split:

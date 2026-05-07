@@ -7,7 +7,7 @@ EXPORT_PATH := $(if $(filter command line,$(origin PATH)),$(PATH),)
 SEGMENTER_MODEL ?=
 SEGMENTER_MODEL_ENV := $(if $(SEGMENTER_MODEL),ENGRAM_SEGMENTER_MODEL="$(SEGMENTER_MODEL)",)
 
-.PHONY: install db-up db-down wait-db migrate migrate-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker test test-db test-docker test-db-docker schema-docs
+.PHONY: install db-up db-down wait-db migrate migrate-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker test test-db test-docker test-db-docker schema-docs check-refs
 
 install: .venv/.installed
 
@@ -122,6 +122,9 @@ test: install test-db
 
 test-docker: install test-db-docker
 	ENGRAM_TEST_DATABASE_URL="$(DOCKER_TEST_DATABASE_URL)" $(PYTHON) -m pytest
+
+check-refs:
+	python3 scripts/check_artifact_refs.py --root .
 
 schema-docs: install
 	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) scripts/gen_schema_docs.py
