@@ -29,8 +29,9 @@ Start with the root canonical docs when orienting on the current system:
   tmux / marker-file coordination for the Phase 3 spec-to-pipeline chain.
 - [process/operational-artifact-home-spec.md](process/operational-artifact-home-spec.md) —
   draft spec handoff resolving RFC 0014 operational artifact layout choices.
-- [../agent-runner/README.md](../agent-runner/README.md) — incubating
-  `agent_runner` project, split out after its MVP is designed and built.
+- [../agent-runner/README.md](../agent-runner/README.md) — historical
+  `agent_runner` incubation copy. The standalone project is Striatum:
+  `https://github.com/halbritt/striatum`.
 
 ## Proposals
 

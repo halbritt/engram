@@ -1,15 +1,31 @@
 # agent_runner TODO
 
-Status: planning
-Date: 2026-05-06
+Status: historical
+Date: 2026-05-07
 author: coordinator-codex-gpt-5.5-001
 
-This list records the practical work needed to split `agent_runner` out of
-Engram and the product improvements that should follow. Engram remains the
-incubation repository and first validation fixture; it is not the product
-boundary.
+This list records the practical work that led to the split of `agent_runner`
+out of Engram. The standalone project is now Striatum:
+`https://github.com/halbritt/striatum`.
+
+Engram keeps this directory as historical incubation provenance until the owner
+decides whether to remove it, track Striatum as a subtree/submodule, or retain
+only a pointer.
 
 ## Repo Split TODOs
+
+Completed on 2026-05-07:
+
+- public repository / Python distribution / CLI/module name selected:
+  `striatum`;
+- Engram extraction point tagged as `striatum-extraction-2026-05-07`;
+- history-preserving prefix split created from `agent-runner/`;
+- standalone repository pushed to `https://github.com/halbritt/striatum` as
+  `main`;
+- standalone metadata, CI, changelog, contribution notes, and fresh-clone smoke
+  script added in Striatum;
+- split decisions recorded in Engram `DECISION_LOG.md` and this project
+  decision log.
 
 1. Choose the public repository name and Python distribution name. Current code
    and docs use `agent_runner` for the CLI/module and `agent-runner` for the

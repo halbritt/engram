@@ -1,5 +1,10 @@
 # agent_runner
 
+Status: historical incubation copy. The standalone project has been split and
+renamed to Striatum at `https://github.com/halbritt/striatum`. Keep this
+directory as provenance until the owner decides whether Engram should remove it,
+track it as a subtree/submodule, or retain only this pointer.
+
 Local-first orchestration for multiple terminal-based AI coding agents.
 
 `agent_runner` is a small, repo-local control plane for coordinating AI coding
