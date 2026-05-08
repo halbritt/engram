@@ -55,6 +55,7 @@ that synthesis ID for now.
 | REVIEW-0029 | 2026-05-06 | docs/reviews/rfc-0014-operational-artifact-home/reruns/2026-05-06-redaction-rerun-2/RFC_0014_SYNTHESIS.md | synthesis | RFC 0014 synthesis (rerun-2); aggregates that rerun's per-reviewer reviews |
 | REVIEW-0030 | 2026-05-06 | docs/reviews/rfc-0014-operational-artifact-home/reruns/2026-05-06-redaction-rerun-4/RFC_0014_SYNTHESIS.md | synthesis | RFC 0014 spec handoff synthesis (rerun-4); aggregates that rerun's per-reviewer reviews |
 | REVIEW-0031 | 2026-05-07 | docs/reviews/phase3/PHASE_3_EXTRACTION_BACKEND_BENCHMARK_2026_05_07.md | findings | RFC 0019 Phase 3 extraction backend benchmark findings for local vLLM and sglang candidates |
+| REVIEW-0032 | 2026-05-08 | docs/reviews/v1/BENCHMARK_SEGMENTATION_IK_LLAMA_CONFIG_2026_05_08.md | findings | Phase 2 segmentation ik_llama server-profile benchmark findings |
 
 ## Aggregated (not separately numbered)
 
