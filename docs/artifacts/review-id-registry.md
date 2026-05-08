@@ -57,6 +57,7 @@ that synthesis ID for now.
 | REVIEW-0031 | 2026-05-07 | docs/reviews/phase3/PHASE_3_EXTRACTION_BACKEND_BENCHMARK_2026_05_07.md | findings | RFC 0019 Phase 3 extraction backend benchmark findings for local vLLM and sglang candidates |
 | REVIEW-0032 | 2026-05-08 | docs/reviews/v1/BENCHMARK_SEGMENTATION_IK_LLAMA_CONFIG_2026_05_08.md | findings | Phase 2 segmentation ik_llama server-profile benchmark findings |
 | REVIEW-0033 | 2026-05-08 | docs/reviews/v1/LOCAL_INFERENCE_SPEED_FINDINGS_2026_05_08.md | findings | Local extraction and segmentation inference speed benchmark findings |
+| REVIEW-0034 | 2026-05-08 | docs/reviews/rfc0025/RFC_0025_COMMAND_NAMES_SYNTHESIS.md | synthesis | RFC 0025 command-names review synthesis; aggregates RFC 0025 per-reviewer reviews and findings ledger |
 
 ## Aggregated (not separately numbered)
 
@@ -102,6 +103,10 @@ their own `REVIEW-####` IDs if cross-document references demand it.
   REVIEW-0010 / REVIEW-0011.
 - `docs/reviews/v1/BENCHMARK_SEGMENTATION_EARLY_SIGNAL_*_2026_05_04.md`
   (spec-review, run, implementation-review) — under REVIEW-0012 / REVIEW-0013.
+- `docs/reviews/rfc0025/RFC_0025_COMMAND_NAMES_REVIEW_*.md`,
+  `RFC_0025_COMMAND_NAMES_FINDINGS_LEDGER.md`,
+  `RFC_0025_COMMAND_NAMES_FINAL_REVIEW.md`, `EVIDENCE.md`, and
+  `RUN_SUMMARY.md` — under REVIEW-0034.
 - Phase 3 pipeline run reports (`PHASE_3_PIPELINE_*`,
   `PHASE_3_POSTBUILD_RUN_*`, `PHASE_3_POSTBUILD_*_REPAIR*`,
   `PHASE_3_POST_LIMIT50_EXPANSION_PLAN_2026_05_05.md`,

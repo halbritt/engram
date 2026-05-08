@@ -1,5 +1,7 @@
+<a id="review-0034"></a>
 # RFC 0025 Command-Names Synthesis
 
+Review ID: REVIEW-0034
 author: synthesizer-claude-opus-001
 Status: synthesis
 Date: 2026-05-08
