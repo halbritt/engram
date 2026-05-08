@@ -10,15 +10,15 @@ not the worker behavior, which is exercised in the phase-specific test files.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Iterator
+from typing import Any
 
 import pytest
 
 from engram import cli
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -33,6 +33,20 @@ def fake_connect(monkeypatch: pytest.MonkeyPatch, conn: Any) -> Any:
     a context manager that yields the existing test connection without closing
     it (``conftest.py``'s ``conn`` fixture owns the lifecycle).
     """
+
+    @contextmanager
+    def _fake_connect(*args: Any, **kwargs: Any) -> Iterator[Any]:
+        yield conn
+
+    monkeypatch.setattr(cli, "connect", _fake_connect)
+    return conn
+
+
+@pytest.fixture()
+def fake_cli_connect(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Replace ``cli.connect`` without requiring a live test database."""
+
+    conn = SimpleNamespace(commit=lambda: None)
 
     @contextmanager
     def _fake_connect(*args: Any, **kwargs: Any) -> Iterator[Any]:
@@ -266,9 +280,7 @@ def test_segment_returns_nonzero_when_failures_present(
         "run_segment_batches",
         lambda _conn, **_kw: _make_segment_result(failed=2),
     )
-    monkeypatch.setattr(
-        cli, "apply_reclassification_invalidations", lambda _conn: 0
-    )
+    monkeypatch.setattr(cli, "apply_reclassification_invalidations", lambda _conn: 0)
 
     rc = cli.main(["segment"])
     assert rc == 1
@@ -311,13 +323,13 @@ def test_embed_wires_batch_size_limit_and_model_version(
 
 
 # ---------------------------------------------------------------------------
-# pipeline
+# Phase 2 run / generic pipeline fail-closed behavior
 # ---------------------------------------------------------------------------
 
 
-def test_pipeline_wires_distinct_segment_and_embed_batch_sizes(
+def test_phase2_run_wires_distinct_segment_and_embed_batch_sizes(
     monkeypatch: pytest.MonkeyPatch,
-    fake_connect: Any,
+    fake_cli_connect: Any,
 ) -> None:
     seg_kwargs: dict[str, Any] = {}
     embed_kwargs: dict[str, Any] = {}
@@ -332,13 +344,12 @@ def test_pipeline_wires_distinct_segment_and_embed_batch_sizes(
 
     monkeypatch.setattr(cli, "run_segment_batches", fake_run_segment_batches)
     monkeypatch.setattr(cli, "run_embed_batches", fake_run_embed_batches)
-    monkeypatch.setattr(
-        cli, "apply_reclassification_invalidations", lambda _conn: 0
-    )
+    monkeypatch.setattr(cli, "apply_reclassification_invalidations", lambda _conn: 0)
 
     rc = cli.main(
         [
-            "pipeline",
+            "phase2",
+            "run",
             "--segment-batch-size",
             "11",
             "--embed-batch-size",
@@ -364,9 +375,9 @@ def test_pipeline_wires_distinct_segment_and_embed_batch_sizes(
     assert embed_kwargs["model_version"] == "embed-Y"
 
 
-def test_pipeline_returns_nonzero_when_embed_fails(
+def test_phase2_run_returns_nonzero_when_embed_fails(
     monkeypatch: pytest.MonkeyPatch,
-    fake_connect: Any,
+    fake_cli_connect: Any,
 ) -> None:
     monkeypatch.setattr(
         cli,
@@ -378,12 +389,44 @@ def test_pipeline_returns_nonzero_when_embed_fails(
         "run_embed_batches",
         lambda _conn, **_kw: _make_embed_result(failed=3),
     )
-    monkeypatch.setattr(
-        cli, "apply_reclassification_invalidations", lambda _conn: 0
-    )
+    monkeypatch.setattr(cli, "apply_reclassification_invalidations", lambda _conn: 0)
+
+    rc = cli.main(["phase2", "run"])
+    assert rc == 1
+
+
+def test_pipeline_fails_closed_before_database_connection(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail_connect() -> None:
+        raise AssertionError("pipeline should fail before connect()")
+
+    monkeypatch.setattr(cli, "connect", fail_connect)
 
     rc = cli.main(["pipeline"])
-    assert rc == 1
+
+    assert rc == 2
+    captured = capsys.readouterr()
+    assert "ambiguous command: pipeline" in captured.err
+    assert "engram phase2 run" in captured.err
+    assert "engram phase3 run" in captured.err
+    assert "engram phase4 smoke" in captured.err
+
+
+def test_pipeline_help_points_to_phase_scoped_commands(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["pipeline", "--help"])
+
+    assert excinfo.value.code == 0
+    captured = capsys.readouterr()
+    assert "ambiguous command: pipeline" in captured.out
+    assert "engram phase2 run" in captured.out
+    assert "engram phase3 run" in captured.out
+    assert "engram phase4 smoke" in captured.out
+    assert "--limit" not in captured.out
 
 
 # ---------------------------------------------------------------------------
@@ -402,9 +445,7 @@ def test_extract_wires_batch_size_and_limit(
         return SimpleNamespace(processed=1, created=2, skipped=0, failed=0)
 
     monkeypatch.setattr(cli, "run_extract_batches", fake_run_extract_batches)
-    monkeypatch.setattr(
-        cli, "apply_phase3_reclassification_invalidations", lambda _conn: None
-    )
+    monkeypatch.setattr(cli, "apply_phase3_reclassification_invalidations", lambda _conn: None)
 
     rc = cli.main(
         [
@@ -433,20 +474,12 @@ def test_consolidate_wires_batch_size_and_limit(
 ) -> None:
     captured: dict[str, Any] = {}
 
-    def fake_run_consolidate_batches(
-        connection: Any, **kwargs: Any
-    ) -> SimpleNamespace:
+    def fake_run_consolidate_batches(connection: Any, **kwargs: Any) -> SimpleNamespace:
         captured.update(kwargs)
-        return SimpleNamespace(
-            processed=1, created=1, superseded=0, contradictions=0
-        )
+        return SimpleNamespace(processed=1, created=1, superseded=0, contradictions=0)
 
-    monkeypatch.setattr(
-        cli, "run_consolidate_batches", fake_run_consolidate_batches
-    )
-    monkeypatch.setattr(
-        cli, "apply_phase3_reclassification_invalidations", lambda _conn: None
-    )
+    monkeypatch.setattr(cli, "run_consolidate_batches", fake_run_consolidate_batches)
+    monkeypatch.setattr(cli, "apply_phase3_reclassification_invalidations", lambda _conn: None)
 
     rc = cli.main(
         [
@@ -464,3 +497,166 @@ def test_consolidate_wires_batch_size_and_limit(
     assert captured["batch_size"] == 13
     assert captured["limit"] == 26
     assert captured["prompt_version"] == "cv-test"
+
+
+def test_legacy_consolidate_command_prints_replacement_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_cli_connect: Any,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "run_consolidate_batches",
+        lambda _conn, **_kw: SimpleNamespace(
+            processed=1,
+            created=1,
+            superseded=0,
+            contradictions=0,
+        ),
+    )
+    monkeypatch.setattr(cli, "apply_phase3_reclassification_invalidations", lambda _conn: None)
+
+    rc = cli.main(["consolidate"])
+
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "warning: `engram consolidate` is deprecated" in captured.err
+    assert "engram phase3 consolidate" in captured.err
+
+
+def test_phase1_ingest_chatgpt_dispatches_to_current_ingest_path(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_cli_connect: Any,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_ingest(connection: Any, path: Path) -> SimpleNamespace:
+        captured["conn"] = connection
+        captured["path"] = path
+        return _make_ingest_result()
+
+    monkeypatch.setattr(cli, "ingest_chatgpt_export", fake_ingest)
+
+    rc = cli.main(["phase1", "ingest-chatgpt", str(tmp_path)])
+
+    assert rc == 0
+    assert captured["conn"] is fake_cli_connect
+    assert captured["path"] == tmp_path
+
+
+def test_phase3_run_accepts_limit_without_claiming_phase2(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_cli_connect: Any,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(cli, "phase3_schema_preflight", lambda _conn: None)
+    monkeypatch.setattr(
+        cli,
+        "apply_phase3_reclassification_invalidations",
+        lambda _conn: None,
+    )
+    monkeypatch.setattr(
+        cli,
+        "active_beliefs_with_other_consolidator_version",
+        lambda _conn: [],
+    )
+
+    def fake_fetch_phase3_conversation_batch(connection: Any, limit: int | None) -> list[str]:
+        captured["conn"] = connection
+        captured["limit"] = limit
+        return []
+
+    monkeypatch.setattr(
+        cli,
+        "fetch_phase3_conversation_batch",
+        fake_fetch_phase3_conversation_batch,
+    )
+
+    rc = cli.main(["phase3", "run", "--limit", "7"])
+
+    assert rc == 0
+    assert captured["conn"] is fake_cli_connect
+    assert captured["limit"] == 7
+
+
+def test_phase4_smoke_dispatches_to_current_smoke_path(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_cli_connect: Any,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_run_phase4_smoke(connection: Any, *, limit: int) -> SimpleNamespace:
+        captured["conn"] = connection
+        captured["limit"] = limit
+        return SimpleNamespace(
+            current_beliefs=1,
+            review_queue_items=2,
+            beliefs_processed=3,
+            entities_created=4,
+            entities_reused=5,
+            edges_created=6,
+            edges_reused=7,
+            neighborhood_rows=8,
+        )
+
+    monkeypatch.setattr(cli, "run_phase4_smoke", fake_run_phase4_smoke)
+
+    rc = cli.main(["phase4", "smoke", "--limit", "9"])
+
+    assert rc == 0
+    assert captured["conn"] is fake_cli_connect
+    assert captured["limit"] == 9
+
+
+def test_phase4_run_is_not_a_command() -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["phase4", "run"])
+
+    assert excinfo.value.code != 0
+
+
+def test_legacy_segment_command_prints_replacement_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_cli_connect: Any,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "run_segment_batches",
+        lambda _conn, **_kw: _make_segment_result(created=0),
+    )
+    monkeypatch.setattr(
+        cli,
+        "apply_reclassification_invalidations",
+        lambda _conn: 0,
+    )
+
+    rc = cli.main(["segment"])
+
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "warning: `engram segment` is deprecated" in captured.err
+    assert "engram phase2 segment" in captured.err
+
+
+def test_makefile_has_phase_scoped_targets_and_pipeline_fail_closed() -> None:
+    makefile = Path("Makefile").read_text()
+
+    for target in (
+        "phase1-ingest-chatgpt:",
+        "phase2-run:",
+        "phase2-run-docker:",
+        "phase2-run-isolated:",
+        "phase3-run:",
+        "phase3-run-docker:",
+        "phase4-smoke:",
+    ):
+        assert target in makefile
+
+    assert "ambiguous target: pipeline" in makefile
+    assert "ambiguous target: pipeline-docker" in makefile
+    assert "ambiguous target: pipeline-isolated" in makefile
+    assert "engram.cli phase2 run $(if $(LIMIT),--limit $(LIMIT),)" in makefile
+    assert "engram.cli phase3 run $(if $(LIMIT),--limit $(LIMIT),)" in makefile

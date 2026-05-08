@@ -43,7 +43,7 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0022](0022-server-binary-api-mcp.md) | proposal | none | Server binary with HTTP API and MCP interface |
 | [0023](0023-concurrent-extraction-pipeline.md) | draft | none | Concurrent extraction pipeline via Python concurrent.futures |
 | [0024](0024-phase-4-pre-full-corpus-benchmark-gate.md) | accepted | partial | Phase 4 pre-full-corpus benchmark gate |
-| [0025](0025-phase-scoped-command-names.md) | accepted | none | Phase-scoped command names |
+| [0025](0025-phase-scoped-command-names.md) | accepted | partial | Phase-scoped command names |
 
 ## Implementation notes (2026-05-07 sweep)
 

@@ -8,7 +8,7 @@ SEGMENTER_MODEL ?=
 SEGMENTER_MODEL_ENV := $(if $(SEGMENTER_MODEL),ENGRAM_SEGMENTER_MODEL="$(SEGMENTER_MODEL)",)
 STRIATUM_REPO ?= $(HOME)/git/striatum
 
-.PHONY: install db-up db-down wait-db migrate migrate-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker phase4-smoke phase4-smoke-docker test test-db test-docker test-db-docker schema-docs check-refs lint format typecheck install-striatum striatum-init phase4-validate phase4-prepare phase4-status rfc25-validate rfc25-prepare rfc25-status rfc25-impl-validate rfc25-impl-prepare rfc25-impl-status
+.PHONY: install db-up db-down wait-db migrate migrate-docker phase1-ingest-chatgpt phase1-ingest-chatgpt-docker phase1-ingest-claude phase1-ingest-claude-docker phase1-ingest-gemini phase1-ingest-gemini-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker phase2-segment phase2-segment-docker phase2-embed phase2-embed-docker phase2-run phase2-run-docker phase2-run-isolated segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker phase3-extract phase3-extract-docker phase3-consolidate phase3-consolidate-docker phase3-run phase3-run-docker phase4-refresh phase4-build-entities phase4-smoke phase4-smoke-docker test test-db test-docker test-db-docker schema-docs check-refs lint format typecheck install-striatum striatum-init phase4-validate phase4-prepare phase4-status rfc25-validate rfc25-prepare rfc25-status rfc25-impl-validate rfc25-impl-prepare rfc25-impl-status
 
 install: .venv/.installed
 
@@ -36,71 +36,149 @@ migrate: install
 migrate-docker: install wait-db
 	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli migrate
 
-ingest-chatgpt: install
-	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make ingest-chatgpt PATH=/path/to/chatgpt-export"; exit 2; fi
-	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli ingest-chatgpt "$(EXPORT_PATH)"
+phase1-ingest-chatgpt: install
+	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make phase1-ingest-chatgpt PATH=/path/to/chatgpt-export"; exit 2; fi
+	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase1 ingest-chatgpt "$(EXPORT_PATH)"
 
-ingest-chatgpt-docker: install wait-db
-	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make ingest-chatgpt-docker PATH=/path/to/chatgpt-export"; exit 2; fi
-	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli ingest-chatgpt "$(EXPORT_PATH)"
+phase1-ingest-chatgpt-docker: install wait-db
+	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make phase1-ingest-chatgpt-docker PATH=/path/to/chatgpt-export"; exit 2; fi
+	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli phase1 ingest-chatgpt "$(EXPORT_PATH)"
 
-ingest-claude: install
-	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make ingest-claude PATH=/path/to/claude-export"; exit 2; fi
-	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli ingest-claude "$(EXPORT_PATH)"
+phase1-ingest-claude: install
+	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make phase1-ingest-claude PATH=/path/to/claude-export"; exit 2; fi
+	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase1 ingest-claude "$(EXPORT_PATH)"
 
-ingest-claude-docker: install wait-db
-	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make ingest-claude-docker PATH=/path/to/claude-export"; exit 2; fi
-	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli ingest-claude "$(EXPORT_PATH)"
+phase1-ingest-claude-docker: install wait-db
+	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make phase1-ingest-claude-docker PATH=/path/to/claude-export"; exit 2; fi
+	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli phase1 ingest-claude "$(EXPORT_PATH)"
 
-ingest-gemini: install
-	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make ingest-gemini PATH=/path/to/google-takeout"; exit 2; fi
-	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli ingest-gemini "$(EXPORT_PATH)"
+phase1-ingest-gemini: install
+	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make phase1-ingest-gemini PATH=/path/to/google-takeout"; exit 2; fi
+	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase1 ingest-gemini "$(EXPORT_PATH)"
 
-ingest-gemini-docker: install wait-db
-	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make ingest-gemini-docker PATH=/path/to/google-takeout"; exit 2; fi
-	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli ingest-gemini "$(EXPORT_PATH)"
+phase1-ingest-gemini-docker: install wait-db
+	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make phase1-ingest-gemini-docker PATH=/path/to/google-takeout"; exit 2; fi
+	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli phase1 ingest-gemini "$(EXPORT_PATH)"
 
-segment: install
-	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli segment
+ingest-chatgpt:
+	@echo "warning: make ingest-chatgpt is deprecated; use make phase1-ingest-chatgpt" >&2
+	@$(MAKE) phase1-ingest-chatgpt PATH="$(EXPORT_PATH)"
 
-segment-docker: install wait-db
-	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli segment
+ingest-chatgpt-docker:
+	@echo "warning: make ingest-chatgpt-docker is deprecated; use make phase1-ingest-chatgpt-docker" >&2
+	@$(MAKE) phase1-ingest-chatgpt-docker PATH="$(EXPORT_PATH)"
 
-embed: install
-	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli embed
+ingest-claude:
+	@echo "warning: make ingest-claude is deprecated; use make phase1-ingest-claude" >&2
+	@$(MAKE) phase1-ingest-claude PATH="$(EXPORT_PATH)"
 
-embed-docker: install wait-db
-	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli embed
+ingest-claude-docker:
+	@echo "warning: make ingest-claude-docker is deprecated; use make phase1-ingest-claude-docker" >&2
+	@$(MAKE) phase1-ingest-claude-docker PATH="$(EXPORT_PATH)"
 
-extract: install
-	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli extract
+ingest-gemini:
+	@echo "warning: make ingest-gemini is deprecated; use make phase1-ingest-gemini" >&2
+	@$(MAKE) phase1-ingest-gemini PATH="$(EXPORT_PATH)"
 
-extract-docker: install wait-db
-	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli extract
+ingest-gemini-docker:
+	@echo "warning: make ingest-gemini-docker is deprecated; use make phase1-ingest-gemini-docker" >&2
+	@$(MAKE) phase1-ingest-gemini-docker PATH="$(EXPORT_PATH)"
 
-consolidate: install
-	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli consolidate
+phase2-segment: install
+	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase2 segment $(if $(LIMIT),--limit $(LIMIT),)
 
-consolidate-docker: install wait-db
-	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli consolidate
+phase2-segment-docker: install wait-db
+	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli phase2 segment $(if $(LIMIT),--limit $(LIMIT),)
 
-pipeline: install
-	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli pipeline
+phase2-embed: install
+	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase2 embed $(if $(LIMIT),--limit $(LIMIT),)
 
-pipeline-docker: install wait-db
-	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli pipeline
+phase2-embed-docker: install wait-db
+	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli phase2 embed $(if $(LIMIT),--limit $(LIMIT),)
 
-pipeline-3: install
-	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli pipeline-3
+phase2-run: install
+	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase2 run $(if $(LIMIT),--limit $(LIMIT),)
 
-pipeline-3-docker: install wait-db
-	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli pipeline-3
+phase2-run-docker: install wait-db
+	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli phase2 run $(if $(LIMIT),--limit $(LIMIT),)
+
+segment:
+	@echo "warning: make segment is deprecated; use make phase2-segment" >&2
+	@$(MAKE) phase2-segment
+
+segment-docker:
+	@echo "warning: make segment-docker is deprecated; use make phase2-segment-docker" >&2
+	@$(MAKE) phase2-segment-docker
+
+embed:
+	@echo "warning: make embed is deprecated; use make phase2-embed" >&2
+	@$(MAKE) phase2-embed
+
+embed-docker:
+	@echo "warning: make embed-docker is deprecated; use make phase2-embed-docker" >&2
+	@$(MAKE) phase2-embed-docker
+
+pipeline:
+	@printf '%s\n' "ambiguous target: pipeline" "Use one of:" "  make phase2-run" "  make phase2-run-docker" "  make phase2-run-isolated" "  make phase3-run" "  make phase4-smoke" >&2
+	@exit 2
+
+pipeline-docker:
+	@printf '%s\n' "ambiguous target: pipeline-docker" "Use one of:" "  make phase2-run-docker" "  make phase3-run-docker" "  make phase4-smoke-docker" >&2
+	@exit 2
+
+phase3-extract: install
+	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase3 extract $(if $(LIMIT),--limit $(LIMIT),)
+
+phase3-extract-docker: install wait-db
+	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli phase3 extract $(if $(LIMIT),--limit $(LIMIT),)
+
+phase3-consolidate: install
+	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase3 consolidate $(if $(LIMIT),--limit $(LIMIT),)
+
+phase3-consolidate-docker: install wait-db
+	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli phase3 consolidate $(if $(LIMIT),--limit $(LIMIT),)
+
+phase3-run: install
+	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase3 run $(if $(LIMIT),--limit $(LIMIT),)
+
+phase3-run-docker: install wait-db
+	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli phase3 run $(if $(LIMIT),--limit $(LIMIT),)
+
+extract:
+	@echo "warning: make extract is deprecated; use make phase3-extract" >&2
+	@$(MAKE) phase3-extract
+
+extract-docker:
+	@echo "warning: make extract-docker is deprecated; use make phase3-extract-docker" >&2
+	@$(MAKE) phase3-extract-docker
+
+consolidate:
+	@echo "warning: make consolidate is deprecated; use make phase3-consolidate" >&2
+	@$(MAKE) phase3-consolidate
+
+consolidate-docker:
+	@echo "warning: make consolidate-docker is deprecated; use make phase3-consolidate-docker" >&2
+	@$(MAKE) phase3-consolidate-docker
+
+pipeline-3:
+	@echo "warning: make pipeline-3 is deprecated; use make phase3-run" >&2
+	@$(MAKE) phase3-run
+
+pipeline-3-docker:
+	@echo "warning: make pipeline-3-docker is deprecated; use make phase3-run-docker" >&2
+	@$(MAKE) phase3-run-docker
+
+phase4-refresh: install
+	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase4 refresh-current-beliefs
+
+phase4-build-entities: install
+	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase4 build-entities $(if $(LIMIT),--limit $(LIMIT),)
 
 phase4-smoke: install
-	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase4-smoke --limit $(or $(LIMIT),25)
+	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase4 smoke --limit $(or $(LIMIT),25)
 
 phase4-smoke-docker: install wait-db
-	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli phase4-smoke --limit $(or $(LIMIT),25)
+	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli phase4 smoke --limit $(or $(LIMIT),25)
 
 # segment-isolated and pipeline-isolated stop openclaw-gateway and ik-llama-watchdog.timer
 # for the duration of the run, then restore them. The watchdog calls /health, which blocks
@@ -109,14 +187,19 @@ phase4-smoke-docker: install wait-db
 ENGRAM_QUIESCED_UNITS := openclaw-gateway.service ik-llama-watchdog.timer
 
 segment-isolated: install
+	@echo "warning: make segment-isolated is deprecated; use make phase2-segment" >&2
 	@trap 'for u in $(ENGRAM_QUIESCED_UNITS); do systemctl --user start $$u 2>/dev/null || true; done' EXIT INT TERM; \
 	for u in $(ENGRAM_QUIESCED_UNITS); do systemctl --user stop $$u 2>/dev/null || true; done; \
-	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli segment
+	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase2 segment $(if $(LIMIT),--limit $(LIMIT),)
 
-pipeline-isolated: install
+phase2-run-isolated: install
 	@trap 'for u in $(ENGRAM_QUIESCED_UNITS); do systemctl --user start $$u 2>/dev/null || true; done' EXIT INT TERM; \
 	for u in $(ENGRAM_QUIESCED_UNITS); do systemctl --user stop $$u 2>/dev/null || true; done; \
-	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli pipeline
+	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase2 run $(if $(LIMIT),--limit $(LIMIT),)
+
+pipeline-isolated:
+	@printf '%s\n' "ambiguous target: pipeline-isolated" "Use one of:" "  make phase2-run-isolated" "  make phase2-run" "  make phase3-run" "  make phase4-smoke" >&2
+	@exit 2
 
 test-db:
 	@createdb engram_test 2>/dev/null || true

@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Accepted RFC 0025 as the phase-scoped operator command-surface contract:
   legacy bare mutating commands warn then get removed, and Phase 1 ingest
   commands move under `engram phase1`.
+- Implemented the first RFC 0025 command-surface slice: phase-scoped CLI
+  commands, phase-scoped Make targets, and fail-closed generic `pipeline`
+  commands.
 - Documented corrected RFC 0023 slot-aware extraction benchmark findings:
   1 worker / 1 server slot = 546.90s, 2 / 2 = 226.44s, 4 / 4 = 190.84s, and
   8 / 8 = 522.19s on the 20-segment slice.

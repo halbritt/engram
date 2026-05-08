@@ -54,6 +54,22 @@ class Phase3SchemaPreflightError(RuntimeError):
     """Raised when Phase 3 pipeline prerequisites are not present in the DB."""
 
 
+AMBIGUOUS_PIPELINE_COMMAND = """ambiguous command: pipeline
+Use one of:
+  engram phase2 run
+  engram phase3 run
+  engram phase4 smoke"""
+
+
+def warn_legacy_command(invoked_command: str, replacement: str | None) -> None:
+    if replacement is None:
+        return
+    print(
+        f"warning: `engram {invoked_command}` is deprecated; use `engram {replacement}`",
+        file=sys.stderr,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="engram")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -62,43 +78,63 @@ def main(argv: list[str] | None = None) -> int:
 
     chatgpt_parser = subparsers.add_parser(
         "ingest-chatgpt",
-        help="Ingest a local ChatGPT export directory",
+        help="Deprecated; use `engram phase1 ingest-chatgpt`",
     )
     chatgpt_parser.add_argument("path", type=Path)
+    chatgpt_parser.set_defaults(
+        invoked_command="ingest-chatgpt",
+        legacy_replacement="phase1 ingest-chatgpt",
+    )
 
     claude_parser = subparsers.add_parser(
         "ingest-claude",
-        help="Ingest a local Claude.ai export (directory or .zip)",
+        help="Deprecated; use `engram phase1 ingest-claude`",
     )
     claude_parser.add_argument("path", type=Path)
+    claude_parser.set_defaults(
+        invoked_command="ingest-claude",
+        legacy_replacement="phase1 ingest-claude",
+    )
 
     gemini_parser = subparsers.add_parser(
         "ingest-gemini",
-        help="Ingest a local Gemini Google Takeout directory",
+        help="Deprecated; use `engram phase1 ingest-gemini`",
     )
     gemini_parser.add_argument("path", nargs="?", type=Path)
     gemini_parser.add_argument("--path", dest="path_option", type=Path)
+    gemini_parser.set_defaults(
+        invoked_command="ingest-gemini",
+        legacy_replacement="phase1 ingest-gemini",
+    )
 
     segment_parser = subparsers.add_parser(
         "segment",
-        help="Segment pending conversations into inactive segment generations",
+        help="Deprecated; use `engram phase2 segment`",
     )
     segment_parser.add_argument("--source-id")
     segment_parser.add_argument("--batch-size", type=int, default=10)
     segment_parser.add_argument("--limit", type=int)
     segment_parser.add_argument("--retries", type=int, default=DEFAULT_RETRIES)
+    segment_parser.set_defaults(
+        invoked_command="segment",
+        legacy_replacement="phase2 segment",
+    )
 
     embed_parser = subparsers.add_parser(
         "embed",
-        help="Embed pending segments and activate completed generations",
+        help="Deprecated; use `engram phase2 embed`",
     )
     embed_parser.add_argument("--model-version", default=DEFAULT_EMBEDDING_MODEL_VERSION)
     embed_parser.add_argument("--batch-size", type=int, default=100)
     embed_parser.add_argument("--limit", type=int)
+    embed_parser.set_defaults(
+        invoked_command="embed",
+        legacy_replacement="phase2 embed",
+    )
 
     extract_parser = subparsers.add_parser(
         "extract",
-        help="Extract atomic claims from active segments",
+        help="Deprecated; use `engram phase3 extract`",
     )
     extract_parser.add_argument("--batch-size", type=int, default=50)
     extract_parser.add_argument("--limit", type=int)
@@ -107,6 +143,10 @@ def main(argv: list[str] | None = None) -> int:
     extract_parser.add_argument("--requeue", action="store_true")
     extract_parser.add_argument("--prompt-version", default=EXTRACTION_PROMPT_VERSION)
     extract_parser.add_argument("--concurrency", type=int, default=DEFAULT_EXTRACTION_CONCURRENCY)
+    extract_parser.set_defaults(
+        invoked_command="extract",
+        legacy_replacement="phase3 extract",
+    )
 
     re_extract_parser = subparsers.add_parser(
         "re-extract",
@@ -131,28 +171,54 @@ def main(argv: list[str] | None = None) -> int:
 
     consolidate_parser = subparsers.add_parser(
         "consolidate",
-        help="Consolidate claims into bitemporal beliefs",
+        help="Deprecated; use `engram phase3 consolidate`",
     )
     consolidate_parser.add_argument("--batch-size", type=int, default=100)
     consolidate_parser.add_argument("--limit", type=int)
     consolidate_parser.add_argument("--conversation-id")
     consolidate_parser.add_argument("--rebuild", action="store_true")
     consolidate_parser.add_argument("--prompt-version", default=CONSOLIDATOR_PROMPT_VERSION)
+    consolidate_parser.set_defaults(
+        invoked_command="consolidate",
+        legacy_replacement="phase3 consolidate",
+    )
 
     pipeline_parser = subparsers.add_parser(
         "pipeline",
-        help="Run Phase 1/2 memory pipeline: segment -> embed",
+        description=AMBIGUOUS_PIPELINE_COMMAND,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        help="Ambiguous legacy command; use a phase-scoped command",
     )
-    pipeline_parser.add_argument("--source-id")
-    pipeline_parser.add_argument("--segment-batch-size", type=int, default=10)
-    pipeline_parser.add_argument("--embed-batch-size", type=int, default=100)
-    pipeline_parser.add_argument("--limit", type=int)
-    pipeline_parser.add_argument("--model-version", default=DEFAULT_EMBEDDING_MODEL_VERSION)
-    pipeline_parser.add_argument("--segment-retries", type=int, default=DEFAULT_RETRIES)
+    pipeline_parser.add_argument("--source-id", help=argparse.SUPPRESS)
+    pipeline_parser.add_argument(
+        "--segment-batch-size",
+        type=int,
+        default=10,
+        help=argparse.SUPPRESS,
+    )
+    pipeline_parser.add_argument(
+        "--embed-batch-size",
+        type=int,
+        default=100,
+        help=argparse.SUPPRESS,
+    )
+    pipeline_parser.add_argument("--limit", type=int, help=argparse.SUPPRESS)
+    pipeline_parser.add_argument(
+        "--model-version",
+        default=DEFAULT_EMBEDDING_MODEL_VERSION,
+        help=argparse.SUPPRESS,
+    )
+    pipeline_parser.add_argument(
+        "--segment-retries",
+        type=int,
+        default=DEFAULT_RETRIES,
+        help=argparse.SUPPRESS,
+    )
+    pipeline_parser.set_defaults(invoked_command="pipeline")
 
     pipeline3_parser = subparsers.add_parser(
         "pipeline-3",
-        help="Run explicit Phase 3 pipeline: extract -> consolidate",
+        help="Deprecated; use `engram phase3 run`",
     )
     pipeline3_parser.add_argument("--extract-batch-size", type=int, default=10)
     pipeline3_parser.add_argument("--consolidate-batch-size", type=int, default=10)
@@ -162,27 +228,43 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=DEFAULT_EXTRACTION_CONCURRENCY,
     )
+    pipeline3_parser.set_defaults(
+        invoked_command="pipeline-3",
+        legacy_replacement="phase3 run",
+    )
 
-    subparsers.add_parser(
+    phase4_refresh_parser = subparsers.add_parser(
         "phase4-refresh",
-        help="Refresh Phase 4 current belief projections",
+        help="Deprecated; use `engram phase4 refresh-current-beliefs`",
+    )
+    phase4_refresh_parser.set_defaults(
+        invoked_command="phase4-refresh",
+        legacy_replacement="phase4 refresh-current-beliefs",
     )
 
     phase4_entities_parser = subparsers.add_parser(
         "phase4-build-entities",
-        help="Build deterministic Phase 4 entity scaffolding from current beliefs",
+        help="Deprecated; use `engram phase4 build-entities`",
     )
     phase4_entities_parser.add_argument("--limit", type=int)
+    phase4_entities_parser.set_defaults(
+        invoked_command="phase4-build-entities",
+        legacy_replacement="phase4 build-entities",
+    )
 
     phase4_smoke_parser = subparsers.add_parser(
         "phase4-smoke",
-        help="Run a bounded local-only Phase 4 Tier 0 smoke build",
+        help="Deprecated; use `engram phase4 smoke`",
     )
     phase4_smoke_parser.add_argument("--limit", type=int, default=25)
+    phase4_smoke_parser.set_defaults(
+        invoked_command="phase4-smoke",
+        legacy_replacement="phase4 smoke",
+    )
 
     review_parser = subparsers.add_parser(
         "review-belief",
-        help="Apply a Phase 4 belief review action",
+        help="Deprecated; use `engram phase4 review-belief`",
     )
     review_parser.add_argument("belief_id")
     review_parser.add_argument(
@@ -191,8 +273,159 @@ def main(argv: list[str] | None = None) -> int:
     )
     review_parser.add_argument("--note")
     review_parser.add_argument("--actor", default="local")
+    review_parser.set_defaults(
+        invoked_command="review-belief",
+        legacy_replacement="phase4 review-belief",
+    )
+
+    phase1_parser = subparsers.add_parser("phase1", help="Phase 1 ingestion commands")
+    phase1_subparsers = phase1_parser.add_subparsers(dest="phase1_command", required=True)
+    phase1_chatgpt_parser = phase1_subparsers.add_parser(
+        "ingest-chatgpt",
+        help="Ingest a local ChatGPT export directory",
+    )
+    phase1_chatgpt_parser.add_argument("path", type=Path)
+    phase1_chatgpt_parser.set_defaults(command="ingest-chatgpt")
+    phase1_claude_parser = phase1_subparsers.add_parser(
+        "ingest-claude",
+        help="Ingest a local Claude.ai export (directory or .zip)",
+    )
+    phase1_claude_parser.add_argument("path", type=Path)
+    phase1_claude_parser.set_defaults(command="ingest-claude")
+    phase1_gemini_parser = phase1_subparsers.add_parser(
+        "ingest-gemini",
+        help="Ingest a local Gemini Google Takeout directory",
+    )
+    phase1_gemini_parser.add_argument("path", nargs="?", type=Path)
+    phase1_gemini_parser.add_argument("--path", dest="path_option", type=Path)
+    phase1_gemini_parser.set_defaults(command="ingest-gemini")
+
+    phase2_parser = subparsers.add_parser(
+        "phase2",
+        help="Phase 2 segmentation and embedding commands",
+    )
+    phase2_subparsers = phase2_parser.add_subparsers(dest="phase2_command", required=True)
+    phase2_segment_parser = phase2_subparsers.add_parser(
+        "segment",
+        help="Segment pending conversations into inactive segment generations",
+    )
+    phase2_segment_parser.add_argument("--source-id")
+    phase2_segment_parser.add_argument("--batch-size", type=int, default=10)
+    phase2_segment_parser.add_argument("--limit", type=int)
+    phase2_segment_parser.add_argument("--retries", type=int, default=DEFAULT_RETRIES)
+    phase2_segment_parser.set_defaults(command="segment")
+    phase2_embed_parser = phase2_subparsers.add_parser(
+        "embed",
+        help="Embed pending segments and activate completed generations",
+    )
+    phase2_embed_parser.add_argument("--model-version", default=DEFAULT_EMBEDDING_MODEL_VERSION)
+    phase2_embed_parser.add_argument("--batch-size", type=int, default=100)
+    phase2_embed_parser.add_argument("--limit", type=int)
+    phase2_embed_parser.set_defaults(command="embed")
+    phase2_run_parser = phase2_subparsers.add_parser(
+        "run",
+        help="Run Phase 2 pipeline: segment -> embed",
+    )
+    phase2_run_parser.add_argument("--source-id")
+    phase2_run_parser.add_argument("--segment-batch-size", type=int, default=10)
+    phase2_run_parser.add_argument("--embed-batch-size", type=int, default=100)
+    phase2_run_parser.add_argument("--limit", type=int)
+    phase2_run_parser.add_argument("--model-version", default=DEFAULT_EMBEDDING_MODEL_VERSION)
+    phase2_run_parser.add_argument("--segment-retries", type=int, default=DEFAULT_RETRIES)
+    phase2_run_parser.set_defaults(command="pipeline", invoked_command="phase2 run")
+
+    phase3_parser = subparsers.add_parser(
+        "phase3",
+        help="Phase 3 claim extraction and belief consolidation commands",
+    )
+    phase3_subparsers = phase3_parser.add_subparsers(dest="phase3_command", required=True)
+    phase3_extract_parser = phase3_subparsers.add_parser(
+        "extract",
+        help="Extract atomic claims from active segments",
+    )
+    phase3_extract_parser.add_argument("--batch-size", type=int, default=50)
+    phase3_extract_parser.add_argument("--limit", type=int)
+    phase3_extract_parser.add_argument("--segment-id")
+    phase3_extract_parser.add_argument("--conversation-id")
+    phase3_extract_parser.add_argument("--requeue", action="store_true")
+    phase3_extract_parser.add_argument("--prompt-version", default=EXTRACTION_PROMPT_VERSION)
+    phase3_extract_parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=DEFAULT_EXTRACTION_CONCURRENCY,
+    )
+    phase3_extract_parser.set_defaults(command="extract")
+    phase3_consolidate_parser = phase3_subparsers.add_parser(
+        "consolidate",
+        help="Consolidate claims into bitemporal beliefs",
+    )
+    phase3_consolidate_parser.add_argument("--batch-size", type=int, default=100)
+    phase3_consolidate_parser.add_argument("--limit", type=int)
+    phase3_consolidate_parser.add_argument("--conversation-id")
+    phase3_consolidate_parser.add_argument("--rebuild", action="store_true")
+    phase3_consolidate_parser.add_argument(
+        "--prompt-version",
+        default=CONSOLIDATOR_PROMPT_VERSION,
+    )
+    phase3_consolidate_parser.set_defaults(command="consolidate")
+    phase3_run_parser = phase3_subparsers.add_parser(
+        "run",
+        help="Run Phase 3 pipeline: extract -> consolidate",
+    )
+    phase3_run_parser.add_argument("--extract-batch-size", type=int, default=10)
+    phase3_run_parser.add_argument("--consolidate-batch-size", type=int, default=10)
+    phase3_run_parser.add_argument("--limit", type=int)
+    phase3_run_parser.add_argument(
+        "--extract-concurrency",
+        type=int,
+        default=DEFAULT_EXTRACTION_CONCURRENCY,
+    )
+    phase3_run_parser.set_defaults(command="pipeline-3")
+
+    phase4_parser = subparsers.add_parser(
+        "phase4",
+        help="Phase 4 current-belief, entity, smoke, and review commands",
+    )
+    phase4_subparsers = phase4_parser.add_subparsers(dest="phase4_command", required=True)
+    phase4_refresh_current_parser = phase4_subparsers.add_parser(
+        "refresh-current-beliefs",
+        help="Refresh Phase 4 current belief projections",
+    )
+    phase4_refresh_current_parser.set_defaults(command="phase4-refresh")
+    phase4_build_entities_parser = phase4_subparsers.add_parser(
+        "build-entities",
+        help="Build deterministic Phase 4 entity scaffolding from current beliefs",
+    )
+    phase4_build_entities_parser.add_argument("--limit", type=int)
+    phase4_build_entities_parser.set_defaults(command="phase4-build-entities")
+    phase4_run_smoke_parser = phase4_subparsers.add_parser(
+        "smoke",
+        help="Run a bounded local-only Phase 4 Tier 0 smoke build",
+    )
+    phase4_run_smoke_parser.add_argument("--limit", type=int, default=25)
+    phase4_run_smoke_parser.set_defaults(command="phase4-smoke")
+    phase4_review_parser = phase4_subparsers.add_parser(
+        "review-belief",
+        help="Apply a Phase 4 belief review action",
+    )
+    phase4_review_parser.add_argument("belief_id")
+    phase4_review_parser.add_argument(
+        "action",
+        choices=["accept", "reject", "correct", "promote-to-pinned"],
+    )
+    phase4_review_parser.add_argument("--note")
+    phase4_review_parser.add_argument("--actor", default="local")
+    phase4_review_parser.set_defaults(command="review-belief")
 
     args = parser.parse_args(argv)
+    invoked_command = getattr(args, "invoked_command", args.command)
+    if args.command == "pipeline" and invoked_command == "pipeline":
+        print(AMBIGUOUS_PIPELINE_COMMAND, file=sys.stderr)
+        return 2
+    warn_legacy_command(
+        invoked_command,
+        getattr(args, "legacy_replacement", None),
+    )
 
     try:
         if args.command == "migrate":

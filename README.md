@@ -129,59 +129,57 @@ make migrate
 Ingest local exports:
 
 ```sh
-make ingest-chatgpt PATH=/path/to/chatgpt-export
-make ingest-claude PATH=/path/to/claude-export-or-zip
-make ingest-gemini PATH=/path/to/google-takeout
+make phase1-ingest-chatgpt PATH=/path/to/chatgpt-export
+make phase1-ingest-claude PATH=/path/to/claude-export-or-zip
+make phase1-ingest-gemini PATH=/path/to/google-takeout
 ```
 
 Run Phase 2:
 
 ```sh
-make segment
-make embed
-```
-
-Or run Phase 2 as one pipeline:
-
-```sh
-make pipeline
+make phase2-segment
+make phase2-embed
+make phase2-run
+make phase2-run LIMIT=25
 ```
 
 Run Phase 3:
 
 ```sh
-make extract
-make consolidate
-```
-
-Or run the explicit Phase 3 pipeline:
-
-```sh
-make pipeline-3
+make phase3-extract
+make phase3-consolidate
+make phase3-run
+make phase3-run LIMIT=50
 ```
 
 Useful bounded operator commands:
 
 ```sh
-.venv/bin/python -m engram.cli segment --limit 10
-.venv/bin/python -m engram.cli embed --limit 100
-.venv/bin/python -m engram.cli extract --limit 25
-.venv/bin/python -m engram.cli consolidate --limit 25
-.venv/bin/python -m engram.cli pipeline-3 --limit 50
+.venv/bin/python -m engram.cli phase2 segment --limit 10
+.venv/bin/python -m engram.cli phase2 embed --limit 100
+.venv/bin/python -m engram.cli phase2 run --limit 25
+.venv/bin/python -m engram.cli phase3 extract --limit 25
+.venv/bin/python -m engram.cli phase3 consolidate --limit 25
+.venv/bin/python -m engram.cli phase3 run --limit 50
+.venv/bin/python -m engram.cli phase4 smoke --limit 25
+make phase4-smoke LIMIT=25
 ```
 
 Useful targeted Phase 3 recovery commands:
 
 ```sh
-.venv/bin/python -m engram.cli extract --segment-id UUID
-.venv/bin/python -m engram.cli extract --conversation-id UUID --requeue
-.venv/bin/python -m engram.cli consolidate --conversation-id UUID --batch-size 1 --limit 1
-.venv/bin/python -m engram.cli consolidate --rebuild
+.venv/bin/python -m engram.cli phase3 extract --segment-id UUID
+.venv/bin/python -m engram.cli phase3 extract --conversation-id UUID --requeue
+.venv/bin/python -m engram.cli phase3 consolidate --conversation-id UUID --batch-size 1 --limit 1
+.venv/bin/python -m engram.cli phase3 consolidate --rebuild
 ```
 
-Use the Docker variants (`make segment-docker`, `make embed-docker`,
-`make extract-docker`, `make consolidate-docker`, `make pipeline-3-docker`)
-when the database is the compose-managed Postgres instance.
+Generic `pipeline` targets intentionally fail closed with phase-scoped
+alternatives. Use Docker variants (`make phase2-segment-docker`,
+`make phase2-embed-docker`, `make phase2-run-docker`,
+`make phase3-extract-docker`, `make phase3-consolidate-docker`,
+`make phase3-run-docker`, `make phase4-smoke-docker`) when the database is the
+compose-managed Postgres instance.
 
 Run tests:
 
