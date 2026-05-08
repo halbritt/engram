@@ -7,7 +7,6 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
-
 CONSOLIDATOR_PROMPT_VERSION = "consolidator.v1.d048-d058.transition-api"
 CONSOLIDATOR_MODEL_VERSION = "consolidator.v1.d048-d058.transition-api"
 
@@ -31,6 +30,14 @@ class BeliefPayload:
     privacy_tier: int
     raw_payload: dict[str, Any]
     score_breakdown: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class BeliefTransitionResult:
+    belief_id: str
+    previous_status: str
+    new_status: str
+    changed: bool
 
 
 def insert_belief(
@@ -106,6 +113,68 @@ def supersede_belief(
             request_uuid=request_uuid,
         )
     return new_id
+
+
+def transition_belief_status(
+    conn: psycopg.Connection,
+    belief_id: str,
+    *,
+    new_status: str,
+    transition_kind: str,
+    score_breakdown: dict[str, Any],
+    request_uuid: str,
+    prompt_version: str = CONSOLIDATOR_PROMPT_VERSION,
+    model_version: str = CONSOLIDATOR_MODEL_VERSION,
+) -> BeliefTransitionResult:
+    """Apply one audited belief lifecycle status transition inside a transaction."""
+    if new_status not in {"candidate", "provisional", "accepted", "rejected"}:
+        raise ValueError(f"unsupported belief status transition target: {new_status}")
+    if transition_kind not in {"promote", "demote", "reject", "reactivate"}:
+        raise ValueError(f"unsupported belief transition kind: {transition_kind}")
+
+    _set_transition_request(conn, request_uuid)
+    prior = _fetch_belief_for_update(conn, belief_id)
+    previous_status = str(prior["status"])
+    if previous_status == new_status:
+        return BeliefTransitionResult(
+            belief_id=belief_id,
+            previous_status=previous_status,
+            new_status=new_status,
+            changed=False,
+        )
+    if previous_status in {"superseded", "rejected"} and new_status != "provisional":
+        raise ValueError(f"cannot transition {previous_status} belief to {new_status}")
+
+    conn.execute(
+        """
+        UPDATE beliefs
+        SET status = %s,
+            closed_at = CASE WHEN %s = 'rejected' THEN now() ELSE closed_at END
+        WHERE id = %s
+        """,
+        (new_status, new_status, belief_id),
+    )
+    _insert_audit(
+        conn,
+        belief_id=belief_id,
+        transition_kind=transition_kind,
+        previous_status=previous_status,
+        new_status=new_status,
+        previous_valid_to=prior["valid_to"],
+        new_valid_to=prior["valid_to"],
+        prompt_version=prompt_version,
+        model_version=model_version,
+        input_claim_ids=prior["claim_ids"],
+        evidence_message_ids=prior["evidence_ids"],
+        score_breakdown=score_breakdown,
+        request_uuid=request_uuid,
+    )
+    return BeliefTransitionResult(
+        belief_id=belief_id,
+        previous_status=previous_status,
+        new_status=new_status,
+        changed=True,
+    )
 
 
 def close_belief(
@@ -265,6 +334,8 @@ def _insert_belief_row(conn: psycopg.Connection, payload: BeliefPayload) -> str:
             Jsonb(payload.raw_payload),
         ),
     ).fetchone()
+    if row is None:
+        raise ValueError("belief transition insert returned no row")
     return row[0]
 
 

@@ -1,8 +1,9 @@
 <a id="rfc-0024"></a>
 # RFC 0024: Phase 4 Pre-Full-Corpus Benchmark Gate
 
-Status: proposal
+Status: accepted
 Date: 2026-05-08
+Promoted: D077 on 2026-05-08 after the Phase 4 spec-review gate
 Context: Phase 4 entity canonicalization, `current_beliefs`, and belief review queue preflight before a full-corpus build
 Decision refs:
   - D006
@@ -17,6 +18,7 @@ Decision refs:
   - D068
   - D069
   - D074
+  - D077
 Review refs:
   - REVIEW-0032
   - REVIEW-0033

@@ -6,6 +6,12 @@
 
 ```mermaid
 erDiagram
+    audit_reason_vocabulary {
+        TEXT reason PK
+        SMALLINT stage
+        TEXT description
+        BOOLEAN precludes_supported
+    }
     belief_audit {
         UUID id PK
         UUID belief_id
@@ -20,6 +26,18 @@ erDiagram
         UUID[] evidence_message_ids
         JSONB score_breakdown
         UUID request_uuid
+        TIMESTAMPTZ created_at
+    }
+    belief_review_actions {
+        UUID id PK
+        UUID belief_id
+        TEXT action_kind
+        TEXT action_status
+        UUID capture_id
+        UUID request_uuid
+        TEXT actor
+        TEXT note
+        JSONB raw_payload
         TIMESTAMPTZ created_at
     }
     beliefs {
@@ -60,6 +78,17 @@ erDiagram
         UUID corrects_belief_id
         TEXT content_text
         TIMESTAMPTZ observed_at
+    }
+    claim_audits {
+        UUID id PK
+        UUID claim_id
+        SMALLINT stage
+        TEXT verdict
+        TEXT[] audit_reasons
+        TEXT auditor_model_version
+        TEXT auditor_prompt_version
+        TIMESTAMPTZ audited_at
+        JSONB raw_payload
     }
     claim_extractions {
         UUID id PK
@@ -138,6 +167,54 @@ erDiagram
         VECTOR embedding
         TIMESTAMPTZ created_at
     }
+    entities {
+        UUID id PK
+        TEXT entity_kind
+        TEXT canonical_text
+        TEXT canonical_key
+        TEXT status
+        FLOAT confidence
+        UUID[] source_belief_ids
+        UUID[] source_claim_ids
+        UUID[] evidence_ids
+        INT privacy_tier
+        TEXT resolution_method
+        TEXT resolution_version
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ superseded_at
+        JSONB raw_payload
+    }
+    entity_edges {
+        UUID id PK
+        UUID source_entity_id
+        UUID target_entity_id
+        TEXT edge_kind
+        TEXT status
+        FLOAT confidence
+        UUID[] source_belief_ids
+        UUID[] source_claim_ids
+        UUID[] evidence_ids
+        INT privacy_tier
+        TEXT resolution_version
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ superseded_at
+        JSONB raw_payload
+    }
+    entity_resolution_events {
+        UUID id PK
+        UUID entity_id
+        UUID related_entity_id
+        TEXT event_kind
+        UUID[] source_belief_ids
+        UUID[] source_claim_ids
+        UUID[] evidence_ids
+        TEXT resolution_method
+        TEXT resolution_version
+        TEXT actor
+        INT privacy_tier
+        JSONB raw_payload
+        TIMESTAMPTZ created_at
+    }
     messages {
         UUID id PK
         UUID source_id
@@ -165,6 +242,13 @@ erDiagram
         TIMESTAMPTZ updated_at
         INT privacy_tier
     }
+    pinned_beliefs {
+        UUID belief_id PK
+        TIMESTAMPTZ pinned_at
+        UUID request_uuid
+        TEXT actor
+        JSONB raw_payload
+    }
     predicate_vocabulary {
         TEXT predicate PK
         TEXT stability_class
@@ -173,6 +257,18 @@ erDiagram
         TEXT[] group_object_keys
         TEXT[] required_object_keys
         TEXT description
+    }
+    projection_audits {
+        UUID id PK
+        TEXT projection_kind
+        TEXT projection_ref
+        UUID[] cited_claim_ids
+        TEXT verdict
+        TEXT[] audit_reasons
+        TEXT auditor_model_version
+        TEXT auditor_prompt_version
+        TIMESTAMPTZ audited_at
+        JSONB raw_payload
     }
     segment_embeddings {
         UUID segment_id PK
@@ -230,9 +326,12 @@ erDiagram
         JSONB raw_payload
     }
     belief_audit }o--|| beliefs : "belief_id"
+    belief_review_actions }o--|| beliefs : "belief_id"
+    belief_review_actions }o--|| captures : "capture_id"
     beliefs }o--|| predicate_vocabulary : "predicate"
     beliefs }o--|| beliefs : "superseded_by"
     captures }o--|| sources : "source_id"
+    claim_audits }o--|| claims : "claim_id"
     claim_extractions }o--|| segment_generations : "generation_id"
     claim_extractions }o--|| segments : "segment_id"
     claims }o--|| conversations : "conversation_id"
@@ -243,9 +342,14 @@ erDiagram
     contradictions }o--|| beliefs : "belief_a_id"
     contradictions }o--|| beliefs : "belief_b_id"
     conversations }o--|| sources : "source_id"
+    entity_edges }o--|| entities : "source_entity_id"
+    entity_edges }o--|| entities : "target_entity_id"
+    entity_resolution_events }o--|| entities : "entity_id"
+    entity_resolution_events }o--|| entities : "related_entity_id"
     messages }o--|| conversations : "conversation_id"
     messages }o--|| sources : "source_id"
     notes }o--|| sources : "source_id"
+    pinned_beliefs }o--|| beliefs : "belief_id"
     segment_embeddings }o--|| embedding_cache : "embedding_cache_id"
     segment_embeddings }o--|| segment_generations : "generation_id"
     segment_embeddings }o--|| segments : "segment_id"
@@ -257,6 +361,15 @@ erDiagram
 ```
 
 ## Tables
+
+## audit_reason_vocabulary
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `reason` **PK** | `TEXT` | NO | `` |
+| `stage` | `SMALLINT` | NO | `` |
+| `description` | `TEXT` | NO | `` |
+| `precludes_supported` | `BOOLEAN` | NO | `false` |
 
 ## belief_audit
 
@@ -275,6 +388,21 @@ erDiagram
 | `evidence_message_ids` | `UUID[]` | NO | `'{}'::uuid[]` |
 | `score_breakdown` | `JSONB` | NO | `'{}'::jsonb` |
 | `request_uuid` | `UUID` | NO | `` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+
+## belief_review_actions
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `belief_id` | `UUID` | NO | `` |
+| `action_kind` | `TEXT` | NO | `` |
+| `action_status` | `TEXT` | NO | `` |
+| `capture_id` | `UUID` | YES | `` |
+| `request_uuid` | `UUID` | NO | `` |
+| `actor` | `TEXT` | NO | `` |
+| `note` | `TEXT` | YES | `` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
 | `created_at` | `TIMESTAMPTZ` | NO | `now()` |
 
 ## beliefs
@@ -321,6 +449,20 @@ erDiagram
 | `corrects_belief_id` | `UUID` | YES | `` |
 | `content_text` | `TEXT` | YES | `` |
 | `observed_at` | `TIMESTAMPTZ` | YES | `` |
+
+## claim_audits
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `claim_id` | `UUID` | NO | `` |
+| `stage` | `SMALLINT` | NO | `` |
+| `verdict` | `TEXT` | YES | `` |
+| `audit_reasons` | `TEXT[]` | NO | `'{}'::text[]` |
+| `auditor_model_version` | `TEXT` | NO | `` |
+| `auditor_prompt_version` | `TEXT` | NO | `` |
+| `audited_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
 
 ## claim_extractions
 
@@ -417,6 +559,63 @@ erDiagram
 | `embedding` | `VECTOR` | NO | `` |
 | `created_at` | `TIMESTAMPTZ` | NO | `now()` |
 
+## entities
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `entity_kind` | `TEXT` | NO | `` |
+| `canonical_text` | `TEXT` | NO | `` |
+| `canonical_key` | `TEXT` | NO | `` |
+| `status` | `TEXT` | NO | `` |
+| `confidence` | `FLOAT` | NO | `` |
+| `source_belief_ids` | `UUID[]` | NO | `` |
+| `source_claim_ids` | `UUID[]` | NO | `'{}'::uuid[]` |
+| `evidence_ids` | `UUID[]` | NO | `` |
+| `privacy_tier` | `INT` | NO | `` |
+| `resolution_method` | `TEXT` | NO | `` |
+| `resolution_version` | `TEXT` | NO | `` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `superseded_at` | `TIMESTAMPTZ` | YES | `` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+
+## entity_edges
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `source_entity_id` | `UUID` | NO | `` |
+| `target_entity_id` | `UUID` | NO | `` |
+| `edge_kind` | `TEXT` | NO | `` |
+| `status` | `TEXT` | NO | `` |
+| `confidence` | `FLOAT` | NO | `` |
+| `source_belief_ids` | `UUID[]` | NO | `` |
+| `source_claim_ids` | `UUID[]` | NO | `'{}'::uuid[]` |
+| `evidence_ids` | `UUID[]` | NO | `` |
+| `privacy_tier` | `INT` | NO | `` |
+| `resolution_version` | `TEXT` | NO | `` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `superseded_at` | `TIMESTAMPTZ` | YES | `` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+
+## entity_resolution_events
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `entity_id` | `UUID` | NO | `` |
+| `related_entity_id` | `UUID` | YES | `` |
+| `event_kind` | `TEXT` | NO | `` |
+| `source_belief_ids` | `UUID[]` | NO | `` |
+| `source_claim_ids` | `UUID[]` | NO | `'{}'::uuid[]` |
+| `evidence_ids` | `UUID[]` | NO | `` |
+| `resolution_method` | `TEXT` | NO | `` |
+| `resolution_version` | `TEXT` | NO | `` |
+| `actor` | `TEXT` | NO | `` |
+| `privacy_tier` | `INT` | NO | `` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+
 ## messages
 
 | Column | Type | Nullable | Default |
@@ -450,6 +649,16 @@ erDiagram
 | `updated_at` | `TIMESTAMPTZ` | YES | `` |
 | `privacy_tier` | `INT` | NO | `1` |
 
+## pinned_beliefs
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `belief_id` **PK** | `UUID` | NO | `` |
+| `pinned_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `request_uuid` | `UUID` | NO | `` |
+| `actor` | `TEXT` | NO | `` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+
 ## predicate_vocabulary
 
 | Column | Type | Nullable | Default |
@@ -461,6 +670,21 @@ erDiagram
 | `group_object_keys` | `TEXT[]` | NO | `'{}'::text[]` |
 | `required_object_keys` | `TEXT[]` | NO | `'{}'::text[]` |
 | `description` | `TEXT` | NO | `` |
+
+## projection_audits
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `projection_kind` | `TEXT` | NO | `` |
+| `projection_ref` | `TEXT` | NO | `` |
+| `cited_claim_ids` | `UUID[]` | NO | `` |
+| `verdict` | `TEXT` | NO | `` |
+| `audit_reasons` | `TEXT[]` | NO | `'{}'::text[]` |
+| `auditor_model_version` | `TEXT` | NO | `` |
+| `auditor_prompt_version` | `TEXT` | NO | `` |
+| `audited_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
 
 ## segment_embeddings
 

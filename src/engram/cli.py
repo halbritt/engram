@@ -36,6 +36,16 @@ from engram.extractor import (
 from engram.gemini_export import IngestConflict as GeminiIngestConflict
 from engram.gemini_export import ingest_gemini_export
 from engram.migrations import migrate, migration_integrity_errors
+from engram.phase4 import (
+    Phase4SchemaPreflightError,
+    accept_belief,
+    build_deterministic_entities,
+    correct_belief,
+    promote_to_pinned,
+    refresh_current_beliefs,
+    reject_review_belief,
+    run_phase4_smoke,
+)
 from engram.progress import upsert_progress
 from engram.segmenter import DEFAULT_RETRIES, apply_reclassification_invalidations, segment_pending
 
@@ -152,6 +162,35 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=DEFAULT_EXTRACTION_CONCURRENCY,
     )
+
+    subparsers.add_parser(
+        "phase4-refresh",
+        help="Refresh Phase 4 current belief projections",
+    )
+
+    phase4_entities_parser = subparsers.add_parser(
+        "phase4-build-entities",
+        help="Build deterministic Phase 4 entity scaffolding from current beliefs",
+    )
+    phase4_entities_parser.add_argument("--limit", type=int)
+
+    phase4_smoke_parser = subparsers.add_parser(
+        "phase4-smoke",
+        help="Run a bounded local-only Phase 4 Tier 0 smoke build",
+    )
+    phase4_smoke_parser.add_argument("--limit", type=int, default=25)
+
+    review_parser = subparsers.add_parser(
+        "review-belief",
+        help="Apply a Phase 4 belief review action",
+    )
+    review_parser.add_argument("belief_id")
+    review_parser.add_argument(
+        "action",
+        choices=["accept", "reject", "correct", "promote-to-pinned"],
+    )
+    review_parser.add_argument("--note")
+    review_parser.add_argument("--actor", default="local")
 
     args = parser.parse_args(argv)
 
@@ -335,10 +374,7 @@ def main(argv: list[str] | None = None) -> int:
             if invalidated:
                 print(f"privacy invalidation: {invalidated} active segment(s) deactivated")
             print_embed_result(embed_result)
-            return 0 if (
-                segment_result.failed == 0 and
-                embed_result.failed == 0
-            ) else 1
+            return 0 if (segment_result.failed == 0 and embed_result.failed == 0) else 1
 
         if args.command == "pipeline-3":
             with connect() as conn:
@@ -387,9 +423,7 @@ def main(argv: list[str] | None = None) -> int:
                     totals["extract_failed"] += extract_result.failed
                     if extract_result.failed:
                         totals["consolidate_skipped"] += 1
-                        skip_reason = (
-                            f"skipped after {extract_result.failed} extraction failure(s)"
-                        )
+                        skip_reason = f"skipped after {extract_result.failed} extraction failure(s)"
                         upsert_progress(
                             conn,
                             stage="consolidator",
@@ -438,11 +472,79 @@ def main(argv: list[str] | None = None) -> int:
                 f"{totals['contradictions']} contradictions"
             )
             return 0 if totals["extract_failed"] == 0 else 1
+
+        if args.command == "phase4-refresh":
+            with connect() as conn:
+                refresh_current_beliefs(conn)
+                conn.commit()
+            print("phase4 refresh: current_beliefs refreshed")
+            return 0
+
+        if args.command == "phase4-build-entities":
+            with connect() as conn:
+                refresh_current_beliefs(conn)
+                result = build_deterministic_entities(conn, limit=args.limit)
+                conn.commit()
+            print_phase4_entity_result(result)
+            return 0
+
+        if args.command == "phase4-smoke":
+            with connect() as conn:
+                result = run_phase4_smoke(conn, limit=args.limit)
+                conn.commit()
+            print_phase4_smoke_result(result)
+            return 0
+
+        if args.command == "review-belief":
+            with connect() as conn:
+                if args.action == "accept":
+                    action_result = accept_belief(
+                        conn,
+                        args.belief_id,
+                        actor=args.actor,
+                        note=args.note,
+                    )
+                elif args.action == "reject":
+                    action_result = reject_review_belief(
+                        conn,
+                        args.belief_id,
+                        actor=args.actor,
+                        note=args.note,
+                    )
+                elif args.action == "correct":
+                    if args.note is None:
+                        parser.error("review-belief correct requires --note")
+                    action_result = correct_belief(
+                        conn,
+                        args.belief_id,
+                        args.note,
+                        actor=args.actor,
+                    )
+                else:
+                    action_result = promote_to_pinned(
+                        conn,
+                        args.belief_id,
+                        actor=args.actor,
+                        note=args.note,
+                    )
+                conn.commit()
+            print(
+                "review-belief: "
+                f"{action_result.action_kind} {action_result.action_status} "
+                f"belief={action_result.belief_id} "
+                f"request_uuid={action_result.request_uuid}"
+            )
+            if action_result.capture_id:
+                print(f"  correction_capture_id={action_result.capture_id}")
+            return 0
     except (ChatGPTIngestConflict, ClaudeIngestConflict, GeminiIngestConflict) as exc:
         print(f"ingest conflict: {exc}", file=sys.stderr)
         return 1
     except Phase3SchemaPreflightError as exc:
         print(f"phase3 preflight failed: {exc}", file=sys.stderr)
+        return 1
+    except Phase4SchemaPreflightError as exc:
+        print(f"phase4 preflight failed: {exc}", file=sys.stderr)
         return 1
 
     parser.error(f"unknown command: {args.command}")
@@ -452,8 +554,7 @@ def main(argv: list[str] | None = None) -> int:
 def phase3_schema_preflight(conn) -> None:
     errors = migration_integrity_errors(conn)
     schema_migrations_exists = (
-        conn.execute("SELECT to_regclass('public.schema_migrations')").fetchone()[0]
-        is not None
+        conn.execute("SELECT to_regclass('public.schema_migrations')").fetchone()[0] is not None
     )
     if schema_migrations_exists:
         phase3_migration = conn.execute(
@@ -706,9 +807,7 @@ def _check_phase3_triggers(conn, errors: list[str]) -> None:
             continue
         table_name, function_name, enabled_state, definition = row
         if table_name != spec["table"]:
-            errors.append(
-                f"{trigger_name} trigger is on {table_name}, expected {spec['table']}"
-            )
+            errors.append(f"{trigger_name} trigger is on {table_name}, expected {spec['table']}")
         if function_name != spec["function"]:
             errors.append(
                 f"{trigger_name} trigger calls {function_name}, expected {spec['function']}"
@@ -726,10 +825,7 @@ def print_ingest_result(result) -> None:
         "conversations: "
         f"{result.conversations_inserted} inserted / {result.conversations_seen} seen"
     )
-    print(
-        "messages: "
-        f"{result.messages_inserted} inserted / {result.messages_seen} seen"
-    )
+    print(f"messages: {result.messages_inserted} inserted / {result.messages_seen} seen")
 
 
 def print_embed_result(result) -> None:
@@ -738,6 +834,31 @@ def print_embed_result(result) -> None:
         f"{result.created} segment embeddings created / {result.processed} segments processed "
         f"({result.cache_hits} cache hits, {result.activated} generations activated, "
         f"{result.failed} failed)"
+    )
+
+
+def print_phase4_entity_result(result) -> None:
+    print(
+        "phase4 entities: "
+        f"{result.beliefs_processed} beliefs processed / "
+        f"{result.entities_created} entities created / "
+        f"{result.entities_reused} entities reused / "
+        f"{result.edges_created} edges created / "
+        f"{result.edges_reused} edges reused"
+    )
+
+
+def print_phase4_smoke_result(result) -> None:
+    print(
+        "phase4 smoke: "
+        f"current_beliefs={result.current_beliefs} "
+        f"review_queue_items={result.review_queue_items} "
+        f"beliefs_processed={result.beliefs_processed} "
+        f"entities_created={result.entities_created} "
+        f"entities_reused={result.entities_reused} "
+        f"edges_created={result.edges_created} "
+        f"edges_reused={result.edges_reused} "
+        f"neighborhood_rows={result.neighborhood_rows}"
     )
 
 
@@ -967,9 +1088,7 @@ def print_segment_progress(event: str, payload: dict[str, Any]) -> None:
         return
     if event == "segment_probe_failed":
         print(
-            "segment probe failed "
-            f"elapsed={elapsed:.1f}s "
-            f"error={payload['error']}",
+            f"segment probe failed elapsed={elapsed:.1f}s error={payload['error']}",
             flush=True,
         )
 
@@ -978,9 +1097,7 @@ def print_embed_progress(event: str, payload: dict[str, Any]) -> None:
     if event == "embed_start":
         if payload["index"] == 1 or payload["index"] % 25 == 0:
             print(
-                "embed "
-                f"{payload['index']}/{payload['batch_size']} "
-                f"segment={payload['segment_id']}",
+                f"embed {payload['index']}/{payload['batch_size']} segment={payload['segment_id']}",
                 flush=True,
             )
         return
@@ -1021,8 +1138,7 @@ def print_extract_progress(event: str, payload: dict[str, Any]) -> None:
         return
     if event == "extract_failed":
         print(
-            f"extract segment={payload['segment_id']} failed "
-            f"elapsed={payload['elapsed']:.1f}s",
+            f"extract segment={payload['segment_id']} failed elapsed={payload['elapsed']:.1f}s",
             flush=True,
         )
 
@@ -1108,8 +1224,7 @@ def print_re_extract_progress(event: str, payload: dict[str, Any]) -> None:
         return
     if event == "re_extract_failed":
         print(
-            f"re-extract segment={payload['segment_id']} failed "
-            f"elapsed={payload['elapsed']:.1f}s",
+            f"re-extract segment={payload['segment_id']} failed elapsed={payload['elapsed']:.1f}s",
             flush=True,
         )
 
@@ -1136,14 +1251,12 @@ def print_re_extract_result(result: ReExtractResult) -> None:
         )
     if plan.source_kind_counts:
         breakdown = ", ".join(
-            f"{kind}={count}"
-            for kind, count in sorted(plan.source_kind_counts.items())
+            f"{kind}={count}" for kind, count in sorted(plan.source_kind_counts.items())
         )
         print(f"  source_kind: {breakdown}")
     if plan.prior_version_counts:
         prior = ", ".join(
-            f"{version}={count}"
-            for version, count in sorted(plan.prior_version_counts.items())
+            f"{version}={count}" for version, count in sorted(plan.prior_version_counts.items())
         )
         print(f"  prior_versions: {prior}")
     if not result.dry_run:
@@ -1152,23 +1265,19 @@ def print_re_extract_result(result: ReExtractResult) -> None:
             print("  segment_id                            prior_claims  prior_versions")
             for gap in result.coverage_gaps:
                 versions = ",".join(gap["prior_versions"]) or "-"
-                print(
-                    "  "
-                    f"{gap['segment_id']:<38} "
-                    f"{gap['prior_claim_count']:<13} "
-                    f"{versions}"
-                )
+                print(f"  {gap['segment_id']:<38} {gap['prior_claim_count']:<13} {versions}")
         else:
             print("coverage gaps: none")
         if result.diff_samples:
             print(f"diff sample ({len(result.diff_samples)}):")
             for sample in result.diff_samples:
-                prior_predicates = ",".join(
-                    f"{p}={c}" for p, c in sorted(sample["prior_predicates"].items())
-                ) or "-"
-                new_predicates = ",".join(
-                    f"{p}={c}" for p, c in sorted(sample["new_predicates"].items())
-                ) or "-"
+                prior_predicates = (
+                    ",".join(f"{p}={c}" for p, c in sorted(sample["prior_predicates"].items()))
+                    or "-"
+                )
+                new_predicates = (
+                    ",".join(f"{p}={c}" for p, c in sorted(sample["new_predicates"].items())) or "-"
+                )
                 print(
                     "  segment="
                     f"{sample['segment_id']} "

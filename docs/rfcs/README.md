@@ -42,7 +42,7 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0021](0021-gold-set-interview-curation.md) | proposal | none | Gold-set interview curation |
 | [0022](0022-server-binary-api-mcp.md) | proposal | none | Server binary with HTTP API and MCP interface |
 | [0023](0023-concurrent-extraction-pipeline.md) | draft | none | Concurrent extraction pipeline via Python concurrent.futures |
-| [0024](0024-phase-4-pre-full-corpus-benchmark-gate.md) | proposal | none | Phase 4 pre-full-corpus benchmark gate |
+| [0024](0024-phase-4-pre-full-corpus-benchmark-gate.md) | accepted | partial | Phase 4 pre-full-corpus benchmark gate |
 
 ## Implementation notes (2026-05-07 sweep)
 

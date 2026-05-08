@@ -8,7 +8,7 @@ SEGMENTER_MODEL ?=
 SEGMENTER_MODEL_ENV := $(if $(SEGMENTER_MODEL),ENGRAM_SEGMENTER_MODEL="$(SEGMENTER_MODEL)",)
 STRIATUM_REPO ?= $(HOME)/git/striatum
 
-.PHONY: install db-up db-down wait-db migrate migrate-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker test test-db test-docker test-db-docker schema-docs check-refs lint format typecheck install-striatum striatum-init phase4-validate phase4-prepare phase4-status
+.PHONY: install db-up db-down wait-db migrate migrate-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker phase4-smoke phase4-smoke-docker test test-db test-docker test-db-docker schema-docs check-refs lint format typecheck install-striatum striatum-init phase4-validate phase4-prepare phase4-status
 
 install: .venv/.installed
 
@@ -95,6 +95,12 @@ pipeline-3: install
 
 pipeline-3-docker: install wait-db
 	$(SEGMENTER_MODEL_ENV) ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli pipeline-3
+
+phase4-smoke: install
+	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase4-smoke --limit $(or $(LIMIT),25)
+
+phase4-smoke-docker: install wait-db
+	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli phase4-smoke --limit $(or $(LIMIT),25)
 
 # segment-isolated and pipeline-isolated stop openclaw-gateway and ik-llama-watchdog.timer
 # for the duration of the run, then restore them. The watchdog calls /health, which blocks

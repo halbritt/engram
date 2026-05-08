@@ -7,7 +7,6 @@ import pytest
 
 from engram.migrations import migrate
 
-
 TEST_DATABASE_URL = os.environ.get("ENGRAM_TEST_DATABASE_URL")
 
 
@@ -18,8 +17,15 @@ def conn():
     with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as admin:
         admin.execute(
             """
+            DROP VIEW IF EXISTS belief_review_queue CASCADE;
+            DROP MATERIALIZED VIEW IF EXISTS current_beliefs CASCADE;
             DROP TABLE IF EXISTS
                 schema_migrations,
+                pinned_beliefs,
+                belief_review_actions,
+                entity_edges,
+                entity_resolution_events,
+                entities,
                 projection_audits,
                 claim_audits,
                 audit_reason_vocabulary,
@@ -46,9 +52,7 @@ def conn():
         admin.execute("DROP FUNCTION IF EXISTS prevent_segment_mutation() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS prevent_embedding_cache_mutation() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS prevent_segment_embedding_mutation() CASCADE")
-        admin.execute(
-            "DROP FUNCTION IF EXISTS validate_conversation_segment_message_ids() CASCADE"
-        )
+        admin.execute("DROP FUNCTION IF EXISTS validate_conversation_segment_message_ids() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS engram_normalize_subject(TEXT) CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS engram_normalize_group_object_value(TEXT) CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS fn_claim_extractions_mutation_guard() CASCADE")
@@ -61,6 +65,7 @@ def conn():
         admin.execute("DROP FUNCTION IF EXISTS fn_claim_audits_append_only() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS fn_projection_audits_validate_reasons() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS fn_projection_audits_append_only() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_phase4_append_only() CASCADE")
         admin.execute("DROP TYPE IF EXISTS source_kind CASCADE")
         admin.execute("DROP TYPE IF EXISTS capture_type CASCADE")
         admin.execute("DROP TYPE IF EXISTS consolidation_status CASCADE")
