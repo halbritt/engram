@@ -12,7 +12,7 @@ the implementation contract.
 The **Status** column tracks document state (proposal / specified / accepted /
 promoted / superseded). The **Implementation** column tracks whether the
 proposal's deliverables exist in the codebase as of the last index sweep
-(2026-05-07): `implemented`, `partial`, `none`, or `n/a` for idea-capture docs
+(2026-05-08): `implemented`, `partial`, `none`, or `n/a` for idea-capture docs
 without a concrete code deliverable. Implementation status is descriptive, not
 prescriptive — a `none` here is not a TODO unless promoted via
 `BUILD_PHASES.md` or `DECISION_LOG.md`.
@@ -42,6 +42,7 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0021](0021-gold-set-interview-curation.md) | proposal | none | Gold-set interview curation |
 | [0022](0022-server-binary-api-mcp.md) | proposal | none | Server binary with HTTP API and MCP interface |
 | [0023](0023-concurrent-extraction-pipeline.md) | draft | none | Concurrent extraction pipeline via Python concurrent.futures |
+| [0024](0024-phase-4-pre-full-corpus-benchmark-gate.md) | proposal | none | Phase 4 pre-full-corpus benchmark gate |
 
 ## Implementation notes (2026-05-07 sweep)
 

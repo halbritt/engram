@@ -1,3 +1,4 @@
+<a id="rfc-0023"></a>
 # RFC 0023: Concurrent Extraction Pipeline via Python concurrent.futures
 Status: draft
 Date: 2026-05-07
