@@ -1,0 +1,260 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "rfc-0025-command-surface-implementation",
+  "workflow_version": "2026-05-08+accepted-rfc",
+  "name": "Engram RFC 0025 Command-Surface Implementation",
+  "branch": {
+    "mode": "confirm",
+    "suggested_name": "engram/rfc0025-command-surface-implementation",
+    "allow_dirty": true
+  },
+  "coordinator": {
+    "role_id": "author",
+    "lane_id": "codex"
+  },
+  "lanes": {
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": [
+        "codex",
+        "exec",
+        "--model",
+        "gpt-5.5",
+        "-"
+      ],
+      "capabilities": [
+        "write",
+        "review"
+      ],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    }
+  },
+  "roles": {
+    "author": {
+      "definition_path": "striatum/rfc-0025-command-surface-implementation/roles/author.md"
+    },
+    "reviewer": {
+      "definition_path": "striatum/rfc-0025-command-surface-implementation/roles/reviewer.md"
+    }
+  },
+  "context_docs": [
+    {
+      "path": "AGENTS.md",
+      "required": true
+    },
+    {
+      "path": "README.md",
+      "required": true
+    },
+    {
+      "path": "HUMAN_REQUIREMENTS.md",
+      "required": true
+    },
+    {
+      "path": "DECISION_LOG.md",
+      "required": true
+    },
+    {
+      "path": "BUILD_PHASES.md",
+      "required": true
+    },
+    {
+      "path": "docs/rfcs/0025-phase-scoped-command-names.md",
+      "required": true
+    },
+    {
+      "path": "docs/process/project-judgment.md",
+      "required": true
+    }
+  ],
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 1,
+    "require_disjoint_write_scopes": true
+  },
+  "jobs": [
+    {
+      "id": "implement_command_surface",
+      "type": "draft",
+      "title": "Implement RFC 0025 command surface",
+      "role_id": "author",
+      "lane_id": "codex",
+      "objective": "Implement the accepted RFC 0025 phase-scoped command surface in the Engram CLI, Makefile, docs, and focused tests.",
+      "task_prompt": {
+        "path": "striatum/rfc-0025-command-surface-implementation/prompts/implement.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/rfcs/0025-phase-scoped-command-names.md",
+          "kind": "accepted_rfc"
+        },
+        {
+          "path": "DECISION_LOG.md",
+          "kind": "decision_log"
+        },
+        {
+          "path": "src/engram/cli.py",
+          "kind": "command_surface"
+        },
+        {
+          "path": "Makefile",
+          "kind": "command_surface"
+        },
+        {
+          "path": "tests/test_cli.py",
+          "kind": "test_surface"
+        },
+        {
+          "path": "README.md",
+          "kind": "operator_docs"
+        }
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/",
+          "tests/",
+          "Makefile",
+          "README.md",
+          "CHANGELOG.md",
+          "docs/rfcs/0025-phase-scoped-command-names.md",
+          "docs/rfcs/README.md",
+          "DECISION_LOG.md",
+          "docs/reviews/rfc0025-command-surface-implementation/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "migrations/"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "implementation_handoff",
+          "kind": "handoff",
+          "path": "docs/reviews/rfc0025-command-surface-implementation/IMPLEMENTATION_HANDOFF.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "verify_command_surface",
+      "type": "review",
+      "title": "Verify RFC 0025 command surface",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Run focused local verification for the RFC 0025 implementation and record the exact commands, results, failures, and residual risks.",
+      "task_prompt": {
+        "path": "striatum/rfc-0025-command-surface-implementation/prompts/verify.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/reviews/rfc0025-command-surface-implementation/IMPLEMENTATION_HANDOFF.md",
+          "kind": "handoff"
+        },
+        {
+          "path": "docs/rfcs/0025-phase-scoped-command-names.md",
+          "kind": "accepted_rfc"
+        },
+        {
+          "path": "tests/test_cli.py",
+          "kind": "test_surface"
+        }
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/reviews/rfc0025-command-surface-implementation/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "src/engram/",
+          "tests/",
+          "Makefile"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "verification_report",
+          "kind": "finding",
+          "path": "docs/reviews/rfc0025-command-surface-implementation/VERIFICATION_REPORT.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "final_review",
+      "type": "review",
+      "title": "Final review of RFC 0025 implementation",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Review the final RFC 0025 command-surface implementation against the accepted RFC, operator-safety requirements, and verification report.",
+      "task_prompt": {
+        "path": "striatum/rfc-0025-command-surface-implementation/prompts/final_review.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/reviews/rfc0025-command-surface-implementation/IMPLEMENTATION_HANDOFF.md",
+          "kind": "handoff"
+        },
+        {
+          "path": "docs/reviews/rfc0025-command-surface-implementation/VERIFICATION_REPORT.md",
+          "kind": "finding"
+        },
+        {
+          "path": "docs/rfcs/0025-phase-scoped-command-names.md",
+          "kind": "accepted_rfc"
+        }
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/reviews/rfc0025-command-surface-implementation/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "src/engram/",
+          "tests/",
+          "Makefile"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "final_review",
+          "kind": "finding",
+          "path": "docs/reviews/rfc0025-command-surface-implementation/FINAL_REVIEW.md",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "implement_command_surface",
+      "to": "verify_command_surface",
+      "on": "completed"
+    },
+    {
+      "from": "verify_command_surface",
+      "to": "final_review",
+      "on": "completed"
+    }
+  ],
+  "cycles": [
+    {
+      "from": "final_review",
+      "to": "implement_command_surface",
+      "on_verdict": "needs_revision",
+      "max_iterations": 1
+    }
+  ]
+}

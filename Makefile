@@ -8,7 +8,7 @@ SEGMENTER_MODEL ?=
 SEGMENTER_MODEL_ENV := $(if $(SEGMENTER_MODEL),ENGRAM_SEGMENTER_MODEL="$(SEGMENTER_MODEL)",)
 STRIATUM_REPO ?= $(HOME)/git/striatum
 
-.PHONY: install db-up db-down wait-db migrate migrate-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker phase4-smoke phase4-smoke-docker test test-db test-docker test-db-docker schema-docs check-refs lint format typecheck install-striatum striatum-init phase4-validate phase4-prepare phase4-status rfc25-validate rfc25-prepare rfc25-status
+.PHONY: install db-up db-down wait-db migrate migrate-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker phase4-smoke phase4-smoke-docker test test-db test-docker test-db-docker schema-docs check-refs lint format typecheck install-striatum striatum-init phase4-validate phase4-prepare phase4-status rfc25-validate rfc25-prepare rfc25-status rfc25-impl-validate rfc25-impl-prepare rfc25-impl-status
 
 install: .venv/.installed
 
@@ -157,6 +157,15 @@ rfc25-prepare: install-striatum
 	$(STRIATUM) --repo . run prepare --workflow striatum/rfc-0025-command-names-review/workflow.json
 
 rfc25-status: install-striatum
+	$(STRIATUM) --repo . status
+
+rfc25-impl-validate: install-striatum
+	$(STRIATUM) --repo . workflow validate striatum/rfc-0025-command-surface-implementation/workflow.json
+
+rfc25-impl-prepare: install-striatum
+	$(STRIATUM) --repo . run prepare --workflow striatum/rfc-0025-command-surface-implementation/workflow.json
+
+rfc25-impl-status: install-striatum
 	$(STRIATUM) --repo . status
 
 lint: install

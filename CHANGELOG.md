@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Implemented RFC 0014 (Ops Home) and RFC 0017 (Parts 2/3).
 - Implemented RFC 0007: Artifact ID and subref model.
 - Tracking RFC implementation status in index.
+- Accepted RFC 0025 as the phase-scoped operator command-surface contract:
+  legacy bare mutating commands warn then get removed, and Phase 1 ingest
+  commands move under `engram phase1`.
 - Documented corrected RFC 0023 slot-aware extraction benchmark findings:
   1 worker / 1 server slot = 546.90s, 2 / 2 = 226.44s, 4 / 4 = 190.84s, and
   8 / 8 = 522.19s on the 20-segment slice.

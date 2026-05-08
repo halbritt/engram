@@ -1,15 +1,16 @@
 <a id="rfc-0025"></a>
 # RFC 0025: Phase-Scoped Command Names
 
-Status: proposal
+Status: accepted
 Date: 2026-05-08
-Context: Operator command names for Phase 2 segmentation, Phase 3 extraction,
-Phase 4 review/entity work, and future phase pipelines
+Context: Operator command names for Phase 1 ingestion, Phase 2 segmentation,
+Phase 3 extraction, Phase 4 review/entity work, and future phase pipelines
 Decision refs:
   - D016
   - D020
   - D074
   - D077
+  - D078
 Review refs:
   - REVIEW-0034
 Phase refs:
@@ -28,16 +29,17 @@ named `pipeline-3`, and Phase 4 has a separate `phase4-smoke` command. That
 asymmetry is unsafe: an operator asking to run "the pipeline" for Phase 4 can
 accidentally start segmentation and embedding.
 
-This RFC proposes canonical phase-scoped command names, fail-closed behavior
-for generic `pipeline` commands, and a staged compatibility plan for existing
-single-stage commands. The phase-local verb is `run`; `pipeline` is not a
-canonical verb at any phase scope.
+This RFC accepts canonical phase-scoped command names, fail-closed behavior for
+generic `pipeline` commands, and a staged compatibility plan that removes
+existing bare mutating commands after a warning window. The phase-local verb is
+`run`; `pipeline` is not a canonical verb at any phase scope.
 
 ## Problem
 
 The word `pipeline` is overloaded. In the project architecture, every phase has
 one or more pipelines:
 
+- Phase 1 ingests source exports and later source-ingest inputs.
 - Phase 2 runs segmentation and embeddings.
 - Phase 3 runs claim extraction and belief consolidation.
 - Phase 4 builds current-belief projections, entity scaffolding, review
@@ -59,7 +61,8 @@ command looked like the canonical "start the pipeline" command.
 2. Make generic `pipeline` commands fail closed rather than perform writes.
 3. Keep command names short enough for daily operator use.
 4. Preserve local-first operation and existing Makefile workflows.
-5. Provide a migration path that does not silently break existing scripts.
+5. Move Phase 1 ingest commands under the same phase-scoped CLI shape.
+6. Provide a migration path that does not silently break existing scripts.
 
 ## Non-Goals
 
@@ -76,6 +79,9 @@ command looked like the canonical "start the pipeline" command.
 Use phase-scoped command groups in the CLI:
 
 ```sh
+engram phase1 ingest-chatgpt
+engram phase1 ingest-claude
+engram phase1 ingest-gemini
 engram phase2 segment
 engram phase2 embed
 engram phase2 run
@@ -95,6 +101,12 @@ must not perform writes.
 Use phase-scoped Make targets that mirror those commands:
 
 ```sh
+make phase1-ingest-chatgpt
+make phase1-ingest-chatgpt-docker
+make phase1-ingest-claude
+make phase1-ingest-claude-docker
+make phase1-ingest-gemini
+make phase1-ingest-gemini-docker
 make phase2-segment
 make phase2-embed
 make phase2-run
@@ -144,6 +156,12 @@ full-run contract.
 
 | Phase | Current CLI | Proposed CLI | Current Make | Proposed Make |
 |-------|-------------|--------------|--------------|---------------|
+| Phase 1 | `ingest-chatgpt` | `phase1 ingest-chatgpt` | `ingest-chatgpt` | `phase1-ingest-chatgpt` |
+| Phase 1 | `ingest-chatgpt` | `phase1 ingest-chatgpt` | `ingest-chatgpt-docker` | `phase1-ingest-chatgpt-docker` |
+| Phase 1 | `ingest-claude` | `phase1 ingest-claude` | `ingest-claude` | `phase1-ingest-claude` |
+| Phase 1 | `ingest-claude` | `phase1 ingest-claude` | `ingest-claude-docker` | `phase1-ingest-claude-docker` |
+| Phase 1 | `ingest-gemini` | `phase1 ingest-gemini` | `ingest-gemini` | `phase1-ingest-gemini` |
+| Phase 1 | `ingest-gemini` | `phase1 ingest-gemini` | `ingest-gemini-docker` | `phase1-ingest-gemini-docker` |
 | Phase 2 | `segment` | `phase2 segment` | `segment` | `phase2-segment` |
 | Phase 2 | `embed` | `phase2 embed` | `embed` | `phase2-embed` |
 | Phase 2 | `pipeline` | `phase2 run` | `pipeline` | `phase2-run` |
@@ -159,10 +177,10 @@ full-run contract.
 | Phase 4 | `phase4-smoke` | `phase4 smoke` | `phase4-smoke-docker` | `phase4-smoke-docker` |
 | Phase 4 | `review-belief` | `phase4 review-belief` | none | none |
 
-Phase 1 ingestion commands may remain source-named for now because they are
-less ambiguous (`ingest-chatgpt`, `ingest-claude`, `ingest-gemini`). A later
-cleanup may add `phase1 ingest-chatgpt` aliases, but this RFC focuses on the
-LLM-derived phases where accidental writes are more expensive.
+Phase 1 ingestion commands remain source-specific, but the source-specific
+verbs move under `engram phase1` in the same implementation. This keeps all
+mutating operator commands phase-scoped without inventing a broader Phase 1
+aggregate run command.
 
 Phase 5 should follow the same rule when implemented:
 
@@ -178,8 +196,9 @@ Implementation should happen in four steps.
 
 Step 1 adds nested phase-scoped CLI commands and phase-scoped Make targets while
 keeping the old single-stage commands operational. The parser migration should
-be incremental: add `phase2`, `phase3`, and `phase4` subparsers that dispatch to
-the existing command helper paths before removing or hiding any legacy surface.
+be incremental: add `phase1`, `phase2`, `phase3`, and `phase4` subparsers that
+dispatch to the existing command helper paths before removing any legacy
+surface.
 
 Step 2 changes `engram pipeline`, `make pipeline`, `make pipeline-docker`, and
 `make pipeline-isolated` into fail-closed disambiguation commands. These names
@@ -191,14 +210,22 @@ Step 3 updates README examples, CLI help text, and Make target help or failure
 messages in the same change as the fail-closed behavior. Operator-facing docs
 must not continue teaching commands that now fail closed.
 
-Step 4 deprecates the remaining bare mutating commands (`segment`, `embed`,
-`extract`, `consolidate`, `pipeline-3`, `phase4-refresh`,
-`phase4-build-entities`, `phase4-smoke`, and `review-belief`) by printing a
-warning that names the phase-scoped replacement. After one accepted decision or
-release window, they may be hidden from help or require an explicit
-`--legacy-command` flag.
+Step 4 deprecates the remaining bare mutating commands (`ingest-chatgpt`,
+`ingest-claude`, `ingest-gemini`, `segment`, `embed`, `extract`,
+`consolidate`, `pipeline-3`, `phase4-refresh`, `phase4-build-entities`,
+`phase4-smoke`, and `review-belief`) by printing a warning that names the
+phase-scoped replacement. After one accepted decision or release window, remove
+these commands from the operator surface rather than keeping them as hidden
+compatibility aliases.
 
 ## Operator Examples
+
+Phase 1 ChatGPT ingestion:
+
+```sh
+engram phase1 ingest-chatgpt /path/to/chatgpt-export
+make phase1-ingest-chatgpt PATH=/path/to/chatgpt-export
+```
 
 Bounded Phase 2 run:
 
@@ -232,21 +259,28 @@ engram phase4 review-belief BELIEF_ID accept --actor local
 1. `engram pipeline` exits nonzero without opening a database connection.
 2. `make pipeline`, `make pipeline-docker`, and `make pipeline-isolated` exit
    nonzero and print phase-scoped alternatives.
-3. `engram phase2 run --limit N` performs the current Phase 2 pipeline.
-4. `engram phase3 run --limit N` performs the current Phase 3 pipeline.
-5. `engram phase4 smoke --limit N` performs the current Phase 4 smoke path.
-6. `engram phase4 run` is not introduced by this RFC.
-7. README operator examples and CLI help text use phase-scoped commands.
-8. Tests cover fail-closed behavior before database connection.
-9. Tests cover phase-scoped Make targets for Phase 2, Phase 3, and Phase 4
-   smoke.
+3. `engram phase1 ingest-chatgpt PATH`, `engram phase1 ingest-claude PATH`,
+   and `engram phase1 ingest-gemini PATH` dispatch to the current Phase 1
+   ingestion paths.
+4. `engram phase2 run --limit N` performs the current Phase 2 pipeline.
+5. `engram phase3 run --limit N` performs the current Phase 3 pipeline.
+6. `engram phase4 smoke --limit N` performs the current Phase 4 smoke path.
+7. `engram phase4 run` is not introduced by this RFC.
+8. README operator examples and CLI help text use phase-scoped commands.
+9. Tests cover fail-closed behavior before database connection.
+10. Tests cover phase-scoped Make targets for Phase 1 ingestion, Phase 2,
+   Phase 3, and Phase 4 smoke.
+11. Legacy bare mutating commands warn during the compatibility window and are
+   then removed rather than retained as hidden aliases.
 
 ## Risks
 
-Existing scripts may call `make pipeline`, `make pipeline-docker`, or
-`make pipeline-isolated` for Phase 2. The safer failure mode is to stop and
-print `make phase2-run` or the matching scoped variant rather than continue
-allowing a generic command to write segmentation and embedding rows.
+Existing scripts may call `make ingest-*`, `make pipeline`,
+`make pipeline-docker`, or `make pipeline-isolated`. The safer failure mode is
+to stop generic pipeline targets and print `make phase2-run` or the matching
+scoped variant rather than continue allowing a generic command to write
+segmentation and embedding rows. Phase 1 ingest scripts get a warning window,
+then move to `make phase1-ingest-*`.
 
 Nested CLI subcommands require a small argparse refactor. If that refactor is
 too broad for the first implementation, the fallback should still avoid the
@@ -254,9 +288,9 @@ word `pipeline` in new names. Flat aliases such as `phase2-run`,
 `phase3-run`, and `phase4-smoke` are acceptable as an intermediate step, but
 the final user-facing shape should be nested and phase-scoped.
 
-## Open Questions
+## Resolved Open Questions
 
-1. Should bare single-stage commands eventually be removed, or kept as hidden
-   compatibility aliases with warnings?
-2. Should Phase 1 ingest commands be moved under `engram phase1` in the same
-   implementation, or left for a later source-ingest cleanup?
+1. Bare single-stage mutating commands should be removed after the compatibility
+   warning window, not kept indefinitely as hidden aliases.
+2. Phase 1 ingest commands should move under `engram phase1` in the same
+   implementation.
