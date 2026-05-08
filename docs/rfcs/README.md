@@ -41,6 +41,7 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0020](0020-segmentation-batching-server.md) | proposal | none | Continuous-batching inference server for Phase 2 segmentation |
 | [0021](0021-gold-set-interview-curation.md) | proposal | none | Gold-set interview curation |
 | [0022](0022-server-binary-api-mcp.md) | proposal | none | Server binary with HTTP API and MCP interface |
+| [0023](0023-concurrent-extraction-pipeline.md) | draft | none | Concurrent extraction pipeline via Python concurrent.futures |
 
 ## Implementation notes (2026-05-07 sweep)
 
