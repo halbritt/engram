@@ -1,18 +1,21 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+import os
+import threading
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import psycopg
 import pytest
 from psycopg.errors import CheckViolation, RaiseException, UniqueViolation
 from psycopg.types.json import Jsonb
+from test_phase2_segments import insert_conversation, insert_generation, insert_segment_row
 
 import engram.consolidator as consolidator_module
 from engram import cli, extractor
 from engram.consolidator import (
     CONSOLIDATOR_MODEL_VERSION,
     CONSOLIDATOR_PROMPT_VERSION,
-    active_beliefs_with_other_consolidator_version,
     apply_phase3_reclassification_invalidations,
     consolidate_beliefs,
     normalize_subject,
@@ -22,14 +25,12 @@ from engram.extractor import (
     EXTRACTION_PROMPT_VERSION,
     EXTRACTION_REQUEST_PROFILE_VERSION,
     ClaimDraft,
-    ExtractorModelOutput,
     ExtractorResponseError,
     extract_claims_from_segment,
     parse_extraction_response,
     reap_stale_extractions,
     run_extractor_health_smoke,
 )
-from test_phase2_segments import insert_conversation, insert_generation, insert_segment_row
 
 
 class StaticExtractor:
@@ -97,6 +98,26 @@ class AlwaysFailExtractor(StaticExtractor):
     def extract(self, *args, **kwargs):
         self.calls.append(kwargs)
         raise ExtractorResponseError("extractor returned invalid JSON")
+
+
+class BarrierExtractor:
+    def __init__(self, barrier: threading.Barrier) -> None:
+        self.barrier = barrier
+
+    def extract(self, *args, allowed_message_ids=None, **kwargs):
+        self.barrier.wait()
+        return [
+            ClaimDraft(
+                "user",
+                "prefers",
+                "local-only extraction",
+                None,
+                "preference",
+                0.8,
+                [allowed_message_ids[0]],
+                "directly stated",
+            )
+        ]
 
 
 def active_segment(conn, messages, *, status="active"):
@@ -1545,6 +1566,125 @@ def test_extract_pending_claims_does_not_count_accounted_zero_as_failed(conn):
         (seg_id,),
     ).fetchone()[0]
     assert raw["extraction_result_kind"] == "accounted_zero"
+
+
+def test_extract_claims_from_segment_skips_active_inflight_extraction(conn):
+    _conv_id, gen_id, seg_id, _msg_ids = active_segment(
+        conn,
+        [("user", "I prefer local models", 1)],
+    )
+    extraction_id = conn.execute(
+        """
+        INSERT INTO claim_extractions (
+            segment_id,
+            generation_id,
+            extraction_prompt_version,
+            extraction_model_version,
+            request_profile_version,
+            status
+        )
+        VALUES (%s, %s, %s, 'model-a', %s, 'extracting')
+        RETURNING id::text
+        """,
+        (seg_id, gen_id, EXTRACTION_PROMPT_VERSION, EXTRACTION_REQUEST_PROFILE_VERSION),
+    ).fetchone()[0]
+
+    class ExplodingExtractor(StaticExtractor):
+        def extract(self, *args, **kwargs):
+            raise AssertionError("active in-flight extraction should not be duplicated")
+
+    result = extract_claims_from_segment(
+        conn,
+        seg_id,
+        model_version="model-a",
+        client=ExplodingExtractor(),
+    )
+
+    assert result.noop is True
+    assert result.status == "extracting"
+    assert result.extraction_id == extraction_id
+    assert (
+        conn.execute("SELECT count(*) FROM claims WHERE segment_id = %s", (seg_id,)).fetchone()[0]
+        == 0
+    )
+
+
+def test_claimed_extraction_id_allows_concurrent_worker_to_complete_lease(conn):
+    _conv_id, gen_id, seg_id, msg_ids = active_segment(
+        conn,
+        [("user", "I prefer local models", 1)],
+    )
+    extraction_id = conn.execute(
+        """
+        INSERT INTO claim_extractions (
+            segment_id,
+            generation_id,
+            extraction_prompt_version,
+            extraction_model_version,
+            request_profile_version,
+            status
+        )
+        VALUES (%s, %s, %s, 'model-a', %s, 'extracting')
+        RETURNING id::text
+        """,
+        (seg_id, gen_id, EXTRACTION_PROMPT_VERSION, EXTRACTION_REQUEST_PROFILE_VERSION),
+    ).fetchone()[0]
+
+    client = StaticExtractor(
+        [
+            ClaimDraft(
+                "user",
+                "prefers",
+                "local models",
+                None,
+                "preference",
+                0.8,
+                msg_ids,
+                "directly stated",
+            )
+        ]
+    )
+
+    result = extract_claims_from_segment(
+        conn,
+        seg_id,
+        model_version="model-a",
+        client=client,
+        claimed_extraction_id=extraction_id,
+        maintenance=False,
+    )
+
+    assert result.status == "extracted"
+    assert result.claim_count == 1
+    assert conn.execute(
+        "SELECT status, claim_count FROM claim_extractions WHERE id = %s",
+        (extraction_id,),
+    ).fetchone() == ("extracted", 1)
+
+
+def test_concurrent_extraction_claims_and_processes_segments_in_parallel(conn):
+    database_url = os.environ.get("ENGRAM_TEST_DATABASE_URL")
+    assert database_url is not None
+    active_segment(conn, [("user", "I prefer local models", 1)])
+    active_segment(conn, [("user", "I prefer local databases", 1)])
+    barrier = threading.Barrier(2, timeout=5)
+
+    result = extractor.extract_pending_claims_concurrently(
+        conn,
+        batch_size=2,
+        model_version="model-a",
+        connection_factory=lambda: psycopg.connect(database_url),
+        client_factory=lambda: BarrierExtractor(barrier),
+        max_workers=2,
+    )
+
+    assert result.processed == 2
+    assert result.created == 2
+    assert result.failed == 0
+    assert conn.execute("SELECT count(*) FROM claims").fetchone()[0] == 2
+    assert conn.execute(
+        "SELECT count(*) FROM claim_extractions WHERE status = 'extracted'"
+    ).fetchone()[0] == 2
 
 
 def test_extractor_health_smoke_uses_empty_claim_schema():

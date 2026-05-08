@@ -1,6 +1,6 @@
 <a id="rfc-0023"></a>
 # RFC 0023: Concurrent Extraction Pipeline via Python concurrent.futures
-Status: draft
+Status: accepted
 Date: 2026-05-07
 Author: halbritt
 Related artifacts:
@@ -9,6 +9,7 @@ Related artifacts:
 - REVIEW-0031: Phase 3 Extraction Backend Benchmark (2026-05-07)
 - D020: local-only inference
 - D034: JSON-schema local model response profile
+- D076: opt-in Phase 1 extraction concurrency and request-profile idempotency
 - D068: review artifact IDs
 ## Summary
 Reduce Phase 3 claim-extraction wall-clock by introducing concurrent dispatch
@@ -211,6 +212,38 @@ Phase 3 rollout adds:
 7. Validation/write stage measurably on the critical path before Phase 3 is
    built. If it is not, Phase 3 is not justified.
 8. End-to-end wall-clock improvement at least 20% beyond Phase 2.
+## Phase 1A Benchmark Findings
+The 2026-05-08 Phase 1A sweep used the REVIEW-0031 100-segment same-slice:
+`.scratch/benchmarks/extraction-backend/slices/rfc0019-seed19-100.json`.
+The endpoint was the local `ik_llama` OpenAI-compatible server at
+`http://127.0.0.1:8081`, using
+`/home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf`,
+`context_window=49152`, and `max_tokens=8192`.
+
+Aggregate sweep artifact:
+`.scratch/benchmarks/extraction-backend/rfc0023/20260508T065313Z.rfc0023-ikllama-concurrency-sweep.9a60c1ae/sweep.json`.
+
+| Workers | Wall seconds | Speedup vs serial | Claims | Schema valid | Failed segments |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1422.52 | 1.000x | 506 | 100% | 0 |
+| 2 | 1432.88 | 0.993x | 506 | 100% | 0 |
+| 4 | 1419.48 | 1.002x | 506 | 100% | 0 |
+| 8 | 1429.47 | 0.995x | 506 | 100% | 0 |
+
+Findings:
+
+1. Correctness gates passed at all tested worker counts: 100% segment
+   completion, 506 claims, 100% schema-valid extraction rows, and no failed
+   segments.
+2. The Phase 1A speed gate failed. Best measured throughput was at 4 workers,
+   but only by 1.002x over serial, far below the required 1.5x.
+3. Request-level concurrency against this single local endpoint appears
+   backend-saturated rather than dispatcher-limited. Per-segment latency rose
+   with worker count while aggregate throughput stayed effectively flat.
+4. The production consequence is conservative: serial extraction remains the
+   default, the concurrent driver remains opt-in, and Phase 1B is not promoted
+   for single-endpoint production throughput. The same dispatcher and DB lease
+   mechanism remain useful prerequisites for Phase 2 multi-endpoint dispatch.
 ## Risks And Mitigations
 **Risk: `ik_llama` serializes requests with no batching, Phase 1 yields no
 throughput gain.**
@@ -236,8 +269,10 @@ work. Per-endpoint worker count is a first-order tuning knob if needed.
 Mitigation: Phase 1C is an explicit sustained-run validation step before
 production rollout, not just a single benchmark.
 ## Open Questions
-1. Does `ik_llama` benefit from request-level concurrency? **Empirical
-   question, settled by the Phase 1A worker-count sweep.**
+1. Does `ik_llama` benefit from request-level concurrency? **Answered for
+   the 2026-05-08 local single-endpoint configuration: no material speedup
+   was observed through N=8. Revisit only after backend/server configuration
+   changes or when multiple endpoints are available.**
 2. What is the cost of the pre-flight idempotency check at scale? Likely
    negligible (single indexed lookup per segment), but should be measured on
    the full corpus before Phase 1B production rollout.
@@ -254,7 +289,8 @@ distribution, claim count, schema-validity for each. Output a comparable
 findings document.
 **Phase 1B** (~1 day, conditional): If Phase 1A shows throughput improvement
 at N>1 with no quality regression, add the production code path with the
-optimal N. Gate behind a feature flag.
+optimal N. Gate behind a feature flag. The 2026-05-08 Phase 1A result did not
+meet the speed gate, so single-endpoint Phase 1B remains deferred.
 **Phase 1C** (~1 day): Sustained-run validation on proximal at the production
 worker count. Watch GPU temps, memory pressure, and stability over a 4-8
 hour run. Confirm no thermal or queue-depth pathologies.

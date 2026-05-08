@@ -19,14 +19,16 @@ from engram.consolidator import (
 from engram.db import connect
 from engram.embedder import DEFAULT_EMBEDDING_MODEL_VERSION, embed_pending_segments
 from engram.extractor import (
+    DEFAULT_EXTRACTION_CONCURRENCY,
     EXTRACTION_PROMPT_VERSION,
-    IkLlamaExtractorClient,
     PREDICATE_VOCABULARY,
+    IkLlamaExtractorClient,
     ReExtractError,
     ReExtractResult,
     default_extractor_model_id,
     extract_claims_from_segment,
     extract_pending_claims,
+    extract_pending_claims_concurrently,
     re_extract,
     requeue_extraction_conversation,
     run_extractor_health_smoke,
@@ -94,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     extract_parser.add_argument("--conversation-id")
     extract_parser.add_argument("--requeue", action="store_true")
     extract_parser.add_argument("--prompt-version", default=EXTRACTION_PROMPT_VERSION)
+    extract_parser.add_argument("--concurrency", type=int, default=DEFAULT_EXTRACTION_CONCURRENCY)
 
     re_extract_parser = subparsers.add_parser(
         "re-extract",
@@ -144,6 +147,11 @@ def main(argv: list[str] | None = None) -> int:
     pipeline3_parser.add_argument("--extract-batch-size", type=int, default=10)
     pipeline3_parser.add_argument("--consolidate-batch-size", type=int, default=10)
     pipeline3_parser.add_argument("--limit", type=int)
+    pipeline3_parser.add_argument(
+        "--extract-concurrency",
+        type=int,
+        default=DEFAULT_EXTRACTION_CONCURRENCY,
+    )
 
     args = parser.parse_args(argv)
 
@@ -252,6 +260,8 @@ def main(argv: list[str] | None = None) -> int:
                         prompt_version=args.prompt_version,
                         limit=args.limit,
                         conversation_id=args.conversation_id,
+                        concurrency=args.concurrency,
+                        connection_factory=connect,
                     )
             print(
                 "extract: "
@@ -364,8 +374,13 @@ def main(argv: list[str] | None = None) -> int:
                         limit=None,
                         conversation_id=conversation_id,
                         model_version=model_id,
-                        client=extractor_client,
+                        client=extractor_client if args.extract_concurrency <= 1 else None,
+                        client_factory=(
+                            IkLlamaExtractorClient if args.extract_concurrency > 1 else None
+                        ),
                         health_smoke=False,
+                        concurrency=args.extract_concurrency,
+                        connection_factory=connect,
                     )
                     totals["extract_processed"] += extract_result.processed
                     totals["extract_created"] += extract_result.created
@@ -574,7 +589,10 @@ def _check_phase3_indexes(conn, errors: list[str]) -> None:
             "fragments": [
                 "CREATE UNIQUE INDEX",
                 "ON public.claim_extractions",
-                "(segment_id, extraction_prompt_version, extraction_model_version)",
+                (
+                    "(segment_id, extraction_prompt_version, extraction_model_version, "
+                    "request_profile_version)"
+                ),
                 "extracting",
                 "extracted",
             ],
@@ -794,6 +812,9 @@ def run_extract_batches(
     conversation_id: str | None = None,
     model_version: str | None = None,
     client=None,
+    client_factory=None,
+    concurrency: int = DEFAULT_EXTRACTION_CONCURRENCY,
+    connection_factory=None,
     health_smoke: bool = True,
 ):
     totals = {"processed": 0, "created": 0, "skipped": 0, "failed": 0}
@@ -803,19 +824,42 @@ def run_extract_batches(
         model_id = model_id or default_extractor_model_id()
         extractor_client = extractor_client or IkLlamaExtractorClient()
         run_extractor_health_smoke(extractor_client, model_id=model_id)
+    workers = max(1, concurrency)
     while limit is None or totals["processed"] < limit:
         remaining = None if limit is None else limit - totals["processed"]
         batch_limit = batch_size if remaining is None else min(batch_size, remaining)
-        result = extract_pending_claims(
-            conn,
-            batch_size=batch_size,
-            model_version=model_id,
-            prompt_version=prompt_version,
-            limit=batch_limit,
-            conversation_id=conversation_id,
-            client=extractor_client,
-            progress_callback=print_extract_progress,
-        )
+        if workers > 1:
+            resolved_client_factory: Any = client_factory
+            if resolved_client_factory is None and client is not None:
+
+                def shared_client_factory() -> Any:
+                    return client
+
+                resolved_client_factory = shared_client_factory
+
+            result = extract_pending_claims_concurrently(
+                conn,
+                batch_size=batch_size,
+                connection_factory=connection_factory or connect,
+                model_version=model_id,
+                prompt_version=prompt_version,
+                limit=batch_limit,
+                conversation_id=conversation_id,
+                client_factory=resolved_client_factory,
+                max_workers=workers,
+                progress_callback=print_extract_progress,
+            )
+        else:
+            result = extract_pending_claims(
+                conn,
+                batch_size=batch_size,
+                model_version=model_id,
+                prompt_version=prompt_version,
+                limit=batch_limit,
+                conversation_id=conversation_id,
+                client=extractor_client,
+                progress_callback=print_extract_progress,
+            )
         conn.commit()
         totals["processed"] += result.processed
         totals["created"] += result.created

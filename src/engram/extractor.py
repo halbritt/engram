@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import random
 import re
 import signal
+import threading
 import time
 from collections import Counter
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from typing import Any, Protocol
@@ -29,6 +32,7 @@ from engram.segmenter import (
     sanitize_model_string,
 )
 
+logger = logging.getLogger(__name__)
 
 EXTRACTION_PROMPT_VERSION = "extractor.v8.d064.accounted-zero"
 EXTRACTION_PROMPT_VERSION_REGEX = re.compile(
@@ -62,6 +66,7 @@ DEFAULT_EXTRACTION_CHUNK_MAX_CONTENT_CHARS = int(
 EXTRACTION_ADAPTIVE_SPLIT_MAX_DEPTH = int(
     os.environ.get("ENGRAM_EXTRACTOR_ADAPTIVE_SPLIT_MAX_DEPTH", "4")
 )
+DEFAULT_EXTRACTION_CONCURRENCY = int(os.environ.get("ENGRAM_EXTRACTOR_CONCURRENCY", "1"))
 
 
 STABILITY_CLASSES = [
@@ -221,6 +226,12 @@ class ExtractionBatchResult:
     created: int
     skipped: int
     failed: int
+
+
+@dataclass(frozen=True)
+class ExtractionLease:
+    extraction_id: str
+    segment_id: str
 
 
 @dataclass(frozen=True)
@@ -502,35 +513,81 @@ def extract_claims_from_segment(
     max_tokens: int = DEFAULT_EXTRACTION_MAX_TOKENS,
     force: bool = False,
     retries: int = EXTRACTION_RETRIES,
+    claimed_extraction_id: str | None = None,
+    maintenance: bool = True,
+    use_signal_deadline: bool = True,
 ) -> ExtractionResult:
-    apply_phase3_reclassification_invalidations(conn)
-    reap_stale_extractions(conn)
+    if maintenance:
+        apply_phase3_reclassification_invalidations(conn)
+        reap_stale_extractions(conn)
     model_id = model_version or default_extractor_model_id()
     segment = fetch_segment_payload(conn, segment_id)
 
-    existing = find_existing_extraction(
-        conn,
-        segment_id=segment_id,
-        prompt_version=prompt_version,
-        model_version=model_id,
-    )
-    if existing and existing["status"] == "extracted" and not force:
-        return ExtractionResult(
-            extraction_id=existing["id"],
-            segment_id=segment_id,
-            claim_count=existing["claim_count"],
-            status="extracted",
-            noop=True,
-        )
-    if existing and existing["status"] == "extracting":
-        extraction_id = existing["id"]
+    if claimed_extraction_id is not None:
+        claimed = find_extraction_by_id(conn, claimed_extraction_id)
+        if (
+            claimed is None
+            or claimed["segment_id"] != segment_id
+            or claimed["prompt_version"] != prompt_version
+            or claimed["model_version"] != model_id
+            or claimed["request_profile_version"] != EXTRACTION_REQUEST_PROFILE_VERSION
+            or claimed["status"] != "extracting"
+        ):
+            return ExtractionResult(
+                extraction_id=claimed_extraction_id,
+                segment_id=segment_id,
+                claim_count=0,
+                status="failed",
+                noop=True,
+            )
+        extraction_id = claimed_extraction_id
     else:
+        existing = find_existing_extraction(
+            conn,
+            segment_id=segment_id,
+            prompt_version=prompt_version,
+            model_version=model_id,
+        )
+        if existing and existing["status"] == "extracted" and not force:
+            return ExtractionResult(
+                extraction_id=existing["id"],
+                segment_id=segment_id,
+                claim_count=existing["claim_count"],
+                status="extracted",
+                noop=True,
+            )
+        if existing and existing["status"] == "extracting" and not force:
+            return ExtractionResult(
+                extraction_id=existing["id"],
+                segment_id=segment_id,
+                claim_count=existing["claim_count"],
+                status="extracting",
+                noop=True,
+            )
         extraction_id = create_extraction_row(
             conn,
             segment,
             prompt_version=prompt_version,
             model_version=model_id,
         )
+        if extraction_id is None:
+            existing = find_existing_extraction(
+                conn,
+                segment_id=segment_id,
+                prompt_version=prompt_version,
+                model_version=model_id,
+            )
+            if existing is None:
+                raise ExtractionError(
+                    f"could not create claim extraction row for segment {segment_id}"
+                )
+            return ExtractionResult(
+                extraction_id=existing["id"],
+                segment_id=segment_id,
+                claim_count=existing["claim_count"],
+                status=existing["status"],
+                noop=True,
+            )
 
     chunks = extraction_prompt_chunks(segment)
     extractor = client or IkLlamaExtractorClient()
@@ -541,6 +598,7 @@ def extract_claims_from_segment(
             model_id=model_id,
             max_tokens=max_tokens,
             retries=retries,
+            use_signal_deadline=use_signal_deadline,
         )
     except Exception as exc:
         mark_extraction_failed(
@@ -573,6 +631,7 @@ def extract_claims_from_segment(
             model_id=model_id,
             max_tokens=max_tokens,
             retries=retries,
+            use_signal_deadline=use_signal_deadline,
         )
     if not valid and dropped:
         payload = {
@@ -591,6 +650,8 @@ def extract_claims_from_segment(
                 payload["failure_kind"] = None
                 payload["extraction_result_kind"] = EXTRACTION_RESULT_ACCOUNTED_ZERO
                 with conn.transaction():
+                    if not lock_extracting_row_for_completion(conn, extraction_id):
+                        return ExtractionResult(extraction_id, segment_id, 0, "failed", noop=True)
                     conn.execute(
                         """
                         UPDATE claim_extractions
@@ -599,6 +660,7 @@ def extract_claims_from_segment(
                             claim_count = 0,
                             raw_payload = %s
                         WHERE id = %s
+                          AND status = 'extracting'
                         """,
                         (Jsonb(payload), extraction_id),
                     )
@@ -653,6 +715,7 @@ def extract_claims_from_segment(
                 claim_count = 0,
                 raw_payload = %s
             WHERE id = %s
+              AND status = 'extracting'
             """,
             (Jsonb(payload), extraction_id),
         )
@@ -667,14 +730,6 @@ def extract_claims_from_segment(
         )
         return ExtractionResult(extraction_id, segment_id, 0, "failed", dropped_count=len(dropped))
 
-    inserted = insert_valid_claims(
-        conn,
-        extraction_id,
-        segment,
-        valid,
-        prompt_version=prompt_version,
-        model_version=model_id,
-    )
     raw_payload = {
         "model_response": output.model_response,
         "parse_metadata": output.parse_metadata,
@@ -682,8 +737,18 @@ def extract_claims_from_segment(
         "failure_kind": None,
     }
     copy_validation_repair_payload(raw_payload, output)
-    raw_payload["extraction_result_kind"] = extraction_result_kind(inserted, raw_payload)
     with conn.transaction():
+        if not lock_extracting_row_for_completion(conn, extraction_id):
+            return ExtractionResult(extraction_id, segment_id, 0, "failed", noop=True)
+        inserted = insert_valid_claims(
+            conn,
+            extraction_id,
+            segment,
+            valid,
+            prompt_version=prompt_version,
+            model_version=model_id,
+        )
+        raw_payload["extraction_result_kind"] = extraction_result_kind(inserted, raw_payload)
         conn.execute(
             """
             UPDATE claim_extractions
@@ -692,6 +757,7 @@ def extract_claims_from_segment(
                 claim_count = %s,
                 raw_payload = %s
             WHERE id = %s
+              AND status = 'extracting'
             """,
             (inserted, Jsonb(raw_payload), extraction_id),
         )
@@ -756,12 +822,16 @@ def call_extractor_with_retries(
     max_tokens: int,
     allowed_message_ids: list[str] | None,
     retries: int,
+    use_signal_deadline: bool = True,
 ) -> ExtractorModelOutput:
     errors: list[str] = []
     relaxed_schema_only = False
     for attempt in range(retries + 1):
         try:
-            with extractor_request_deadline(EXTRACTION_REQUEST_TIMEOUT_SECONDS):
+            with extractor_request_deadline(
+                EXTRACTION_REQUEST_TIMEOUT_SECONDS,
+                enabled=use_signal_deadline,
+            ):
                 return coerce_client_output(
                     client.extract(
                         prompt,
@@ -776,7 +846,10 @@ def call_extractor_with_retries(
             if is_schema_construction_error(exc) and not relaxed_schema_only:
                 relaxed_schema_only = True
                 try:
-                    with extractor_request_deadline(EXTRACTION_REQUEST_TIMEOUT_SECONDS):
+                    with extractor_request_deadline(
+                        EXTRACTION_REQUEST_TIMEOUT_SECONDS,
+                        enabled=use_signal_deadline,
+                    ):
                         return coerce_client_output(
                             client.extract(
                                 prompt,
@@ -835,6 +908,7 @@ def extract_segment_chunks(
     retries: int,
     validation_feedback: str | None = None,
     adaptive_split: bool = True,
+    use_signal_deadline: bool = True,
 ) -> ExtractorModelOutput:
     outputs: list[ExtractorModelOutput] = []
     chunk_metadata: list[dict[str, Any]] = []
@@ -847,6 +921,7 @@ def extract_segment_chunks(
             retries=retries,
             validation_feedback=validation_feedback,
             adaptive_split=adaptive_split,
+            use_signal_deadline=use_signal_deadline,
             root_chunk_index=index,
             root_chunk_count=len(chunks),
             split_path=[index],
@@ -896,6 +971,7 @@ def extract_chunk_adaptively(
     retries: int,
     validation_feedback: str | None,
     adaptive_split: bool,
+    use_signal_deadline: bool,
     root_chunk_index: int,
     root_chunk_count: int,
     split_path: list[int],
@@ -911,6 +987,7 @@ def extract_chunk_adaptively(
             max_tokens=max_tokens,
             allowed_message_ids=chunk.message_ids,
             retries=retries,
+            use_signal_deadline=use_signal_deadline,
         )
     except Exception as exc:
         subchunks = split_extraction_chunk(chunk)
@@ -925,6 +1002,7 @@ def extract_chunk_adaptively(
                     retries=child_retries,
                     validation_feedback=validation_feedback,
                     adaptive_split=adaptive_split,
+                    use_signal_deadline=use_signal_deadline,
                     root_chunk_index=root_chunk_index,
                     root_chunk_count=root_chunk_count,
                     split_path=[*split_path, subindex],
@@ -968,6 +1046,7 @@ def retry_after_trigger_violation(
     model_id: str,
     max_tokens: int,
     retries: int,
+    use_signal_deadline: bool = True,
 ) -> tuple[ExtractorModelOutput, list[ClaimDraft], list[dict[str, Any]]]:
     feedback = build_validation_repair_feedback(prior_dropped)
     try:
@@ -979,6 +1058,7 @@ def retry_after_trigger_violation(
             retries=0,
             validation_feedback=feedback,
             adaptive_split=False,
+            use_signal_deadline=use_signal_deadline,
         )
     except Exception as exc:
         return (
@@ -1472,6 +1552,7 @@ def mark_extraction_failed(
             claim_count = 0,
             raw_payload = raw_payload || %s
         WHERE id = %s
+          AND status = 'extracting'
         """,
         (Jsonb(payload), extraction_id),
     )
@@ -1707,6 +1788,7 @@ def find_existing_extraction(
     segment_id: str,
     prompt_version: str,
     model_version: str,
+    request_profile_version: str = EXTRACTION_REQUEST_PROFILE_VERSION,
 ) -> dict[str, Any] | None:
     row = conn.execute(
         """
@@ -1715,15 +1797,48 @@ def find_existing_extraction(
         WHERE segment_id = %s
           AND extraction_prompt_version = %s
           AND extraction_model_version = %s
+          AND request_profile_version = %s
           AND status IN ('extracting', 'extracted')
         ORDER BY created_at DESC
         LIMIT 1
         """,
-        (segment_id, prompt_version, model_version),
+        (segment_id, prompt_version, model_version, request_profile_version),
     ).fetchone()
     if not row:
         return None
     return {"id": row[0], "status": row[1], "claim_count": int(row[2])}
+
+
+def find_extraction_by_id(
+    conn: psycopg.Connection,
+    extraction_id: str,
+) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT
+            id::text,
+            segment_id::text,
+            extraction_prompt_version,
+            extraction_model_version,
+            request_profile_version,
+            status,
+            claim_count
+        FROM claim_extractions
+        WHERE id = %s
+        """,
+        (extraction_id,),
+    ).fetchone()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "segment_id": row[1],
+        "prompt_version": row[2],
+        "model_version": row[3],
+        "request_profile_version": row[4],
+        "status": row[5],
+        "claim_count": int(row[6]),
+    }
 
 
 def create_extraction_row(
@@ -1732,8 +1847,8 @@ def create_extraction_row(
     *,
     prompt_version: str,
     model_version: str,
-) -> str:
-    return conn.execute(
+) -> str | None:
+    row = conn.execute(
         """
         INSERT INTO claim_extractions (
             segment_id,
@@ -1744,6 +1859,7 @@ def create_extraction_row(
             status
         )
         VALUES (%s, %s, %s, %s, %s, 'extracting')
+        ON CONFLICT DO NOTHING
         RETURNING id::text
         """,
         (
@@ -1753,7 +1869,21 @@ def create_extraction_row(
             model_version,
             EXTRACTION_REQUEST_PROFILE_VERSION,
         ),
-    ).fetchone()[0]
+    ).fetchone()
+    return row[0] if row else None
+
+
+def lock_extracting_row_for_completion(conn: psycopg.Connection, extraction_id: str) -> bool:
+    row = conn.execute(
+        """
+        SELECT status
+        FROM claim_extractions
+        WHERE id = %s
+        FOR UPDATE
+        """,
+        (extraction_id,),
+    ).fetchone()
+    return bool(row and row[0] == "extracting")
 
 
 def extraction_prompt_chunks(segment: SegmentPayload) -> list[SegmentPayload]:
@@ -1954,6 +2084,237 @@ def extract_pending_claims(
     return ExtractionBatchResult(processed, created, skipped, failed)
 
 
+def extract_pending_claims_concurrently(
+    conn: psycopg.Connection,
+    batch_size: int,
+    *,
+    connection_factory: Callable[[], psycopg.Connection],
+    model_version: str | None = None,
+    prompt_version: str = EXTRACTION_PROMPT_VERSION,
+    client_factory: Callable[[], ExtractorClient] | None = None,
+    max_tokens: int = DEFAULT_EXTRACTION_MAX_TOKENS,
+    limit: int | None = None,
+    conversation_id: str | None = None,
+    max_workers: int = DEFAULT_EXTRACTION_CONCURRENCY,
+    progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
+) -> ExtractionBatchResult:
+    """Claim and extract a batch with one database connection per worker."""
+
+    workers = max(1, max_workers)
+    if workers == 1:
+        return extract_pending_claims(
+            conn,
+            batch_size,
+            model_version=model_version,
+            prompt_version=prompt_version,
+            client=client_factory() if client_factory is not None else None,
+            max_tokens=max_tokens,
+            limit=limit,
+            conversation_id=conversation_id,
+            progress_callback=progress_callback,
+        )
+
+    apply_phase3_reclassification_invalidations(conn)
+    reap_stale_extractions(conn)
+    model_id = model_version or default_extractor_model_id()
+    batch_limit = min(batch_size, limit) if limit is not None else batch_size
+    leases = claim_pending_extraction_segments(
+        conn,
+        prompt_version=prompt_version,
+        model_version=model_id,
+        limit=batch_limit,
+        conversation_id=conversation_id,
+    )
+    conn.commit()
+
+    if not leases:
+        return ExtractionBatchResult(0, 0, 0, 0)
+
+    processed = created = skipped = failed = 0
+    started_at_by_segment = {lease.segment_id: time.monotonic() for lease in leases}
+    for index, lease in enumerate(leases, start=1):
+        if progress_callback:
+            progress_callback(
+                "extract_start",
+                {
+                    "index": index,
+                    "segment_id": lease.segment_id,
+                    "extraction_id": lease.extraction_id,
+                    "concurrency": workers,
+                },
+            )
+
+    def build_client() -> ExtractorClient:
+        if client_factory is not None:
+            return client_factory()
+        return IkLlamaExtractorClient()
+
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="extract") as executor:
+        futures = {
+            executor.submit(
+                extract_claims_from_segment_worker,
+                lease,
+                connection_factory=connection_factory,
+                model_id=model_id,
+                prompt_version=prompt_version,
+                client_factory=build_client,
+                max_tokens=max_tokens,
+            ): lease
+            for lease in leases
+        }
+        for future in as_completed(futures):
+            lease = futures[future]
+            try:
+                result = future.result()
+            except Exception as exc:
+                logger.exception(
+                    "concurrent extraction worker failed",
+                    extra={"segment_id": lease.segment_id, "extraction_id": lease.extraction_id},
+                )
+                result = ExtractionResult(
+                    extraction_id=lease.extraction_id,
+                    segment_id=lease.segment_id,
+                    claim_count=0,
+                    status="failed",
+                )
+                processed += 1
+                failed += 1
+                event = "extract_failed"
+                error = error_summary(exc)
+            else:
+                processed += 1
+                if result.noop:
+                    skipped += 1
+                elif result.status == "failed":
+                    failed += 1
+                else:
+                    created += result.claim_count
+                event = "extract_done" if result.status != "failed" else "extract_failed"
+                error = None
+
+            elapsed = time.monotonic() - started_at_by_segment[lease.segment_id]
+            logger.info(
+                "extract segment complete",
+                extra={
+                    "segment_id": lease.segment_id,
+                    "extraction_id": lease.extraction_id,
+                    "claim_count": result.claim_count,
+                    "status": result.status,
+                    "elapsed_seconds": elapsed,
+                },
+            )
+            if progress_callback:
+                payload: dict[str, Any] = {
+                    "segment_id": lease.segment_id,
+                    "extraction_id": lease.extraction_id,
+                    "claim_count": result.claim_count,
+                    "status": result.status,
+                    "elapsed": elapsed,
+                    "concurrency": workers,
+                }
+                if error is not None:
+                    payload["error"] = error
+                progress_callback(event, payload)
+
+    return ExtractionBatchResult(processed, created, skipped, failed)
+
+
+def extract_claims_from_segment_worker(
+    lease: ExtractionLease,
+    *,
+    connection_factory: Callable[[], psycopg.Connection],
+    model_id: str,
+    prompt_version: str,
+    client_factory: Callable[[], ExtractorClient],
+    max_tokens: int,
+) -> ExtractionResult:
+    with connection_factory() as worker_conn:
+        result = extract_claims_from_segment(
+            worker_conn,
+            lease.segment_id,
+            model_version=model_id,
+            prompt_version=prompt_version,
+            client=client_factory(),
+            max_tokens=max_tokens,
+            claimed_extraction_id=lease.extraction_id,
+            maintenance=False,
+            use_signal_deadline=False,
+        )
+        worker_conn.commit()
+        return result
+
+
+def claim_pending_extraction_segments(
+    conn: psycopg.Connection,
+    *,
+    prompt_version: str,
+    model_version: str,
+    limit: int,
+    conversation_id: str | None = None,
+) -> list[ExtractionLease]:
+    rows = conn.execute(
+        """
+        WITH candidates AS (
+            SELECT s.id, s.generation_id
+            FROM segments s
+            JOIN segment_generations sg ON sg.id = s.generation_id
+            LEFT JOIN consolidation_progress p
+              ON p.stage = 'extractor'
+             AND p.scope = 'conversation:' || s.conversation_id::text
+            WHERE s.is_active = true
+              AND sg.status = 'active'
+              AND s.source_kind IN ('chatgpt', 'claude', 'gemini')
+              AND s.conversation_id IS NOT NULL
+              AND (%s::uuid IS NULL OR s.conversation_id = %s::uuid)
+              AND COALESCE(p.error_count, 0) < %s
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM claim_extractions ce
+                  WHERE ce.segment_id = s.id
+                    AND ce.extraction_prompt_version = %s
+                    AND ce.extraction_model_version = %s
+                    AND ce.request_profile_version = %s
+                    AND ce.status IN ('extracting', 'extracted')
+              )
+            ORDER BY s.conversation_id, s.sequence_index, s.id
+            LIMIT %s
+            FOR UPDATE OF s SKIP LOCKED
+        )
+        INSERT INTO claim_extractions (
+            segment_id,
+            generation_id,
+            extraction_prompt_version,
+            extraction_model_version,
+            request_profile_version,
+            status
+        )
+        SELECT
+            id,
+            generation_id,
+            %s,
+            %s,
+            %s,
+            'extracting'
+        FROM candidates
+        ON CONFLICT DO NOTHING
+        RETURNING id::text, segment_id::text
+        """,
+        (
+            conversation_id,
+            conversation_id,
+            MAX_EXTRACTION_ERROR_COUNT,
+            prompt_version,
+            model_version,
+            EXTRACTION_REQUEST_PROFILE_VERSION,
+            limit,
+            prompt_version,
+            model_version,
+            EXTRACTION_REQUEST_PROFILE_VERSION,
+        ),
+    ).fetchall()
+    return [ExtractionLease(extraction_id=row[0], segment_id=row[1]) for row in rows]
+
+
 def fetch_pending_segments(
     conn: psycopg.Connection,
     *,
@@ -1982,6 +2343,7 @@ def fetch_pending_segments(
               WHERE ce.segment_id = s.id
                 AND ce.extraction_prompt_version = %s
                 AND ce.extraction_model_version = %s
+                AND ce.request_profile_version = %s
                 AND ce.status IN ('extracting', 'extracted')
           )
         ORDER BY s.conversation_id, s.sequence_index, s.id
@@ -1993,6 +2355,7 @@ def fetch_pending_segments(
             MAX_EXTRACTION_ERROR_COUNT,
             prompt_version,
             model_version,
+            EXTRACTION_REQUEST_PROFILE_VERSION,
             limit,
         ),
     ).fetchall()
@@ -2087,8 +2450,8 @@ def claim_to_payload(claim: ClaimDraft) -> dict[str, Any]:
 
 
 @contextmanager
-def extractor_request_deadline(seconds: int):
-    if seconds <= 0:
+def extractor_request_deadline(seconds: int, *, enabled: bool = True):
+    if seconds <= 0 or not enabled or threading.current_thread() is not threading.main_thread():
         yield
         return
     old_handler = signal.getsignal(signal.SIGALRM)

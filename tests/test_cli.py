@@ -415,6 +415,8 @@ def test_extract_wires_batch_size_and_limit(
             "18",
             "--prompt-version",
             "ev-test",
+            "--concurrency",
+            "3",
         ]
     )
 
@@ -422,6 +424,7 @@ def test_extract_wires_batch_size_and_limit(
     assert captured["batch_size"] == 9
     assert captured["limit"] == 18
     assert captured["prompt_version"] == "ev-test"
+    assert captured["concurrency"] == 3
 
 
 def test_consolidate_wires_batch_size_and_limit(

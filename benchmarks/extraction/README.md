@@ -1,10 +1,11 @@
 # Phase 3 Extraction Backend Benchmark Harness
 
-This directory contains the RFC 0019 benchmark-only harness for comparing
-local OpenAI-compatible extraction backends. It uses the production Phase 3
-extractor prompt, schema, parser, chunking, and validation salvage code, but it
-writes only scratch artifacts. It does not insert or update production
-`claim_extractions`, `claims`, or `beliefs` rows.
+This directory contains the benchmark-only harness for comparing local
+OpenAI-compatible extraction backends and sweeping RFC 0023 Phase 1A extraction
+worker counts. It uses the production Phase 3 extractor prompt, schema, parser,
+chunking, and validation salvage code, but it writes only scratch artifacts. It
+does not insert or update production `claim_extractions`, `claims`, or
+`beliefs` rows.
 
 The harness is for evidence gathering only. A production switch from
 `ik-llama-server` to vLLM or sglang still requires benchmark review evidence,
@@ -47,6 +48,22 @@ ENGRAM_DATABASE_URL=postgresql:///engram \
   --request-profile-version vllm-json-schema.d034.extraction-benchmark.v1 \
   --concurrency 8 \
   --metrics-url http://127.0.0.1:18081/metrics \
+  --output-dir .scratch/benchmarks/extraction-backend
+```
+
+Run the RFC 0023 Phase 1A worker-count sweep over the same fixed slice. The
+default sweep runs worker counts `1,2,4,8`; pass `--concurrencies` to change
+that list.
+
+```bash
+ENGRAM_DATABASE_URL=postgresql:///engram \
+.venv/bin/python -m benchmarks.extraction.run_benchmark sweep \
+  --allow-local-models \
+  --slice .scratch/benchmarks/extraction-backend/slices/phase3-seed19-100.json \
+  --backend-name ik-llama-phase1a \
+  --base-url http://127.0.0.1:8081 \
+  --model-id qwen3.6-35b-a3b \
+  --concurrencies 1,2,4,8 \
   --output-dir .scratch/benchmarks/extraction-backend
 ```
 
@@ -126,6 +143,10 @@ Runs write this shape under the chosen output directory:
 <output-dir>/<comparison-id>/
   comparison.json
   report.md
+
+<output-dir>/<sweep-id>/
+  sweep.json
+  report.md
 ```
 
 `run.json` records backend name, model metadata, request settings,
@@ -133,6 +154,14 @@ Runs write this shape under the chosen output directory:
 snapshots, slice metadata, aggregate validity and throughput metrics,
 predicate/stability distributions, and failure counts. `segments.jsonl` records
 one redacted result per segment.
+
+The `sweep` command writes one normal run directory per concurrency and then
+an aggregate `sweep.json` plus `report.md` with throughput, per-segment latency,
+claim count, schema-validity, and completion metrics. The sweep summary is
+aggregate-only and does not include segment text, prompt payloads, completions,
+or claim text. Normal run artifacts keep the existing default redaction policy:
+claim text and rationale are omitted unless `--include-claim-text` is explicitly
+passed.
 
 When `--server-command` is used, the command must visibly bind to the same
 loopback host and port as `--base-url`. The harness also sets offline /

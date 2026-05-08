@@ -773,7 +773,7 @@ Partial unique index for active extraction:
 ```sql
 CREATE UNIQUE INDEX claim_extractions_active_unique_idx
 ON claim_extractions (segment_id, extraction_prompt_version,
-                      extraction_model_version)
+                      extraction_model_version, request_profile_version)
 WHERE status IN ('extracting','extracted');
 ```
 
@@ -1052,7 +1052,8 @@ insert (defense in depth in case the schema enum is bypassed).
 
 - Per-segment idempotence: the partial unique index on `claim_extractions`
   prevents duplicate active extractions per
-  `(segment_id, extraction_prompt_version, extraction_model_version)`.
+  `(segment_id, extraction_prompt_version, extraction_model_version,
+  request_profile_version)`.
 - Per-conversation idempotence: the supervisor queries
   `consolidation_progress` for `(stage='extractor', scope='conversation:<uuid>')`
   to find the next segment to extract.

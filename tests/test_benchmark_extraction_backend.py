@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 import time
 from pathlib import Path
@@ -92,6 +93,12 @@ def test_local_model_opt_in_is_required() -> None:
         benchmark.require_local_model_opt_in(False)
 
 
+def test_parse_concurrency_values_is_ordered_and_deduplicated() -> None:
+    assert benchmark.parse_concurrency_values("1, 2,4,8") == (1, 2, 4, 8)
+    with pytest.raises(Exception):
+        benchmark.parse_concurrency_values("1,2,2")
+
+
 def test_select_balanced_slice_is_seeded_and_covers_buckets() -> None:
     candidates = [
         benchmark.SliceSegment(
@@ -140,6 +147,114 @@ def test_concurrent_runner_bounds_inflight_preserves_order_and_redacts_text(
     assert all(result.status == "ok" for result in results)
     assert "object_text" not in results[0].claims[0]
     assert results[0].claims[0]["predicate"] == "prefers"
+
+
+def test_aggregate_metrics_include_latency_and_completion() -> None:
+    results = [
+        benchmark.SegmentBenchmarkResult(
+            index=1,
+            segment_id="segment-1",
+            status="ok",
+            duration_seconds=1.0,
+            claim_count=1,
+            dropped_count=0,
+            schema_valid=True,
+            provenance_valid=True,
+            claims=[{"predicate": "prefers", "stability_class": "preference"}],
+            dropped_claims=[],
+            parse_metadata={},
+        ),
+        benchmark.SegmentBenchmarkResult(
+            index=2,
+            segment_id="segment-2",
+            status="failed",
+            duration_seconds=3.0,
+            claim_count=0,
+            dropped_count=0,
+            schema_valid=False,
+            provenance_valid=False,
+            claims=[],
+            dropped_claims=[],
+            parse_metadata={},
+            failure={"kind": "read_timeout", "error": "local endpoint error: read_timeout"},
+        ),
+    ]
+
+    metrics = benchmark.aggregate_metrics(results, wall_clock_seconds=2.0)
+
+    assert metrics["segments_completed"] == 1
+    assert metrics["segment_completion_rate"] == 0.5
+    assert metrics["throughput_segments_per_second"] == 1.0
+    assert metrics["segment_latency_seconds"]["p50"] == 2.0
+    assert metrics["segment_latency_seconds"]["p95"] == 2.9
+
+
+def test_concurrency_sweep_writes_normal_runs_and_redacted_aggregate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    segments = {
+        "segment-1": _segment(
+            "segment-1",
+            "00000000-0000-0000-0000-000000000001",
+            "first private text",
+        ),
+        "segment-2": _segment(
+            "segment-2",
+            "00000000-0000-0000-0000-000000000002",
+            "second private text",
+        ),
+    }
+    slice_path = tmp_path / "slice.json"
+    slice_path.write_text(
+        json.dumps(
+            {
+                "schema_version": benchmark.SLICE_SCHEMA_VERSION,
+                "created_at": "2026-05-08T00:00:00Z",
+                "seed": 23,
+                "target_size": 2,
+                "segments": [
+                    {"segment_id": "segment-1"},
+                    {"segment_id": "segment-2"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(benchmark, "client_from_config", lambda config: ConcurrentFakeClient())
+    monkeypatch.setattr(benchmark, "connect", lambda: FakeConnection())
+    monkeypatch.setattr(
+        benchmark,
+        "fetch_segment_payload",
+        lambda conn, segment_id: segments[segment_id],
+    )
+    monkeypatch.setattr(benchmark, "probe_server", lambda config: {"models_response": {"data": []}})
+    monkeypatch.setattr(
+        benchmark,
+        "run_recorded_health_smoke",
+        lambda config, client, label: {"label": label, "passed": True},
+    )
+    monkeypatch.setattr(benchmark, "fetch_metrics_snapshot", lambda metrics_url: None)
+
+    sweep_path = benchmark.run_concurrency_sweep(
+        _config(tmp_path),
+        slice_path=slice_path,
+        concurrencies=(1, 2),
+    )
+
+    sweep = json.loads(sweep_path.read_text(encoding="utf-8"))
+    assert sweep["schema_version"] == benchmark.SWEEP_SCHEMA_VERSION
+    assert sweep["rfc"] == "0023"
+    assert [run["concurrency"] for run in sweep["runs"]] == [1, 2]
+    assert sweep["artifact_privacy"]["aggregate_contains_claim_text"] is False
+    report = (sweep_path.parent / "report.md").read_text(encoding="utf-8")
+    assert "first private text" not in report
+    assert "private subject" not in report
+
+    run_paths = [tmp_path / run["run_json_path"] for run in sweep["runs"]]
+    normal_runs = [json.loads(path.read_text(encoding="utf-8")) for path in run_paths]
+    assert [run["request"]["concurrency"] for run in normal_runs] == [1, 2]
+    assert all(run["segment_records_path"] == "segments.jsonl" for run in normal_runs)
 
 
 def test_all_invalid_post_repair_output_is_failed(
@@ -367,3 +482,19 @@ class InvalidClaimFakeClient:
             model_response='{"claims":[]}',
             parse_metadata={},
         )
+
+
+class FakeConnection:
+    def __enter__(self) -> FakeConnection:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: object,
+        exc: object,
+        traceback: object,
+    ) -> None:
+        return None
+
+    def execute(self, query: str) -> None:
+        del query

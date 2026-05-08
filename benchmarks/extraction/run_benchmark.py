@@ -65,12 +65,14 @@ from engram.segmenter import assert_context_budget, ensure_local_base_url
 SLICE_SCHEMA_VERSION = "phase3-extraction-backend-slice.v1"
 RUN_SCHEMA_VERSION = "phase3-extraction-backend-run.v1"
 COMPARISON_SCHEMA_VERSION = "phase3-extraction-backend-comparison.v1"
+SWEEP_SCHEMA_VERSION = "phase3-extraction-concurrency-sweep.v1"
 BENCHMARK_REQUEST_PROFILE_VERSION = "openai-json-schema.d034.extraction-benchmark.v1"
 DEFAULT_OUTPUT_DIR = ".scratch/benchmarks/extraction-backend"
 DEFAULT_BASE_URL = "http://127.0.0.1:8081"
 DEFAULT_TIMEOUT_SECONDS = 600
 DEFAULT_CONTEXT_WINDOW = 49152
 DEFAULT_SERVER_READY_TIMEOUT_SECONDS = 180
+DEFAULT_SWEEP_CONCURRENCIES = (1, 2, 4, 8)
 MAX_RECORDED_METRICS_CHARS = 200_000
 
 
@@ -206,7 +208,7 @@ class BenchmarkExtractorClient:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m benchmarks.extraction.run_benchmark",
-        description="RFC 0019 local-only Phase 3 extraction backend benchmark.",
+        description="RFC 0019/RFC 0023 local-only Phase 3 extraction benchmark.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -238,6 +240,31 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--server-ready-timeout-seconds", type=positive_int, default=180)
     run.add_argument("--metrics-url")
     add_endpoint_args(run)
+
+    sweep = subparsers.add_parser("sweep")
+    sweep.add_argument("--slice", required=True)
+    sweep.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
+    sweep.add_argument("--backend-name", required=True)
+    sweep.add_argument(
+        "--concurrencies",
+        type=parse_concurrency_values,
+        default=DEFAULT_SWEEP_CONCURRENCIES,
+        help="Comma-separated worker counts to run over the same slice. Default: 1,2,4,8.",
+    )
+    sweep.add_argument("--include-claim-text", action="store_true", default=False)
+    sweep.add_argument("--server-command")
+    sweep.add_argument(
+        "--capture-server-log",
+        action="store_true",
+        default=False,
+        help=(
+            "Capture managed server stdout/stderr to server.log. Use only with "
+            "request logging disabled; logs may contain private corpus text."
+        ),
+    )
+    sweep.add_argument("--server-ready-timeout-seconds", type=positive_int, default=180)
+    sweep.add_argument("--metrics-url")
+    add_endpoint_args(sweep)
 
     compare = subparsers.add_parser("compare")
     compare.add_argument("--control-run", required=True)
@@ -334,6 +361,20 @@ def main(argv: list[str] | None = None) -> int:
             )
             run_path = run_backend_benchmark(config, slice_path=Path(args.slice))
             print(run_path)
+            return 0
+        if args.command == "sweep":
+            require_local_model_opt_in(args.allow_local_models)
+            config = config_from_args(
+                args,
+                backend_name=args.backend_name,
+                output_dir=Path(args.output_dir),
+            )
+            sweep_path = run_concurrency_sweep(
+                config,
+                slice_path=Path(args.slice),
+                concurrencies=args.concurrencies,
+            )
+            print(sweep_path)
             return 0
         if args.command == "compare":
             comparison_path = compare_backend_runs(
@@ -555,6 +596,54 @@ def run_backend_benchmark(config: BenchmarkRunConfig, *, slice_path: Path) -> Pa
     finally:
         if server is not None:
             stop_managed_server(server)
+
+
+def run_concurrency_sweep(
+    config: BenchmarkRunConfig,
+    *,
+    slice_path: Path,
+    concurrencies: tuple[int, ...],
+) -> Path:
+    if not concurrencies:
+        raise ExtractionBenchmarkError("sweep requires at least one concurrency value")
+    sweep_id = make_run_id(f"{config.backend_name}-concurrency-sweep")
+    sweep_dir = config.output_dir / sweep_id
+    sweep_dir.mkdir(parents=True, exist_ok=False)
+
+    run_paths: list[Path] = []
+    for concurrency in concurrencies:
+        run_config = replace(
+            config,
+            backend_name=sweep_backend_name(config.backend_name, concurrency),
+            concurrency=concurrency,
+        )
+        print(
+            f"extract-benchmark sweep: running concurrency={concurrency}",
+            file=sys.stderr,
+            flush=True,
+        )
+        run_paths.append(run_backend_benchmark(run_config, slice_path=slice_path))
+
+    runs = [json.loads(path.read_text(encoding="utf-8")) for path in run_paths]
+    sweep_payload = build_sweep_payload(
+        config,
+        sweep_id=sweep_id,
+        slice_path=slice_path,
+        run_paths=run_paths,
+        runs=runs,
+        concurrencies=concurrencies,
+    )
+    sweep_path = sweep_dir / "sweep.json"
+    sweep_path.write_text(
+        json.dumps(sweep_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (sweep_dir / "report.md").write_text(render_sweep_markdown(sweep_payload), encoding="utf-8")
+    return sweep_path
+
+
+def sweep_backend_name(backend_name: str, concurrency: int) -> str:
+    return f"{backend_name}-workers-{concurrency}"
 
 
 def run_segments_concurrently(
@@ -1099,7 +1188,9 @@ def aggregate_metrics(
     return {
         "segments_total": total,
         "segments_ok": total - failed,
+        "segments_completed": total - failed,
         "segments_failed": failed,
+        "segment_completion_rate": ratio(total - failed, total),
         "schema_valid_rate": ratio(schema_valid, total),
         "provenance_clean_segments": sum(1 for result in results if result.provenance_valid),
         "provenance_clean_segment_rate": ratio(
@@ -1114,6 +1205,9 @@ def aggregate_metrics(
         "field_presence": field_presence_metrics(claims),
         "wall_clock_seconds": wall_clock_seconds,
         "sum_segment_seconds": sum(result.duration_seconds for result in results),
+        "segment_latency_seconds": latency_summary(
+            [result.duration_seconds for result in results]
+        ),
         "throughput_segments_per_second": ratio(total, wall_clock_seconds),
         "throughput_claims_per_second": ratio(claim_count, wall_clock_seconds),
         "usage": usage,
@@ -1127,6 +1221,40 @@ def aggregate_metrics(
             )
         ),
     }
+
+
+def latency_summary(durations: list[float]) -> dict[str, float | None]:
+    if not durations:
+        return {
+            "min": None,
+            "mean": None,
+            "p50": None,
+            "p95": None,
+            "max": None,
+        }
+    ordered = sorted(float(duration) for duration in durations)
+    return {
+        "min": ordered[0],
+        "mean": sum(ordered) / len(ordered),
+        "p50": percentile(ordered, 0.50),
+        "p95": percentile(ordered, 0.95),
+        "max": ordered[-1],
+    }
+
+
+def percentile(ordered_values: list[float], quantile: float) -> float | None:
+    if not ordered_values:
+        return None
+    if len(ordered_values) == 1:
+        return ordered_values[0]
+    position = (len(ordered_values) - 1) * quantile
+    lower_index = int(position)
+    upper_index = min(lower_index + 1, len(ordered_values) - 1)
+    if lower_index == upper_index:
+        return ordered_values[lower_index]
+    lower_value = ordered_values[lower_index]
+    upper_value = ordered_values[upper_index]
+    return lower_value + ((upper_value - lower_value) * (position - lower_index))
 
 
 def field_presence_metrics(claims: list[dict[str, Any]]) -> dict[str, float | None]:
@@ -1247,6 +1375,155 @@ def compare_backend_runs(
     if review_output is not None:
         write_review_output(review_output, review_id=review_id, comparison=comparison)
     return comparison_path
+
+
+def build_sweep_payload(
+    config: BenchmarkRunConfig,
+    *,
+    sweep_id: str,
+    slice_path: Path,
+    run_paths: list[Path],
+    runs: list[dict[str, Any]],
+    concurrencies: tuple[int, ...],
+) -> dict[str, Any]:
+    if len(run_paths) != len(runs) or len(runs) != len(concurrencies):
+        raise ExtractionBenchmarkError("sweep run paths, runs, and concurrencies do not align")
+    assert_sweep_runs_match_request(runs, concurrencies)
+    assert_sweep_runs_share_slice(runs)
+    summaries = [
+        sweep_run_summary(run, run_path=run_path, output_dir=config.output_dir)
+        for run_path, run in zip(run_paths, runs, strict=True)
+    ]
+    return {
+        "schema_version": SWEEP_SCHEMA_VERSION,
+        "created_at": utc_now(),
+        "git_commit": git_commit(),
+        "rfc": "0023",
+        "phase": "1A",
+        "sweep_id": sweep_id,
+        "base_backend_name": config.backend_name,
+        "slice_path": str(slice_path),
+        "slice": runs[0].get("slice") if runs else None,
+        "concurrency_values": list(concurrencies),
+        "runs": summaries,
+        "best": {
+            "throughput_segments_per_second": best_sweep_run(
+                summaries,
+                "throughput_segments_per_second",
+                maximize=True,
+            ),
+            "latency_p95_seconds": best_sweep_run(
+                summaries,
+                "latency_p95_seconds",
+                maximize=False,
+            ),
+        },
+        "artifact_privacy": {
+            "aggregate_contains_segment_text": False,
+            "aggregate_contains_claim_text": False,
+            "normal_run_claim_text_policy": (
+                "claim text and rationale are omitted unless --include-claim-text is set"
+            ),
+        },
+    }
+
+
+def assert_sweep_runs_match_request(
+    runs: list[dict[str, Any]],
+    concurrencies: tuple[int, ...],
+) -> None:
+    actual = [run_concurrency(run) for run in runs]
+    expected = list(concurrencies)
+    if actual != expected:
+        raise ExtractionBenchmarkError(
+            f"sweep run concurrency mismatch: expected {expected}, got {actual}"
+        )
+
+
+def assert_sweep_runs_share_slice(runs: list[dict[str, Any]]) -> None:
+    if not runs:
+        return
+    first_slice = runs[0].get("slice")
+    if any(run.get("slice") != first_slice for run in runs[1:]):
+        raise ExtractionBenchmarkError("sweep runs must use the same fixed slice")
+
+
+def sweep_run_summary(
+    run: dict[str, Any],
+    *,
+    run_path: Path,
+    output_dir: Path,
+) -> dict[str, Any]:
+    metrics = run.get("metrics", {})
+    if not isinstance(metrics, dict):
+        metrics = {}
+    latency = metrics.get("segment_latency_seconds")
+    if not isinstance(latency, dict):
+        latency = {}
+    segments_total = metric_int(metrics, "segments_total")
+    segments_completed = metric_int(metrics, "segments_completed")
+    if segments_completed is None:
+        segments_completed = metric_int(metrics, "segments_ok")
+    claim_count = metric_int(metrics, "claim_count")
+    return {
+        "concurrency": run_concurrency(run),
+        "backend_name": run.get("backend_name"),
+        "run_id": run.get("run_id"),
+        "run_json_path": path_label(run_path, output_dir),
+        "created_at": run.get("created_at"),
+        "segments_total": segments_total,
+        "segments_completed": segments_completed,
+        "segment_completion_rate": metric_float(metrics, "segment_completion_rate"),
+        "segments_failed": metric_int(metrics, "segments_failed"),
+        "wall_clock_seconds": metric_float(metrics, "wall_clock_seconds"),
+        "sum_segment_seconds": metric_float(metrics, "sum_segment_seconds"),
+        "throughput_segments_per_second": metric_float(
+            metrics,
+            "throughput_segments_per_second",
+        ),
+        "throughput_claims_per_second": metric_float(
+            metrics,
+            "throughput_claims_per_second",
+        ),
+        "latency_p50_seconds": metric_float(latency, "p50"),
+        "latency_p95_seconds": metric_float(latency, "p95"),
+        "latency_mean_seconds": metric_float(latency, "mean"),
+        "claim_count": claim_count,
+        "claims_per_completed_segment": (
+            ratio(claim_count, segments_completed)
+            if claim_count is not None and segments_completed is not None
+            else None
+        ),
+        "schema_valid_rate": metric_float(metrics, "schema_valid_rate"),
+        "provenance_clean_segment_rate": metric_float(
+            metrics,
+            "provenance_clean_segment_rate",
+        ),
+        "dropped_claim_rate": metric_float(metrics, "dropped_claim_rate"),
+        "failure_counts": metrics.get("failure_counts", {}),
+    }
+
+
+def best_sweep_run(
+    summaries: list[dict[str, Any]],
+    metric_name: str,
+    *,
+    maximize: bool,
+) -> dict[str, Any] | None:
+    candidates = [
+        summary
+        for summary in summaries
+        if isinstance(summary.get(metric_name), int | float)
+    ]
+    if not candidates:
+        return None
+    selector = max if maximize else min
+    best = selector(candidates, key=lambda summary: float(summary[metric_name]))
+    return {
+        "concurrency": best["concurrency"],
+        "run_id": best["run_id"],
+        "value": best[metric_name],
+    }
 
 
 def build_comparison_payload(
@@ -1514,6 +1791,70 @@ def render_comparison_markdown(
     return "\n".join(lines)
 
 
+def render_sweep_markdown(sweep: dict[str, Any]) -> str:
+    best = sweep.get("best", {})
+    best_throughput = best.get("throughput_segments_per_second") if isinstance(best, dict) else None
+    best_latency = best.get("latency_p95_seconds") if isinstance(best, dict) else None
+    lines = [
+        "# Phase 3 Extraction Concurrency Sweep",
+        "",
+        "| Field | Value |",
+        "|---|---|",
+        f"| Created | `{sweep['created_at']}` |",
+        f"| RFC | `{sweep['rfc']}` |",
+        f"| Phase | `{sweep['phase']}` |",
+        f"| Backend | `{sweep['base_backend_name']}` |",
+        f"| Slice | `{sweep['slice_path']}` |",
+        f"| Concurrencies | `{', '.join(str(value) for value in sweep['concurrency_values'])}` |",
+        "",
+        "## Best Observed",
+        "",
+        "| Metric | Concurrency | Value | Run |",
+        "|---|---:|---:|---|",
+        best_row("Segments/sec", best_throughput),
+        best_row("P95 latency seconds", best_latency),
+        "",
+        "## Runs",
+        "",
+        "| Workers | Run | Seg/s | Claim/s | P50 latency | P95 latency | Claims | "
+        "Claims/completed segment | Schema valid | Completion | Failures |",
+        "|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+    ]
+    for run in sweep.get("runs", []):
+        lines.append(
+            "| "
+            f"`{run['concurrency']}` | "
+            f"`{run['run_id']}` | "
+            f"`{format_optional_float(run['throughput_segments_per_second'])}` | "
+            f"`{format_optional_float(run['throughput_claims_per_second'])}` | "
+            f"`{format_optional_float(run['latency_p50_seconds'])}` | "
+            f"`{format_optional_float(run['latency_p95_seconds'])}` | "
+            f"`{run['claim_count']}` | "
+            f"`{format_optional_float(run['claims_per_completed_segment'])}` | "
+            f"`{format_optional_float(run['schema_valid_rate'])}` | "
+            f"`{format_optional_float(run['segment_completion_rate'])}` | "
+            f"`{json.dumps(run['failure_counts'], sort_keys=True)}` |"
+        )
+    lines.extend(
+        [
+            "",
+            "This report is aggregate-only. Raw segment prompts, completions, claim text, "
+            "and private corpus content are intentionally absent from the sweep summary.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def best_row(label: str, value: Any) -> str:
+    if not isinstance(value, dict):
+        return f"| {label} | `n/a` | `n/a` | `n/a` |"
+    return (
+        f"| {label} | `{value.get('concurrency')}` | "
+        f"`{format_optional_float(value.get('value'))}` | `{value.get('run_id')}` |"
+    )
+
+
 def load_run_artifacts(run_path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     run = json.loads(run_path.read_text(encoding="utf-8"))
     records_path = run_path.parent / run["segment_records_path"]
@@ -1773,6 +2114,48 @@ def run_summary(run: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def run_concurrency(run: dict[str, Any]) -> int | None:
+    request = run.get("request")
+    if not isinstance(request, dict):
+        return None
+    value = request.get("concurrency")
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
+def metric_float(metrics: dict[str, Any], key: str) -> float | None:
+    value = metrics.get(key)
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    return None
+
+
+def metric_int(metrics: dict[str, Any], key: str) -> int | None:
+    value = metrics.get(key)
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    return None
+
+
+def path_label(path: Path, output_dir: Path) -> str:
+    try:
+        return str(path.relative_to(output_dir))
+    except ValueError:
+        return str(path)
+
+
 def distribution_l1(control: Counter[str], candidate: Counter[str]) -> float | None:
     control_total = sum(control.values())
     candidate_total = sum(candidate.values())
@@ -1864,6 +2247,23 @@ def normalized_local_base_url(base_url: str) -> str:
 
 def looks_like_path(value: str) -> bool:
     return value.startswith(("~", "/", "."))
+
+
+def parse_concurrency_values(value: str) -> tuple[int, ...]:
+    parsed_values: list[int] = []
+    seen: set[int] = set()
+    for raw_part in value.split(","):
+        part = raw_part.strip()
+        if not part:
+            raise argparse.ArgumentTypeError("concurrency list contains an empty value")
+        parsed = positive_int(part)
+        if parsed in seen:
+            raise argparse.ArgumentTypeError("concurrency list contains duplicate values")
+        parsed_values.append(parsed)
+        seen.add(parsed)
+    if not parsed_values:
+        raise argparse.ArgumentTypeError("concurrency list must not be empty")
+    return tuple(parsed_values)
 
 
 def positive_int(value: str) -> int:
