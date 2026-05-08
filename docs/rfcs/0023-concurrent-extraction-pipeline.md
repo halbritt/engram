@@ -213,37 +213,48 @@ Phase 3 rollout adds:
    built. If it is not, Phase 3 is not justified.
 8. End-to-end wall-clock improvement at least 20% beyond Phase 2.
 ## Phase 1A Benchmark Findings
-The 2026-05-08 Phase 1A sweep used the REVIEW-0031 100-segment same-slice:
-`.scratch/benchmarks/extraction-backend/slices/rfc0019-seed19-100.json`.
-The endpoint was the local `ik_llama` OpenAI-compatible server at
-`http://127.0.0.1:8081`, using
-`/home/halbritt/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf`,
-`context_window=49152`, and `max_tokens=8192`.
+The first 2026-05-08 Phase 1A 100-segment sweep used the REVIEW-0031
+same-slice at
+`.scratch/benchmarks/extraction-backend/slices/rfc0019-seed19-100.json`, but
+the local `ik_llama` server was still configured with `--parallel 1`. That run
+is valid as a dispatcher/idempotency stress test, but invalid as a server-side
+concurrency speed conclusion because all client concurrency queued behind one
+server slot.
 
-Aggregate sweep artifact:
-`.scratch/benchmarks/extraction-backend/rfc0023/20260508T065313Z.rfc0023-ikllama-concurrency-sweep.9a60c1ae/sweep.json`.
+The corrected local server experiments used the same Qwen3.6-35B-A3B-IQ4_XS
+model on `http://127.0.0.1:8081` with 32,768 tokens per slot. The useful
+20-segment slice was
+`.scratch/benchmarks/extraction-backend/slices/rfc0023-seed19-20.json`.
+Artifacts:
 
-| Workers | Wall seconds | Speedup vs serial | Claims | Schema valid | Failed segments |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 1422.52 | 1.000x | 506 | 100% | 0 |
-| 2 | 1432.88 | 0.993x | 506 | 100% | 0 |
-| 4 | 1419.48 | 1.002x | 506 | 100% | 0 |
-| 8 | 1429.47 | 0.995x | 506 | 100% | 0 |
+- N=1/2/4 on matching slot counts:
+  `.scratch/benchmarks/extraction-backend/rfc0023-slots4-short/20260508T144958Z.rfc0023-ikllama-slots4-slice20-concurrency-sweep.cefa85af/sweep.json`
+- N=8 on 8 slots:
+  `.scratch/benchmarks/extraction-backend/rfc0023-slots8-single/20260508T152821Z.rfc0023-ikllama-slots8-slice20-workers-8.7810aa04/run.json`
+
+| Client workers / server slots | Wall seconds | Speedup vs 1/1 | Claims | Schema valid | Failed segments | p95 seconds |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 / 1 | 546.90 | 1.00x | 83 | 100% | 0 | 77.35 |
+| 2 / 2 | 226.44 | 2.42x | 68 | 100% | 0 | 48.04 |
+| 4 / 4 | 190.84 | 2.87x | 61 | 100% | 0 | 81.92 |
+| 8 / 8 | 522.19 | 1.05x | 27 | 100% | 0 | 424.34 |
 
 Findings:
 
-1. Correctness gates passed at all tested worker counts: 100% segment
-   completion, 506 claims, 100% schema-valid extraction rows, and no failed
-   segments.
-2. The Phase 1A speed gate failed. Best measured throughput was at 4 workers,
-   but only by 1.002x over serial, far below the required 1.5x.
-3. Request-level concurrency against this single local endpoint appears
-   backend-saturated rather than dispatcher-limited. Per-segment latency rose
-   with worker count while aggregate throughput stayed effectively flat.
-4. The production consequence is conservative: serial extraction remains the
-   default, the concurrent driver remains opt-in, and Phase 1B is not promoted
-   for single-endpoint production throughput. The same dispatcher and DB lease
-   mechanism remain useful prerequisites for Phase 2 multi-endpoint dispatch.
+1. The corrected slot-aware sweep shows real speedup through 4-way
+   concurrency on the local endpoint. The best measured 20-slice wall-clock
+   was 190.84s at 4 client workers against 4 server slots.
+2. The 8-slot configuration loaded and ran with flat GPU memory just under
+   23 GiB, but throughput regressed sharply and tail latency widened. It is
+   not the operational setting for this model/server combination.
+3. Claim counts vary materially on the 20-slice, so this short sweep is a
+   throughput/configuration finding, not a final extraction-quality gate. The
+   100-slice quality gate should be rerun only after the server configuration
+   is fixed.
+4. The local service configuration selected from this sweep is
+   `--parallel 4 --ctx-size 131072 --metrics`, yielding four 32,768-token
+   slots. Production extraction should use client concurrency 4 for this
+   single endpoint unless a larger same-slice benchmark contradicts it.
 ## Risks And Mitigations
 **Risk: `ik_llama` serializes requests with no batching, Phase 1 yields no
 throughput gain.**
@@ -270,9 +281,9 @@ Mitigation: Phase 1C is an explicit sustained-run validation step before
 production rollout, not just a single benchmark.
 ## Open Questions
 1. Does `ik_llama` benefit from request-level concurrency? **Answered for
-   the 2026-05-08 local single-endpoint configuration: no material speedup
-   was observed through N=8. Revisit only after backend/server configuration
-   changes or when multiple endpoints are available.**
+   the 2026-05-08 local single-endpoint configuration: yes, when server slots
+   are configured to match client concurrency. Four client workers against
+   four 32k-token slots produced the best short-slice result.**
 2. What is the cost of the pre-flight idempotency check at scale? Likely
    negligible (single indexed lookup per segment), but should be measured on
    the full corpus before Phase 1B production rollout.
@@ -289,8 +300,9 @@ distribution, claim count, schema-validity for each. Output a comparable
 findings document.
 **Phase 1B** (~1 day, conditional): If Phase 1A shows throughput improvement
 at N>1 with no quality regression, add the production code path with the
-optimal N. Gate behind a feature flag. The 2026-05-08 Phase 1A result did not
-meet the speed gate, so single-endpoint Phase 1B remains deferred.
+optimal N. Gate behind a feature flag. The corrected 2026-05-08 short-slice
+result selects 4 workers against the 4-slot local service, pending a full
+100-slice quality/throughput rerun.
 **Phase 1C** (~1 day): Sustained-run validation on proximal at the production
 worker count. Watch GPU temps, memory pressure, and stability over a 4-8
 hour run. Confirm no thermal or queue-depth pathologies.

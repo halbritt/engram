@@ -29,6 +29,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Implemented RFC 0014 (Ops Home) and RFC 0017 (Parts 2/3).
 - Implemented RFC 0007: Artifact ID and subref model.
 - Tracking RFC implementation status in index.
+- Configured the local `ik_llama` user systemd service for the measured
+  extraction sweet spot: `--parallel 4 --ctx-size 131072 --metrics`, yielding
+  four 32,768-token server slots for the Qwen3.6-35B-A3B-IQ4_XS local model.
+- Recorded corrected RFC 0023 Phase 1A benchmark findings. The initial
+  100-slice run was performed against a single-slot server and is retained only
+  as dispatcher/idempotency stress evidence, not as a speed conclusion.
+- Added the corrected 20-slice slot-aware benchmark comparison: 1 worker / 1
+  slot = 546.90s, 2 / 2 = 226.44s, 4 / 4 = 190.84s, and 8 / 8 = 522.19s. The
+  selected local setting is 4 workers against 4 server slots, pending a
+  corrected 100-slice confirmation run.
 
 ### Fixed
 - Hardened extraction benchmark reporting.
