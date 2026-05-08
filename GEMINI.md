@@ -18,6 +18,7 @@ For detailed project context, follow the reading order and guidelines establishe
 - **Tooling:** Utilize the `Makefile` targets for installation, migrations, testing, and pipeline execution.
 - **Testing:** Always run `make test` or `make test-docker` to validate changes.
 - **Schema:** Use `make schema-docs` to update schema documentation; do not edit manually.
+- **Changelog:** Always update `CHANGELOG.md` for notable changes.
 
 ## Multi-Agent & Review Process
 

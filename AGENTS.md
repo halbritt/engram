@@ -50,6 +50,7 @@ Database migrations live under `migrations`.
 
 - Keep changes phase-aligned with BUILD_PHASES.md and ROADMAP.md.
 - Update DECISION_LOG.md when making architectural decisions.
+- Update CHANGELOG.md for all notable changes.
 - Add or update tests for behavior changes.
 - Avoid broad refactors unless needed for the requested change.
 - Do not rewrite generated schema docs by hand; use `make schema-docs`.
