@@ -46,13 +46,27 @@ below. A future RFC will land an interactive REPL or a web surface.
 
 ## Prerequisites
 
+All commands in this guide run from the **engram repo root** (the directory
+that contains `Makefile`, `pyproject.toml`, and `src/engram/`). If you are
+starting cold:
+
 ```sh
-make install           # local venv
-make migrate           # or make migrate-docker — applies migration 010
+git clone https://github.com/halbritt/engram.git
+cd engram
+make install          # creates .venv, installs the engram package editable
+make migrate          # local Postgres; or `make migrate-docker` for the compose Postgres
 ```
 
+`make install` writes `.venv/.installed` and exposes the CLI as
+`.venv/bin/engram`. Either activate the venv (`source .venv/bin/activate`)
+or call the binary directly (`.venv/bin/engram phase3 interview …`); the
+plain `engram` examples below assume the venv is active.
+
 You also need a populated Phase 3 belief set. If `current_beliefs` is empty,
-`start` returns zero sampled targets and exits cleanly.
+`start` returns zero sampled targets and exits cleanly. To get there from
+empty: ingest at least one export (`make phase1-ingest-chatgpt PATH=...`),
+then `make phase2-run` and `make phase3-run`. See the README's Operator
+Quick Start for the full bootstrap.
 
 ## Your first session
 
