@@ -1665,37 +1665,59 @@ def _fetch_target_display(conn, target) -> dict[str, Any]:  # type: ignore[no-un
     if target.target_kind == "claim":
         row = conn.execute(
             """
-            SELECT subject_text, predicate, object_text, object_json,
-                   cardinality(evidence_message_ids)
-            FROM claims WHERE id = %s
+            SELECT
+                c.subject_text,
+                c.predicate,
+                c.object_text,
+                c.object_json,
+                cardinality(c.evidence_message_ids),
+                (SELECT MIN(m.created_at) FROM messages m
+                 WHERE m.id = ANY(c.evidence_message_ids)) AS evidence_min,
+                (SELECT MAX(m.created_at) FROM messages m
+                 WHERE m.id = ANY(c.evidence_message_ids)) AS evidence_max
+            FROM claims c WHERE c.id = %s
             """,
             (target.target_id,),
         ).fetchone()
         if row is None:
             return {"summary": "<missing claim row>"}
-        subj, pred, obj_text, obj_json, ev_count = row
+        subj, pred, obj_text, obj_json, ev_count, ev_min, ev_max = row
         obj = obj_text if obj_text is not None else (str(obj_json) if obj_json else "")
         return {
             "summary": f'{subj} -[{pred}]-> {obj}',
             "evidence_count": int(ev_count),
+            "evidence_min": ev_min,
+            "evidence_max": ev_max,
             "valid_from": None,
             "valid_to": None,
         }
     row = conn.execute(
         """
-        SELECT subject_text, predicate, object_text, object_json,
-               valid_from, valid_to, cardinality(evidence_ids)
-        FROM beliefs WHERE id = %s
+        SELECT
+            b.subject_text,
+            b.predicate,
+            b.object_text,
+            b.object_json,
+            b.valid_from,
+            b.valid_to,
+            cardinality(b.evidence_ids),
+            (SELECT MIN(m.created_at) FROM messages m
+             WHERE m.id = ANY(b.evidence_ids)) AS evidence_min,
+            (SELECT MAX(m.created_at) FROM messages m
+             WHERE m.id = ANY(b.evidence_ids)) AS evidence_max
+        FROM beliefs b WHERE b.id = %s
         """,
         (target.target_id,),
     ).fetchone()
     if row is None:
         return {"summary": "<missing belief row>"}
-    subj, pred, obj_text, obj_json, vfrom, vto, ev_count = row
+    subj, pred, obj_text, obj_json, vfrom, vto, ev_count, ev_min, ev_max = row
     obj = obj_text if obj_text is not None else (str(obj_json) if obj_json else "")
     return {
         "summary": f'{subj} -[{pred}]-> {obj}',
         "evidence_count": int(ev_count),
+        "evidence_min": ev_min,
+        "evidence_max": ev_max,
         "valid_from": vfrom,
         "valid_to": vto,
     }
@@ -1798,15 +1820,25 @@ def run_phase3_interview_start(args) -> int:  # type: ignore[no-untyped-def]
                 print(header)
                 print(f"  {display.get('summary', '')}")
                 if display.get("evidence_count") is not None:
-                    span = ""
+                    parts: list[str] = []
+                    ev_min = display.get("evidence_min")
+                    ev_max = display.get("evidence_max")
+                    if ev_min and ev_max:
+                        if ev_min.date() == ev_max.date():
+                            parts.append(f"evidence dates: {ev_min.date()}")
+                        else:
+                            parts.append(
+                                f"evidence dates: {ev_min.date()}..{ev_max.date()}"
+                            )
                     if display.get("valid_from") and display.get("valid_to"):
-                        span = (
-                            f", valid {display['valid_from'].date()}"
+                        parts.append(
+                            f"valid {display['valid_from'].date()}"
                             f"..{display['valid_to'].date()}"
                         )
                     elif display.get("valid_from"):
-                        span = f", valid_from {display['valid_from'].date()}"
-                    print(f"  evidence: {display['evidence_count']} row(s){span}")
+                        parts.append(f"valid_from {display['valid_from'].date()}")
+                    suffix = (", " + ", ".join(parts)) if parts else ""
+                    print(f"  evidence: {display['evidence_count']} row(s){suffix}")
                 question = (
                     "Q: Is this an accurate paraphrase at the time of the cited evidence?"
                     if target.target_kind == "claim"
