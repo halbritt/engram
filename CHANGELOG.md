@@ -14,8 +14,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - RFC 0023: Concurrent extraction pipeline via `concurrent.futures`.
 - RFC 0022: Server binary with HTTP API and MCP interface.
 - RFC 0021: Gold-set interview curation.
-- RFC 0021 implementation: migration 010_gold_labels.sql, src/engram/interview module, engram phase3 interview CLI subcommands, prompts/interview/ templates, and focused tests.
-- Operator guide for the gold-set interview surface at `docs/howto/gold-set-interview.md`; README points at the guide instead of inlining the example commands.
+- RFC 0021 implementation: migration 010_gold_labels.sql
+  (`gold_label_sessions`, `gold_labels`, `gold_label_strata_vocabulary`,
+  `gold_label_verdict_vocabulary`, three named triggers
+  `fn_gold_labels_append_only` / `fn_gold_labels_validate_target` /
+  `fn_gold_labels_carry_privacy_tier`, `current_gold_label` view),
+  `src/engram/interview/` Python module (errors, storage, sampler with
+  `ENGRAM_GOLD_COOLDOWN_*` env vars, agent), seven phase-scoped CLI
+  subcommands under `engram phase3 interview`, seven `phase3-interview-*`
+  Make targets, two versioned `prompts/interview/{claim,belief}_v1.md`
+  templates per RFC 0017, and 32 new tests covering CLI dispatch, sampler
+  determinism, append-only / parent-validation / privacy-tier triggers,
+  and migration 010 application.
+- Striatum scaffolds at `striatum/rfc-0021-gold-set-review/` (multi-agent
+  review run: claude / codex / gemini reviewers + ledger + claude
+  synthesis + codex final review) and
+  `striatum/rfc-0021-gold-set-implementation/` (implement → verify →
+  final review code-change run).
+- Run artifacts at `docs/reviews/rfc0021/` (3 reviews, ledger, synthesis,
+  final review, evidence, run summary, coordinator-continue decision)
+  and `docs/reviews/rfc0021-gold-set-implementation/` (handoff,
+  verification report, final review, evidence, run summary).
+- Operator guide for the gold-set interview surface at
+  `docs/howto/gold-set-interview.md` (six-verdict glossary, cooldown
+  defaults table + env vars, fail-closed Tier 1 export ceiling, v1
+  Python harness for verdict capture until the interactive loop lands,
+  trigger-error troubleshooting, cold-start clone+install
+  prerequisites). README points at the guide instead of inlining the
+  example commands.
 - RFC 0018: Evidence-to-claim audit schema.
 - Phase 4 spec review scaffolding and smoke build.
 - RFC 0024 Phase 4 Tier 0-2 Striatum gate scaffold.
@@ -40,12 +66,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   commands.
 - Accepted RFC 0021 (gold-set interview curation) after Striatum-orchestrated
   multi-agent review (claude/codex/gemini reviewers + ledger + synthesis +
-  final review). Synthesis-driven RFC revision incorporated 23 deltas
-  (typed version triple, append-only and parent-validation triggers,
+  final review; root-review needs_revision verdicts resolved through a
+  recorded coordinator continue-decision). The synthesis recommended
+  revise-rfc with 24 ledger findings (3 blocking, 15 major, 5 minor, 1
+  nit); 23 accepted deltas were applied to the RFC text (typed claim and
+  belief version triples, append-only and parent-validation triggers,
   `gold_label_sessions` parent table, fail-closed Tier 1 export ceiling,
   phase-scoped CLI under `engram phase3 interview`, opt-in active-learning
-  bias). Recorded as **D079**; BUILD_PHASES gains a Phase 3 follow-on
-  section.
+  bias, per-stability-class cooldown defaults, separated `evidence_excerpt`
+  for redaction, six-verdict vocabulary table, typed strata columns).
+  Recorded as **D079**; BUILD_PHASES gains a `PHASE-0003-FOLLOWON`
+  index entry and a Phase 3 follow-on section. Migration filename
+  renumbered from `008` to `010_gold_labels.sql`. Implementation final
+  review and verification both returned `accept_with_findings`; the
+  deferred `fn_gold_labels_block_synthetic_audit_input` D044-foothold
+  trigger and the (since-fixed) missing
+  `phase3-interview-enable-active-learning` Make target are documented
+  as the only residual gaps.
 - Documented corrected RFC 0023 slot-aware extraction benchmark findings:
   1 worker / 1 server slot = 546.90s, 2 / 2 = 226.44s, 4 / 4 = 190.84s, and
   8 / 8 = 522.19s on the 20-segment slice.
@@ -60,6 +97,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Corrected the RFC 0023 Phase 1A speed conclusion: the initial 100-slice run
   used a single-slot `ik_llama` server and is retained only as
   dispatcher/idempotency stress evidence, not as a concurrency speed result.
+- Added the `phase3-interview-enable-active-learning` Make target,
+  closing finding A010 from the RFC 0021 implementation final review.
+- Clarified the gold-set interview guide's prerequisites: stated that
+  all commands run from the engram repo root, added the cold-start
+  `git clone` → `cd engram` → `make install` → `make migrate` sequence,
+  and explained the `.venv/bin/engram` vs activated-venv invocation.
 
 ## [striatum-extraction-2026-05-07] - 2026-05-07
 
