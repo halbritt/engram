@@ -8,7 +8,7 @@ SEGMENTER_MODEL ?=
 SEGMENTER_MODEL_ENV := $(if $(SEGMENTER_MODEL),ENGRAM_SEGMENTER_MODEL="$(SEGMENTER_MODEL)",)
 STRIATUM_REPO ?= $(HOME)/git/striatum
 
-.PHONY: install db-up db-down wait-db migrate migrate-docker phase1-ingest-chatgpt phase1-ingest-chatgpt-docker phase1-ingest-claude phase1-ingest-claude-docker phase1-ingest-gemini phase1-ingest-gemini-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker phase2-segment phase2-segment-docker phase2-embed phase2-embed-docker phase2-run phase2-run-docker phase2-run-isolated segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker phase3-extract phase3-extract-docker phase3-consolidate phase3-consolidate-docker phase3-run phase3-run-docker phase4-refresh phase4-build-entities phase4-smoke phase4-smoke-docker test test-db test-docker test-db-docker schema-docs check-refs lint format typecheck install-striatum striatum-init phase4-validate phase4-prepare phase4-status rfc25-validate rfc25-prepare rfc25-status rfc25-impl-validate rfc25-impl-prepare rfc25-impl-status
+.PHONY: install db-up db-down wait-db migrate migrate-docker phase1-ingest-chatgpt phase1-ingest-chatgpt-docker phase1-ingest-claude phase1-ingest-claude-docker phase1-ingest-gemini phase1-ingest-gemini-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker phase2-segment phase2-segment-docker phase2-embed phase2-embed-docker phase2-run phase2-run-docker phase2-run-isolated segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker phase3-extract phase3-extract-docker phase3-consolidate phase3-consolidate-docker phase3-run phase3-run-docker phase4-refresh phase4-build-entities phase4-smoke phase4-smoke-docker test test-db test-docker test-db-docker schema-docs check-refs lint format typecheck install-striatum striatum-init phase4-validate phase4-prepare phase4-status phase4-gate-validate phase4-gate-prepare phase4-gate-status phase4-gate-dashboard rfc25-validate rfc25-prepare rfc25-status rfc25-impl-validate rfc25-impl-prepare rfc25-impl-status
 
 install: .venv/.installed
 
@@ -232,6 +232,18 @@ phase4-prepare: install-striatum
 
 phase4-status: install-striatum
 	$(STRIATUM) --repo . status
+
+phase4-gate-validate: install-striatum
+	$(STRIATUM) --repo . workflow validate striatum/phase-4-tiered-gate/workflow.json
+
+phase4-gate-prepare: install-striatum
+	$(STRIATUM) --repo . run prepare --workflow striatum/phase-4-tiered-gate/workflow.json
+
+phase4-gate-status: install-striatum
+	$(STRIATUM) --repo . status
+
+phase4-gate-dashboard: install-striatum
+	$(STRIATUM) --repo . dashboard
 
 rfc25-validate: install-striatum
 	$(STRIATUM) --repo . workflow validate striatum/rfc-0025-command-names-review/workflow.json
