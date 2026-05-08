@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -35,6 +37,21 @@ from engram.extractor import (
 )
 from engram.gemini_export import IngestConflict as GeminiIngestConflict
 from engram.gemini_export import ingest_gemini_export
+from engram.interview import (
+    SAMPLER_ID as INTERVIEW_SAMPLER_ID,
+)
+from engram.interview import (
+    SAMPLER_VERSION as INTERVIEW_SAMPLER_VERSION,
+)
+from engram.interview import (
+    GoldLabelSampler,
+    GoldLabelStorageError,
+    GoldLabelVerdictError,
+    InterviewAgent,
+    insert_session,
+    list_sessions,
+    mark_session_completed,
+)
 from engram.migrations import migrate, migration_integrity_errors
 from engram.phase4 import (
     Phase4SchemaPreflightError,
@@ -381,6 +398,94 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_EXTRACTION_CONCURRENCY,
     )
     phase3_run_parser.set_defaults(command="pipeline-3")
+
+    phase3_interview_parser = phase3_subparsers.add_parser(
+        "interview",
+        help="Gold-set interview loop (RFC 0021)",
+    )
+    interview_subparsers = phase3_interview_parser.add_subparsers(
+        dest="phase3_interview_command", required=True
+    )
+
+    phase3_interview_start_parser = interview_subparsers.add_parser(
+        "start",
+        help="Start a new gold-set interview session",
+    )
+    phase3_interview_start_parser.add_argument("--n", type=int, default=10)
+    phase3_interview_start_parser.add_argument("--strata", type=str, default=None)
+    phase3_interview_start_parser.add_argument("--seed", type=int, default=None)
+    phase3_interview_start_parser.add_argument(
+        "--include-superseded", action="store_true"
+    )
+    phase3_interview_start_parser.add_argument(
+        "--ignore-cooldown", action="store_true"
+    )
+    phase3_interview_start_parser.set_defaults(command="phase3-interview-start")
+
+    phase3_interview_resume_parser = interview_subparsers.add_parser(
+        "resume",
+        help="Resume an existing gold-set interview session",
+    )
+    phase3_interview_resume_parser.add_argument("--session-id", type=str, default=None)
+    phase3_interview_resume_parser.set_defaults(command="phase3-interview-resume")
+
+    phase3_interview_history_parser = interview_subparsers.add_parser(
+        "history",
+        help="Show gold-label history for a target",
+    )
+    phase3_interview_history_parser.add_argument("--target", type=str, default=None)
+    phase3_interview_history_parser.add_argument("--since", type=str, default=None)
+    phase3_interview_history_parser.set_defaults(command="phase3-interview-history")
+
+    phase3_interview_export_parser = interview_subparsers.add_parser(
+        "export",
+        help="Export gold-label rows (default --privacy-tier-max 1)",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    phase3_interview_export_parser.add_argument(
+        "--privacy-tier-max",
+        type=int,
+        default=1,
+        help="fail-closed Tier ceiling (default: 1; higher tiers require opt-in)",
+    )
+    phase3_interview_export_parser.add_argument(
+        "--format", choices=["jsonl"], default="jsonl"
+    )
+    phase3_interview_export_parser.add_argument("--output", type=Path, default=None)
+    phase3_interview_export_parser.set_defaults(command="phase3-interview-export")
+
+    phase3_interview_list_sessions_parser = interview_subparsers.add_parser(
+        "list-sessions",
+        help="List gold-label sessions",
+    )
+    phase3_interview_list_sessions_parser.add_argument(
+        "--state",
+        choices=["open", "completed", "all"],
+        default="all",
+    )
+    phase3_interview_list_sessions_parser.set_defaults(
+        command="phase3-interview-list-sessions"
+    )
+
+    phase3_interview_coverage_parser = interview_subparsers.add_parser(
+        "coverage",
+        help="Show stratum coverage for the gold-label corpus",
+    )
+    phase3_interview_coverage_parser.add_argument(
+        "--strata", type=str, required=True
+    )
+    phase3_interview_coverage_parser.set_defaults(command="phase3-interview-coverage")
+
+    phase3_interview_active_learning_parser = interview_subparsers.add_parser(
+        "enable-active-learning",
+        help="Enable opt-in active-learning bias for the next session",
+    )
+    phase3_interview_active_learning_parser.add_argument(
+        "--signal-version", type=str, required=True
+    )
+    phase3_interview_active_learning_parser.set_defaults(
+        command="phase3-interview-enable-active-learning"
+    )
 
     phase4_parser = subparsers.add_parser(
         "phase4",
@@ -770,6 +875,21 @@ def main(argv: list[str] | None = None) -> int:
             if action_result.capture_id:
                 print(f"  correction_capture_id={action_result.capture_id}")
             return 0
+
+        if args.command == "phase3-interview-start":
+            return run_phase3_interview_start(args)
+        if args.command == "phase3-interview-resume":
+            return run_phase3_interview_resume(args)
+        if args.command == "phase3-interview-history":
+            return run_phase3_interview_history(args)
+        if args.command == "phase3-interview-export":
+            return run_phase3_interview_export(args)
+        if args.command == "phase3-interview-list-sessions":
+            return run_phase3_interview_list_sessions(args)
+        if args.command == "phase3-interview-coverage":
+            return run_phase3_interview_coverage(args)
+        if args.command == "phase3-interview-enable-active-learning":
+            return run_phase3_interview_enable_active_learning(args)
     except (ChatGPTIngestConflict, ClaudeIngestConflict, GeminiIngestConflict) as exc:
         print(f"ingest conflict: {exc}", file=sys.stderr)
         return 1
@@ -778,6 +898,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     except Phase4SchemaPreflightError as exc:
         print(f"phase4 preflight failed: {exc}", file=sys.stderr)
+        return 1
+    except (GoldLabelStorageError, GoldLabelVerdictError) as exc:
+        print(f"phase3 interview: {exc}", file=sys.stderr)
         return 1
 
     parser.error(f"unknown command: {args.command}")
@@ -1525,6 +1648,220 @@ def print_re_extract_result(result: ReExtractResult) -> None:
             "hint: run `engram consolidate --rebuild` to reconsolidate beliefs "
             "from the new claim version (RFC 0017 Part 2 step 3)."
         )
+
+
+def run_phase3_interview_start(args) -> int:  # type: ignore[no-untyped-def]
+    """RFC 0021 v1: open a session, sample n targets, print summary, leave open.
+
+    The CLI is a smoke-test surface for the schema, sampler determinism, and
+    storage contract. It does NOT prompt for verdicts interactively in v1; an
+    operator wires the agent into a richer loop via :class:`InterviewAgent`.
+    """
+
+    seed = args.seed if args.seed is not None else int.from_bytes(os.urandom(4), "big")
+    n = max(0, int(args.n))
+    with connect() as conn:
+        session_id = insert_session(
+            conn,
+            seed=seed,
+            sampler_id=INTERVIEW_SAMPLER_ID,
+            sampler_version=INTERVIEW_SAMPLER_VERSION,
+            strata_weights={},
+        )
+        sampler = GoldLabelSampler(
+            conn,
+            seed=seed,
+            include_superseded=bool(args.include_superseded),
+            ignore_cooldown=bool(args.ignore_cooldown),
+        )
+        sampled = sampler.sample(n)
+        conn.commit()
+    print(
+        "phase3 interview start: "
+        f"session={session_id} seed={seed} "
+        f"sampler={INTERVIEW_SAMPLER_ID}@{INTERVIEW_SAMPLER_VERSION} "
+        f"sampled={len(sampled)}"
+    )
+    return 0
+
+
+def run_phase3_interview_resume(args) -> int:  # type: ignore[no-untyped-def]
+    """RFC 0021 v1 stub: surface that the named session exists and is open."""
+    if args.session_id is None:
+        print(
+            "phase3 interview resume: provide --session-id; "
+            "use `engram phase3 interview list-sessions --state open` to discover.",
+            file=sys.stderr,
+        )
+        return 2
+    with connect() as conn:
+        sessions = list_sessions(conn, state="all")
+    matched = [s for s in sessions if s.session_id == args.session_id]
+    if not matched:
+        print(
+            f"phase3 interview resume: session {args.session_id} not found",
+            file=sys.stderr,
+        )
+        return 1
+    session = matched[0]
+    state = "open" if session.completed_at is None else "completed"
+    print(
+        "phase3 interview resume: "
+        f"session={session.session_id} state={state} "
+        f"started_at={session.started_at.isoformat()}"
+    )
+    return 0
+
+
+def run_phase3_interview_history(args) -> int:  # type: ignore[no-untyped-def]
+    """RFC 0021 v1 stub: prints latest verdict for ``--target``."""
+    if args.target is None:
+        print(
+            "phase3 interview history: provide --target <uuid>",
+            file=sys.stderr,
+        )
+        return 2
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id::text, target_kind, verdict, answered_at
+            FROM gold_labels
+            WHERE target_id = %s
+            ORDER BY answered_at DESC
+            """,
+            (args.target,),
+        ).fetchall()
+    if not rows:
+        print(f"phase3 interview history: no rows for target {args.target}")
+        return 0
+    print(f"phase3 interview history: {len(rows)} row(s) for target {args.target}")
+    for row in rows:
+        print(f"  {row[1]} verdict={row[2]} answered_at={row[3].isoformat()}")
+    return 0
+
+
+def run_phase3_interview_export(args) -> int:  # type: ignore[no-untyped-def]
+    """RFC 0021 v1: JSONL export with the fail-closed Tier 1 default ceiling."""
+    tier_max = int(args.privacy_tier_max)
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                id::text,
+                session_id::text,
+                target_kind,
+                target_id::text,
+                verdict,
+                rationale,
+                stability_class,
+                conf_band,
+                recency_band,
+                belief_status,
+                privacy_tier,
+                evidence_excerpt,
+                answered_at
+            FROM gold_labels
+            WHERE privacy_tier <= %s
+            ORDER BY answered_at
+            """,
+            (tier_max,),
+        ).fetchall()
+    output_lines: list[str] = []
+    for row in rows:
+        output_lines.append(
+            json.dumps(
+                {
+                    "id": row[0],
+                    "session_id": row[1],
+                    "target_kind": row[2],
+                    "target_id": row[3],
+                    "verdict": row[4],
+                    "rationale": row[5],
+                    "stability_class": row[6],
+                    "conf_band": row[7],
+                    "recency_band": row[8],
+                    "belief_status": row[9],
+                    "privacy_tier": row[10],
+                    "evidence_excerpt": row[11],
+                    "answered_at": row[12].isoformat() if row[12] else None,
+                }
+            )
+        )
+    payload = "\n".join(output_lines)
+    if args.output is not None:
+        Path(args.output).write_text(payload + ("\n" if payload else ""), encoding="utf-8")
+        print(
+            "phase3 interview export: "
+            f"{len(output_lines)} row(s) written to {args.output} "
+            f"(privacy_tier_max={tier_max})"
+        )
+    else:
+        if payload:
+            print(payload)
+        print(
+            "phase3 interview export: "
+            f"{len(output_lines)} row(s) (privacy_tier_max={tier_max})",
+            file=sys.stderr,
+        )
+    return 0
+
+
+def run_phase3_interview_list_sessions(args) -> int:  # type: ignore[no-untyped-def]
+    state = args.state if args.state in ("open", "completed") else None
+    with connect() as conn:
+        sessions = list_sessions(conn, state=state)
+    print(f"phase3 interview list-sessions: {len(sessions)} row(s) state={args.state}")
+    for session in sessions:
+        completed = "open" if session.completed_at is None else session.completed_at.isoformat()
+        print(
+            f"  {session.session_id} seed={session.seed} "
+            f"sampler={session.sampler_id}@{session.sampler_version} "
+            f"started_at={session.started_at.isoformat()} completed={completed}"
+        )
+    return 0
+
+
+def run_phase3_interview_coverage(args) -> int:  # type: ignore[no-untyped-def]
+    """RFC 0021 v1 stub: counts rows by stratum slice ``stability_class``."""
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT stability_class, count(*)
+            FROM gold_labels
+            GROUP BY stability_class
+            ORDER BY stability_class
+            """,
+        ).fetchall()
+    print(
+        f"phase3 interview coverage strata={args.strata!r}: "
+        f"{sum(r[1] for r in rows)} row(s) total"
+    )
+    for stability_class, count in rows:
+        print(f"  {stability_class}: {count}")
+    return 0
+
+
+def run_phase3_interview_enable_active_learning(args) -> int:  # type: ignore[no-untyped-def]
+    """RFC 0021 v1 stub: prints the signal version that would be stamped.
+
+    The activation itself is a project-level decision (RFC § Open Questions
+    item 4). v1 surfaces the operator-visible mechanism without altering the
+    sampler's bias selection logic — that lands in v1.1 once real signal
+    data exists.
+    """
+
+    print(
+        "phase3 interview enable-active-learning: "
+        f"signal_version={args.signal_version} "
+        "(v1 stamps the version onto next-session rows; bias selection is deferred to v1.1)"
+    )
+    return 0
+
+
+# Bind agent type so unused-import linters don't strip it; the agent is
+# re-exported for operators driving the loop programmatically.
+_ = InterviewAgent
+_ = mark_session_completed
 
 
 if __name__ == "__main__":

@@ -174,6 +174,19 @@ Useful targeted Phase 3 recovery commands:
 .venv/bin/python -m engram.cli phase3 consolidate --rebuild
 ```
 
+### Phase 3 follow-on: Gold-set interview (RFC 0021)
+
+`engram phase3 interview` drives an append-only gold-label authoring loop.
+Sessions live in `gold_label_sessions`; verdicts live in `gold_labels`. CLI
+v1 is a smoke-test surface; the operator-facing web UI is a later RFC.
+Export defaults to a fail-closed Tier 1 privacy ceiling.
+
+```sh
+engram phase3 interview start --n 10 --seed 4
+engram phase3 interview resume --session-id <id>
+engram phase3 interview export --privacy-tier-max 1 --output gold.jsonl
+```
+
 Generic `pipeline` targets intentionally fail closed with phase-scoped
 alternatives. Use Docker variants (`make phase2-segment-docker`,
 `make phase2-embed-docker`, `make phase2-run-docker`,

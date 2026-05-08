@@ -1,0 +1,300 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "rfc-0021-gold-set-implementation",
+  "workflow_version": "2026-05-08+accepted-rfc",
+  "name": "Engram RFC 0021 Gold-Set Interview Implementation",
+  "branch": {
+    "mode": "confirm",
+    "suggested_name": "engram/rfc0021-gold-set-implementation",
+    "allow_dirty": true
+  },
+  "coordinator": {
+    "role_id": "author",
+    "lane_id": "codex"
+  },
+  "lanes": {
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": [
+        "codex",
+        "exec",
+        "--model",
+        "gpt-5.5",
+        "-"
+      ],
+      "capabilities": [
+        "write",
+        "review"
+      ],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    }
+  },
+  "roles": {
+    "author": {
+      "definition_path": "striatum/rfc-0021-gold-set-implementation/roles/author.md"
+    },
+    "reviewer": {
+      "definition_path": "striatum/rfc-0021-gold-set-implementation/roles/reviewer.md"
+    }
+  },
+  "context_docs": [
+    {
+      "path": "AGENTS.md",
+      "required": true
+    },
+    {
+      "path": "README.md",
+      "required": true
+    },
+    {
+      "path": "HUMAN_REQUIREMENTS.md",
+      "required": true
+    },
+    {
+      "path": "DECISION_LOG.md",
+      "required": true
+    },
+    {
+      "path": "BUILD_PHASES.md",
+      "required": true
+    },
+    {
+      "path": "docs/rfcs/0021-gold-set-interview-curation.md",
+      "required": true
+    },
+    {
+      "path": "docs/rfcs/0011-phase-3-claims-beliefs.md",
+      "required": true
+    },
+    {
+      "path": "docs/rfcs/0017-extraction-prompt-versioning.md",
+      "required": true
+    },
+    {
+      "path": "docs/rfcs/0025-phase-scoped-command-names.md",
+      "required": true
+    },
+    {
+      "path": "docs/process/project-judgment.md",
+      "required": true
+    }
+  ],
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 1,
+    "require_disjoint_write_scopes": true
+  },
+  "jobs": [
+    {
+      "id": "implement_gold_set",
+      "type": "draft",
+      "title": "Implement RFC 0021 gold-set interview surface",
+      "role_id": "author",
+      "lane_id": "codex",
+      "objective": "Implement the accepted RFC 0021 gold-set interview curation in migration 010, the engram.interview Python module, the engram phase3 interview CLI, prompts/interview/ templates, Makefile, docs, and focused tests.",
+      "task_prompt": {
+        "path": "striatum/rfc-0021-gold-set-implementation/prompts/implement.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/rfcs/0021-gold-set-interview-curation.md",
+          "kind": "accepted_rfc"
+        },
+        {
+          "path": "docs/rfcs/0011-phase-3-claims-beliefs.md",
+          "kind": "upstream_rfc"
+        },
+        {
+          "path": "docs/rfcs/0017-extraction-prompt-versioning.md",
+          "kind": "upstream_rfc"
+        },
+        {
+          "path": "DECISION_LOG.md",
+          "kind": "decision_log"
+        },
+        {
+          "path": "BUILD_PHASES.md",
+          "kind": "phase_spec_root"
+        },
+        {
+          "path": "src/engram/cli.py",
+          "kind": "command_surface"
+        },
+        {
+          "path": "Makefile",
+          "kind": "command_surface"
+        },
+        {
+          "path": "tests/test_cli.py",
+          "kind": "test_surface"
+        },
+        {
+          "path": "migrations/006_claims_beliefs.sql",
+          "kind": "schema_baseline"
+        },
+        {
+          "path": "migrations/007_claim_audits.sql",
+          "kind": "schema_baseline"
+        },
+        {
+          "path": "migrations/009_phase4_entities_review.sql",
+          "kind": "schema_baseline"
+        }
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/",
+          "tests/",
+          "migrations/",
+          "prompts/interview/",
+          "Makefile",
+          "README.md",
+          "CHANGELOG.md",
+          "docs/reviews/rfc0021-gold-set-implementation/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "docs/rfcs/",
+          "BUILD_PHASES.md",
+          "DECISION_LOG.md",
+          "HUMAN_REQUIREMENTS.md"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "implementation_handoff",
+          "kind": "handoff",
+          "path": "docs/reviews/rfc0021-gold-set-implementation/IMPLEMENTATION_HANDOFF.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "verify_gold_set",
+      "type": "review",
+      "title": "Verify RFC 0021 gold-set implementation",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Run focused local verification for the RFC 0021 implementation: migration applies, CLI subcommands dispatch, append-only trigger raises P0001, fail-closed export ceiling, tests pass.",
+      "task_prompt": {
+        "path": "striatum/rfc-0021-gold-set-implementation/prompts/verify.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/reviews/rfc0021-gold-set-implementation/IMPLEMENTATION_HANDOFF.md",
+          "kind": "handoff"
+        },
+        {
+          "path": "docs/rfcs/0021-gold-set-interview-curation.md",
+          "kind": "accepted_rfc"
+        },
+        {
+          "path": "tests/test_cli.py",
+          "kind": "test_surface"
+        }
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/reviews/rfc0021-gold-set-implementation/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "src/engram/",
+          "tests/",
+          "migrations/",
+          "prompts/",
+          "Makefile",
+          "docs/rfcs/"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "verification_report",
+          "kind": "finding",
+          "path": "docs/reviews/rfc0021-gold-set-implementation/VERIFICATION_REPORT.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "final_review",
+      "type": "review",
+      "title": "Final review of RFC 0021 implementation",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Review the completed RFC 0021 gold-set implementation against the accepted RFC, D079 invariants, and the verification report.",
+      "task_prompt": {
+        "path": "striatum/rfc-0021-gold-set-implementation/prompts/final_review.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/reviews/rfc0021-gold-set-implementation/IMPLEMENTATION_HANDOFF.md",
+          "kind": "handoff"
+        },
+        {
+          "path": "docs/reviews/rfc0021-gold-set-implementation/VERIFICATION_REPORT.md",
+          "kind": "finding"
+        },
+        {
+          "path": "docs/rfcs/0021-gold-set-interview-curation.md",
+          "kind": "accepted_rfc"
+        }
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/reviews/rfc0021-gold-set-implementation/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "src/engram/",
+          "tests/",
+          "migrations/",
+          "prompts/",
+          "Makefile",
+          "docs/rfcs/"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "final_review",
+          "kind": "finding",
+          "path": "docs/reviews/rfc0021-gold-set-implementation/FINAL_REVIEW.md",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "implement_gold_set",
+      "to": "verify_gold_set",
+      "on": "completed"
+    },
+    {
+      "from": "verify_gold_set",
+      "to": "final_review",
+      "on": "completed"
+    }
+  ],
+  "cycles": [
+    {
+      "from": "final_review",
+      "to": "implement_gold_set",
+      "on_verdict": "needs_revision",
+      "max_iterations": 1
+    }
+  ]
+}

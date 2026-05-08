@@ -17,10 +17,15 @@ def conn():
     with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as admin:
         admin.execute(
             """
+            DROP VIEW IF EXISTS current_gold_label CASCADE;
             DROP VIEW IF EXISTS belief_review_queue CASCADE;
             DROP MATERIALIZED VIEW IF EXISTS current_beliefs CASCADE;
             DROP TABLE IF EXISTS
                 schema_migrations,
+                gold_labels,
+                gold_label_sessions,
+                gold_label_verdict_vocabulary,
+                gold_label_strata_vocabulary,
                 pinned_beliefs,
                 belief_review_actions,
                 entity_edges,
@@ -66,6 +71,9 @@ def conn():
         admin.execute("DROP FUNCTION IF EXISTS fn_projection_audits_validate_reasons() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS fn_projection_audits_append_only() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS fn_phase4_append_only() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_gold_labels_append_only() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_gold_labels_validate_target() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_gold_labels_carry_privacy_tier() CASCADE")
         admin.execute("DROP TYPE IF EXISTS source_kind CASCADE")
         admin.execute("DROP TYPE IF EXISTS capture_type CASCADE")
         admin.execute("DROP TYPE IF EXISTS consolidation_status CASCADE")

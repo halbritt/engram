@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - RFC 0023: Concurrent extraction pipeline via `concurrent.futures`.
 - RFC 0022: Server binary with HTTP API and MCP interface.
 - RFC 0021: Gold-set interview curation.
+- RFC 0021 implementation: migration 010_gold_labels.sql, src/engram/interview module, engram phase3 interview CLI subcommands, prompts/interview/ templates, and focused tests.
 - RFC 0018: Evidence-to-claim audit schema.
 - Phase 4 spec review scaffolding and smoke build.
 - RFC 0024 Phase 4 Tier 0-2 Striatum gate scaffold.
