@@ -62,6 +62,12 @@ make migrate          # local Postgres; or `make migrate-docker` for the compose
 or call the binary directly (`.venv/bin/engram phase3 interview …`); the
 plain `engram` examples below assume the venv is active.
 
+**If your database already exists** from prior Engram work, you still need
+to run `make migrate` after pulling — migration 010 may not have applied
+yet. The migration runner is idempotent and only applies missing files.
+The symptom of skipping it is `psycopg.errors.UndefinedTable: relation
+"gold_label_sessions" does not exist` on the first `start`.
+
 You also need a populated Phase 3 belief set. If `current_beliefs` is empty,
 `start` returns zero sampled targets and exits cleanly. To get there from
 empty: ingest at least one export (`make phase1-ingest-chatgpt PATH=...`),
@@ -262,6 +268,9 @@ remain attached to the version they were authored against.
   or `current_beliefs` needs a refresh. Run `engram phase4
   refresh-current-beliefs` if Phase 4 schema is in place; otherwise
   `start` legitimately samples zero rows.
+- **`UndefinedTable: relation "gold_label_sessions" does not exist`** —
+  migration 010 hasn't been applied to your database. Run `make migrate`
+  (or `make migrate-docker`); the runner is idempotent.
 
 ## Where to read next
 
