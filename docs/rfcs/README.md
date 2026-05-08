@@ -39,7 +39,7 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0018](0018-evidence-to-claim-audit-cascade.md) | accepted | partial | Evidence-to-claim audit cascade |
 | [0019](0019-extraction-batching-server.md) | proposal | partial | Continuous-batching inference server for Phase 3 claim extraction |
 | [0020](0020-segmentation-batching-server.md) | proposal | none | Continuous-batching inference server for Phase 2 segmentation |
-| [0021](0021-gold-set-interview-curation.md) | proposal | none | Gold-set interview curation |
+| [0021](0021-gold-set-interview-curation.md) | accepted | scaffolded | Gold-set interview curation |
 | [0022](0022-server-binary-api-mcp.md) | proposal | none | Server binary with HTTP API and MCP interface |
 | [0023](0023-concurrent-extraction-pipeline.md) | draft | none | Concurrent extraction pipeline via Python concurrent.futures |
 | [0024](0024-phase-4-pre-full-corpus-benchmark-gate.md) | accepted | partial | Phase 4 pre-full-corpus benchmark gate |

@@ -36,6 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Implemented the first RFC 0025 command-surface slice: phase-scoped CLI
   commands, phase-scoped Make targets, and fail-closed generic `pipeline`
   commands.
+- Accepted RFC 0021 (gold-set interview curation) after Striatum-orchestrated
+  multi-agent review (claude/codex/gemini reviewers + ledger + synthesis +
+  final review). Synthesis-driven RFC revision incorporated 23 deltas
+  (typed version triple, append-only and parent-validation triggers,
+  `gold_label_sessions` parent table, fail-closed Tier 1 export ceiling,
+  phase-scoped CLI under `engram phase3 interview`, opt-in active-learning
+  bias). Recorded as **D079**; BUILD_PHASES gains a Phase 3 follow-on
+  section.
 - Documented corrected RFC 0023 slot-aware extraction benchmark findings:
   1 worker / 1 server slot = 546.90s, 2 / 2 = 226.44s, 4 / 4 = 190.84s, and
   8 / 8 = 522.19s on the 20-segment slice.

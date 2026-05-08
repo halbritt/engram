@@ -15,6 +15,7 @@
 | PHASE-0002-PRE | Pre-Phase-2 adversarial gate (D026) | `phase-0002-pre` |
 | PHASE-0002 | Phase 2 — Segmentation + embeddings | `phase-0002` |
 | PHASE-0003 | Phase 3 — Claim extraction + bitemporal beliefs | `phase-0003` |
+| PHASE-0003-FOLLOWON | Phase 3 follow-on — Gold-set interview curation (RFC 0021) | `phase-0003-followon` |
 | PHASE-0004 | Phase 4 — Entity canonicalization + review surface | `phase-0004` |
 | PHASE-0005 | Phase 5 — `context_for` + serving path | `phase-0005` |
 | PHASE-SMOKE | Smoke gate (D016) — runs after Phase 5 | `phase-smoke` |
@@ -225,6 +226,43 @@ amended spec; the test suite there pins concrete acceptance tests.
 
 **Leaves for next phase:** beliefs ready for entity canonicalization
 and HITL review.
+
+<a id="phase-0003-followon"></a>
+## Phase 3 follow-on — Gold-set interview curation (RFC 0021)
+
+Continuous gold-label authoring substrate that samples from claims/beliefs
+and records verdicts in append-only `gold_labels` (migration
+`010_gold_labels.sql`) with a `gold_label_sessions` parent. Surfaced via
+`engram phase3 interview {start, resume, history, export, list-sessions,
+coverage, enable-active-learning}` (RFC 0025 / D078). Labels are advisory
+inputs to Step 9 evals; D044's no-auto-promote rule holds, and the loader
+must not call `engram.consolidator.transitions` (D052). Privacy tier
+defaults to fail-closed (Tier 1 export ceiling); higher-tier export
+requires explicit `--privacy-tier-max <N>` opt-in. Active-learning bias is
+opt-in via `enable-active-learning` and stamps
+`active_learning_signal_version` on every emitted row. Append-only
+enforced via `fn_gold_labels_append_only` `BEFORE UPDATE OR DELETE`
+trigger raising `P0001`. Polymorphic `(target_kind, target_id)` parent
+validation enforced via `fn_gold_labels_validate_target` `BEFORE INSERT`
+trigger.
+
+**Acceptance criteria (Tier 0 smoke):**
+
+- `gold_labels` insert/append/export round-trips against the consolidated
+  V1 corpus.
+- `current_gold_label` view returns the most recent verdict per
+  `(target_kind, target_id, version_triple)`, with verdict-rank tiebreak
+  and 3-reask cap per RFC 0021.
+- No UPDATE/DELETE permitted at any tier; trigger raises `P0001` on
+  attempt.
+- Export with default ceiling redacts Tier 2+ rows including
+  `evidence_excerpt`.
+- Sampler reads `current_beliefs` (D077) by default; `--include-superseded`
+  is the documented adversarial-sweep override.
+
+**Leaves for next phase:** gold-label data feeding Step 9 eval cycles per
+D016. Promotion of label clusters into formal `GOLD_SET_TEMPLATE` entries
+remains a downstream step (RFC 0021 § Open question 1).
 
 <a id="phase-0004"></a>
 ## Phase 4 — Entity canonicalization + review surface
