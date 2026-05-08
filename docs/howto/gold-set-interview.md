@@ -27,11 +27,9 @@ A `current_gold_label` view returns the latest verdict per
 
 ## What is wired today
 
-V1 is a smoke-test surface for the schema, sampler, and storage contracts.
-
 | Subcommand | Status |
 |------------|--------|
-| `start` | Opens a session, samples N targets, stamps the candidate-pool snapshot, prints a summary. **Does not interactively prompt for verdicts.** |
+| `start` | Opens a session, samples N targets, runs an interactive question-by-question loop on a tty, commits each verdict as it's answered, marks the session complete on exhaustion. `--non-interactive` skips the loop for scripts/tests. |
 | `resume` | Looks up a session by id and prints whether it is open. |
 | `history` | Prints the recorded verdicts for a `--target <uuid>`. |
 | `export` | JSONL dump of `gold_labels` filtered by `--privacy-tier-max` (default 1). |
@@ -39,10 +37,12 @@ V1 is a smoke-test surface for the schema, sampler, and storage contracts.
 | `coverage` | Counts rows by `stability_class`. |
 | `enable-active-learning` | Records the operator-visible at-scale signal version. |
 
-The interactive question-by-question loop is **not** built yet. To capture
-verdicts in v1 you wire a small Python script around
-`engram.interview.InterviewAgent.record_verdict()`; see the worked example
-below. A future RFC will land an interactive REPL or a web surface.
+Press `q` (or Ctrl-C) at any verdict prompt to save-and-quit; the session
+stays open and a resume hint is printed. Resume with
+`engram phase3 interview resume --session-id <uuid>` (currently a status
+check; running `start` with the same `--seed` re-samples the same target
+set against the same session if you commit each verdict yourself via the
+Python harness shown below).
 
 ## Prerequisites
 
@@ -76,24 +76,46 @@ Quick Start for the full bootstrap.
 
 ## Your first session
 
+On a tty, `start` runs the interactive loop directly:
+
 ```sh
 engram phase3 interview start --n 5 --seed 4
-# → phase3 interview start: session=<uuid> seed=4 sampler=stratified@stratified.v1.d079.initial sampled=5
-
-engram phase3 interview list-sessions --state open
-# → lists the open session you just created
-
-engram phase3 interview history --target <belief-or-claim-uuid>
-# → no rows yet (you have not recorded a verdict)
 ```
 
-`start` opens a session and pre-stamps the candidate pool. It does not
-write any `gold_labels` rows by itself; verdict capture is a separate step.
+Output (illustrative):
 
-## Capturing verdicts (v1 Python harness)
+```text
+session: <uuid>  seed: 4  sampler: stratified@stratified.v1.d079.initial  sampled: 5
+verdicts: t/f/stale/unsupported/unsure/skip   q to save and quit
 
-While the interactive CLI loop is deferred, `InterviewAgent` exposes the
-record path directly:
+[1/5] belief 7f3a…  stability=project_status  conf=0.87  conf_band=0.8-1.0  recency=<30d  status=accepted
+  user -[works_at]-> Acme Corp
+  evidence: 3 row(s), valid 2024-11-12..2025-08-04
+  Q: Is this currently true?
+verdict [t/f/stale/unsupported/unsure/skip] (q to save and quit) > t
+rationale (Enter to skip) > still here, role unchanged
+
+[2/5] ...
+```
+
+Each verdict commits as soon as you type it. Closing the terminal mid-loop,
+hitting Ctrl-C, or typing `q` all leave the session open with whatever
+verdicts you've already given preserved. The runner prints a resume hint
+on exit.
+
+```sh
+engram phase3 interview list-sessions --state open
+# → lists open sessions, including any you've abandoned mid-loop
+
+engram phase3 interview history --target <belief-or-claim-uuid>
+# → all verdicts on that target across sessions, newest first
+```
+
+## Driving the loop from your own code
+
+If you want to script the loop (e.g., feed verdicts from a file, or wrap
+the agent in a richer UI), `InterviewAgent` exposes the record path
+directly:
 
 ```python
 from engram.db import connect

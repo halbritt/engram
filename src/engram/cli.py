@@ -420,6 +420,11 @@ def main(argv: list[str] | None = None) -> int:
     phase3_interview_start_parser.add_argument(
         "--ignore-cooldown", action="store_true"
     )
+    phase3_interview_start_parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Open a session and sample targets without prompting; for scripts and tests.",
+    )
     phase3_interview_start_parser.set_defaults(command="phase3-interview-start")
 
     phase3_interview_resume_parser = interview_subparsers.add_parser(
@@ -1650,16 +1655,86 @@ def print_re_extract_result(result: ReExtractResult) -> None:
         )
 
 
-def run_phase3_interview_start(args) -> int:  # type: ignore[no-untyped-def]
-    """RFC 0021 v1: open a session, sample n targets, print summary, leave open.
+_VERDICT_PROMPT = "verdict [t/f/stale/unsupported/unsure/skip] (q to save and quit) > "
+_VERDICT_ALIAS = {"t": "true", "f": "false", "true": "true", "false": "false"}
+_VERDICT_VALID = {"true", "false", "stale", "unsupported", "unsure", "skip"}
 
-    The CLI is a smoke-test surface for the schema, sampler determinism, and
-    storage contract. It does NOT prompt for verdicts interactively in v1; an
-    operator wires the agent into a richer loop via :class:`InterviewAgent`.
+
+def _fetch_target_display(conn, target) -> dict[str, Any]:  # type: ignore[no-untyped-def]
+    """Pull a one-line operator-readable summary for a sampled target."""
+    if target.target_kind == "claim":
+        row = conn.execute(
+            """
+            SELECT subject_text, predicate, object_text, object_json,
+                   cardinality(evidence_message_ids)
+            FROM claims WHERE id = %s
+            """,
+            (target.target_id,),
+        ).fetchone()
+        if row is None:
+            return {"summary": "<missing claim row>"}
+        subj, pred, obj_text, obj_json, ev_count = row
+        obj = obj_text if obj_text is not None else (str(obj_json) if obj_json else "")
+        return {
+            "summary": f'{subj} -[{pred}]-> {obj}',
+            "evidence_count": int(ev_count),
+            "valid_from": None,
+            "valid_to": None,
+        }
+    row = conn.execute(
+        """
+        SELECT subject_text, predicate, object_text, object_json,
+               valid_from, valid_to, cardinality(evidence_ids)
+        FROM beliefs WHERE id = %s
+        """,
+        (target.target_id,),
+    ).fetchone()
+    if row is None:
+        return {"summary": "<missing belief row>"}
+    subj, pred, obj_text, obj_json, vfrom, vto, ev_count = row
+    obj = obj_text if obj_text is not None else (str(obj_json) if obj_json else "")
+    return {
+        "summary": f'{subj} -[{pred}]-> {obj}',
+        "evidence_count": int(ev_count),
+        "valid_from": vfrom,
+        "valid_to": vto,
+    }
+
+
+def _prompt_verdict(stdin_isatty: bool) -> str | None:
+    """Prompt until a valid verdict is entered. Returns None on EOF/q."""
+    while True:
+        try:
+            raw = input(_VERDICT_PROMPT).strip().lower()
+        except EOFError:
+            return None
+        if raw in {"q", "quit", "save-and-quit"}:
+            return None
+        canonical = _VERDICT_ALIAS.get(raw, raw)
+        if canonical in _VERDICT_VALID:
+            return canonical
+        print(f"  invalid verdict: {raw!r}; choose from {sorted(_VERDICT_VALID)} or 'q' to save and quit")
+
+
+def _prompt_rationale() -> str | None:
+    try:
+        raw = input("rationale (Enter to skip) > ").strip()
+    except EOFError:
+        return None
+    return raw or None
+
+
+def run_phase3_interview_start(args) -> int:  # type: ignore[no-untyped-def]
+    """RFC 0021 v1 interview loop: open a session, sample n targets, prompt the
+    operator one verdict at a time, commit each row as it's answered.
+
+    Pass ``--non-interactive`` to skip the prompt loop (used by tests and
+    scripts that wire their own UX on top of :class:`InterviewAgent`).
     """
 
     seed = args.seed if args.seed is not None else int.from_bytes(os.urandom(4), "big")
     n = max(0, int(args.n))
+    interactive = not bool(getattr(args, "non_interactive", False)) and sys.stdin.isatty()
     with connect() as conn:
         session_id = insert_session(
             conn,
@@ -1668,6 +1743,7 @@ def run_phase3_interview_start(args) -> int:  # type: ignore[no-untyped-def]
             sampler_version=INTERVIEW_SAMPLER_VERSION,
             strata_weights={},
         )
+        conn.commit()
         sampler = GoldLabelSampler(
             conn,
             seed=seed,
@@ -1675,14 +1751,101 @@ def run_phase3_interview_start(args) -> int:  # type: ignore[no-untyped-def]
             ignore_cooldown=bool(args.ignore_cooldown),
         )
         sampled = sampler.sample(n)
+
+        if not interactive:
+            print(
+                "phase3 interview start: "
+                f"session={session_id} seed={seed} "
+                f"sampler={INTERVIEW_SAMPLER_ID}@{INTERVIEW_SAMPLER_VERSION} "
+                f"sampled={len(sampled)} (non-interactive)"
+            )
+            return 0
+
+        if not sampled:
+            mark_session_completed(conn, session_id)
+            conn.commit()
+            print(
+                "phase3 interview start: no targets matched "
+                "(empty corpus, all on cooldown, or current_beliefs not refreshed). "
+                f"session={session_id} marked complete."
+            )
+            return 0
+
+        print(
+            f"session: {session_id}  seed: {seed}  "
+            f"sampler: {INTERVIEW_SAMPLER_ID}@{INTERVIEW_SAMPLER_VERSION}  "
+            f"sampled: {len(sampled)}"
+        )
+        print("verdicts: t/f/stale/unsupported/unsure/skip   q to save and quit\n")
+
+        agent = InterviewAgent(
+            conn,
+            sampler_id=INTERVIEW_SAMPLER_ID,
+            sampler_version=INTERVIEW_SAMPLER_VERSION,
+        )
+        counts: dict[str, int] = {}
+        answered = 0
+        try:
+            for idx, target in enumerate(sampled, start=1):
+                display = _fetch_target_display(conn, target)
+                header = (
+                    f"[{idx}/{len(sampled)}] {target.target_kind} {target.target_id}"
+                    f"  stability={target.stability_class}  conf={target.confidence:.2f}"
+                    f"  conf_band={target.conf_band}  recency={target.recency_band}"
+                )
+                if target.target_kind == "belief" and target.belief_status:
+                    header += f"  status={target.belief_status}"
+                print(header)
+                print(f"  {display.get('summary', '')}")
+                if display.get("evidence_count") is not None:
+                    span = ""
+                    if display.get("valid_from") and display.get("valid_to"):
+                        span = (
+                            f", valid {display['valid_from'].date()}"
+                            f"..{display['valid_to'].date()}"
+                        )
+                    elif display.get("valid_from"):
+                        span = f", valid_from {display['valid_from'].date()}"
+                    print(f"  evidence: {display['evidence_count']} row(s){span}")
+                question = (
+                    "Q: Is this an accurate paraphrase at the time of the cited evidence?"
+                    if target.target_kind == "claim"
+                    else "Q: Is this currently true?"
+                )
+                print(f"  {question}")
+                verdict = _prompt_verdict(sys.stdin.isatty())
+                if verdict is None:
+                    print(
+                        f"\nsaved-and-quit at [{idx}/{len(sampled)}]; session "
+                        f"{session_id} stays open. Resume with: "
+                        f"engram phase3 interview resume --session-id {session_id}"
+                    )
+                    return 0
+                rationale = _prompt_rationale()
+                try:
+                    agent.record_verdict(session_id, target, verdict, rationale=rationale)
+                    conn.commit()
+                except (GoldLabelStorageError, GoldLabelVerdictError) as exc:
+                    conn.rollback()
+                    print(f"  record failed: {exc}", file=sys.stderr)
+                    print("  (continuing; the target was not labeled.)", file=sys.stderr)
+                    continue
+                counts[verdict] = counts.get(verdict, 0) + 1
+                answered += 1
+                print()
+        except KeyboardInterrupt:
+            print(
+                f"\n\ninterrupted at [{answered + 1}/{len(sampled)}]; session "
+                f"{session_id} stays open. Resume with: "
+                f"engram phase3 interview resume --session-id {session_id}"
+            )
+            return 0
+
+        mark_session_completed(conn, session_id)
         conn.commit()
-    print(
-        "phase3 interview start: "
-        f"session={session_id} seed={seed} "
-        f"sampler={INTERVIEW_SAMPLER_ID}@{INTERVIEW_SAMPLER_VERSION} "
-        f"sampled={len(sampled)}"
-    )
-    return 0
+        summary = ", ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "no verdicts"
+        print(f"session {session_id} complete: {answered}/{len(sampled)} answered ({summary})")
+        return 0
 
 
 def run_phase3_interview_resume(args) -> int:  # type: ignore[no-untyped-def]
