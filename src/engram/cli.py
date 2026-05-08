@@ -1658,10 +1658,75 @@ def print_re_extract_result(result: ReExtractResult) -> None:
 _VERDICT_PROMPT = "verdict [t/f/stale/unsupported/unsure/skip] (q to save and quit) > "
 _VERDICT_ALIAS = {"t": "true", "f": "false", "true": "true", "false": "false"}
 _VERDICT_VALID = {"true", "false", "stale", "unsupported", "unsure", "skip"}
+_RATIONALE_PROMPT_BY_VERDICT = {
+    "false": "correct value > ",
+    "stale": "when did it change? > ",
+    "unsupported": "what's missing from the evidence? > ",
+    "unsure": "note (Enter to skip) > ",
+}
+_EVIDENCE_EXCERPT_LIMIT = 280
+_EVIDENCE_ROWS_SHOWN = 3
+
+
+def _fetch_evidence_excerpts(conn, evidence_ids: list[str]) -> list[dict[str, Any]]:  # type: ignore[no-untyped-def]
+    """Fetch up to _EVIDENCE_ROWS_SHOWN messages by id, in chronological order."""
+    if not evidence_ids:
+        return []
+    rows = conn.execute(
+        """
+        SELECT
+            m.id::text,
+            m.role,
+            m.created_at,
+            m.content_text,
+            m.source_kind::text,
+            c.title
+        FROM messages m
+        LEFT JOIN conversations c ON c.id = m.conversation_id
+        WHERE m.id = ANY(%s)
+        ORDER BY m.created_at NULLS LAST, m.sequence_index
+        LIMIT %s
+        """,
+        (evidence_ids, _EVIDENCE_ROWS_SHOWN),
+    ).fetchall()
+    excerpts: list[dict[str, Any]] = []
+    for row in rows:
+        msg_id, role, created_at, content, source_kind, conv_title = row
+        body = content or ""
+        if len(body) > _EVIDENCE_EXCERPT_LIMIT:
+            body = body[:_EVIDENCE_EXCERPT_LIMIT].rstrip() + "…"
+        excerpts.append(
+            {
+                "id": msg_id,
+                "role": role,
+                "created_at": created_at,
+                "content": body,
+                "source_kind": source_kind,
+                "conv_title": conv_title,
+            }
+        )
+    return excerpts
+
+
+def _print_evidence_excerpts(excerpts: list[dict[str, Any]], total: int) -> None:
+    if not excerpts:
+        return
+    print("  evidence:")
+    for ex in excerpts:
+        ts = ex["created_at"].strftime("%Y-%m-%d") if ex["created_at"] else "?"
+        role = ex["role"] or "?"
+        src = ex["source_kind"] or "?"
+        title = f"  [{ex['conv_title']}]" if ex.get("conv_title") else ""
+        print(f"    {ts}  {role}  ({src}){title}")
+        if ex["content"]:
+            indented = "\n".join(f"      {line}" for line in ex["content"].splitlines() or [""])
+            print(indented)
+    if total > len(excerpts):
+        print(f"    … {total - len(excerpts)} more row(s) not shown")
 
 
 def _fetch_target_display(conn, target) -> dict[str, Any]:  # type: ignore[no-untyped-def]
-    """Pull a one-line operator-readable summary for a sampled target."""
+    """Pull an operator-readable summary plus evidence excerpts for a target."""
     if target.target_kind == "claim":
         row = conn.execute(
             """
@@ -1670,21 +1735,34 @@ def _fetch_target_display(conn, target) -> dict[str, Any]:  # type: ignore[no-un
                 c.predicate,
                 c.object_text,
                 c.object_json,
+                c.evidence_message_ids,
                 cardinality(c.evidence_message_ids),
+                pv.description,
+                pv.cardinality_class,
                 (SELECT MIN(m.created_at) FROM messages m
                  WHERE m.id = ANY(c.evidence_message_ids)) AS evidence_min,
                 (SELECT MAX(m.created_at) FROM messages m
                  WHERE m.id = ANY(c.evidence_message_ids)) AS evidence_max
-            FROM claims c WHERE c.id = %s
+            FROM claims c
+            LEFT JOIN predicate_vocabulary pv ON pv.predicate = c.predicate
+            WHERE c.id = %s
             """,
             (target.target_id,),
         ).fetchone()
         if row is None:
-            return {"summary": "<missing claim row>"}
-        subj, pred, obj_text, obj_json, ev_count, ev_min, ev_max = row
+            return {"summary": "<missing claim row>", "excerpts": [], "evidence_count": 0}
+        (
+            subj, pred, obj_text, obj_json, ev_ids, ev_count,
+            pred_doc, card_class, ev_min, ev_max,
+        ) = row
         obj = obj_text if obj_text is not None else (str(obj_json) if obj_json else "")
+        excerpts = _fetch_evidence_excerpts(conn, list(ev_ids or []))
         return {
             "summary": f'{subj} -[{pred}]-> {obj}',
+            "predicate": pred,
+            "predicate_doc": pred_doc or "",
+            "cardinality_class": card_class,
+            "excerpts": excerpts,
             "evidence_count": int(ev_count),
             "evidence_min": ev_min,
             "evidence_max": ev_max,
@@ -1700,27 +1778,61 @@ def _fetch_target_display(conn, target) -> dict[str, Any]:  # type: ignore[no-un
             b.object_json,
             b.valid_from,
             b.valid_to,
+            b.evidence_ids,
             cardinality(b.evidence_ids),
+            pv.description,
+            pv.cardinality_class,
             (SELECT MIN(m.created_at) FROM messages m
              WHERE m.id = ANY(b.evidence_ids)) AS evidence_min,
             (SELECT MAX(m.created_at) FROM messages m
              WHERE m.id = ANY(b.evidence_ids)) AS evidence_max
-        FROM beliefs b WHERE b.id = %s
+        FROM beliefs b
+        LEFT JOIN predicate_vocabulary pv ON pv.predicate = b.predicate
+        WHERE b.id = %s
         """,
         (target.target_id,),
     ).fetchone()
     if row is None:
-        return {"summary": "<missing belief row>"}
-    subj, pred, obj_text, obj_json, vfrom, vto, ev_count, ev_min, ev_max = row
+        return {"summary": "<missing belief row>", "excerpts": [], "evidence_count": 0}
+    (
+        subj, pred, obj_text, obj_json, vfrom, vto, ev_ids, ev_count,
+        pred_doc, card_class, ev_min, ev_max,
+    ) = row
     obj = obj_text if obj_text is not None else (str(obj_json) if obj_json else "")
+    excerpts = _fetch_evidence_excerpts(conn, list(ev_ids or []))
     return {
         "summary": f'{subj} -[{pred}]-> {obj}',
+        "predicate": pred,
+        "predicate_doc": pred_doc or "",
+        "cardinality_class": card_class,
+        "excerpts": excerpts,
         "evidence_count": int(ev_count),
         "evidence_min": ev_min,
         "evidence_max": ev_max,
         "valid_from": vfrom,
         "valid_to": vto,
     }
+
+
+def _pick_question(target, display: dict[str, Any]) -> str:  # type: ignore[no-untyped-def]
+    """Choose a question framing based on stability_class and cardinality_class.
+
+    Claim targets always ask about the cited evidence — claims are time-stamped
+    paraphrases by definition. For belief targets the framing depends on
+    whether the predicate is point-in-time (event), transient (mood/task),
+    or genuinely current (identity / preference / project_status / goal /
+    relationship).
+    """
+    ev_max = display.get("evidence_max")
+    ev_date = ev_max.date().isoformat() if ev_max else "the cited time"
+    if target.target_kind == "claim":
+        return f"Q: Is this an accurate paraphrase of what was said on {ev_date}?"
+    cardinality = (display.get("cardinality_class") or "").strip()
+    if cardinality == "event":
+        return f"Q: Did this event happen as paraphrased on {ev_date}?"
+    if target.stability_class in {"mood", "task"}:
+        return f"Q: Was this true around {ev_date}?"
+    return "Q: Is this currently true?"
 
 
 def _prompt_verdict(stdin_isatty: bool) -> str | None:
@@ -1738,9 +1850,13 @@ def _prompt_verdict(stdin_isatty: bool) -> str | None:
         print(f"  invalid verdict: {raw!r}; choose from {sorted(_VERDICT_VALID)} or 'q' to save and quit")
 
 
-def _prompt_rationale() -> str | None:
+def _prompt_rationale(verdict: str) -> str | None:
+    """Verdict-specific rationale prompt; ``true``/``skip`` skip the prompt."""
+    if verdict in {"true", "skip"}:
+        return None
+    prompt = _RATIONALE_PROMPT_BY_VERDICT.get(verdict, "rationale (Enter to skip) > ")
     try:
-        raw = input("rationale (Enter to skip) > ").strip()
+        raw = input(prompt).strip()
     except EOFError:
         return None
     return raw or None
@@ -1818,7 +1934,11 @@ def run_phase3_interview_start(args) -> int:  # type: ignore[no-untyped-def]
                 if target.target_kind == "belief" and target.belief_status:
                     header += f"  status={target.belief_status}"
                 print(header)
-                print(f"  {display.get('summary', '')}")
+                summary_line = display.get("summary", "")
+                pred_doc = display.get("predicate_doc")
+                if pred_doc:
+                    summary_line = f"{summary_line}    ({pred_doc})"
+                print(f"  {summary_line}")
                 if display.get("evidence_count") is not None:
                     parts: list[str] = []
                     ev_min = display.get("evidence_min")
@@ -1839,11 +1959,10 @@ def run_phase3_interview_start(args) -> int:  # type: ignore[no-untyped-def]
                         parts.append(f"valid_from {display['valid_from'].date()}")
                     suffix = (", " + ", ".join(parts)) if parts else ""
                     print(f"  evidence: {display['evidence_count']} row(s){suffix}")
-                question = (
-                    "Q: Is this an accurate paraphrase at the time of the cited evidence?"
-                    if target.target_kind == "claim"
-                    else "Q: Is this currently true?"
-                )
+                excerpts = display.get("excerpts") or []
+                if excerpts:
+                    _print_evidence_excerpts(excerpts, display.get("evidence_count", 0))
+                question = _pick_question(target, display)
                 print(f"  {question}")
                 verdict = _prompt_verdict(sys.stdin.isatty())
                 if verdict is None:
@@ -1853,7 +1972,7 @@ def run_phase3_interview_start(args) -> int:  # type: ignore[no-untyped-def]
                         f"engram phase3 interview resume --session-id {session_id}"
                     )
                     return 0
-                rationale = _prompt_rationale()
+                rationale = _prompt_rationale(verdict)
                 try:
                     agent.record_verdict(session_id, target, verdict, rationale=rationale)
                     conn.commit()
