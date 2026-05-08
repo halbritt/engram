@@ -1,0 +1,253 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "rfc-0027-interview-web-ui-review",
+  "workflow_version": "2026-05-08+initial",
+  "name": "Engram RFC 0027 Interview Web UI Multi-Agent Review",
+  "branch": {
+    "mode": "confirm",
+    "suggested_name": "engram/rfc0027-interview-web-ui-review",
+    "allow_dirty": true
+  },
+  "coordinator": {
+    "role_id": "coordinator",
+    "lane_id": "codex"
+  },
+  "review_revision_policy": {
+    "root_review_needs_revision": "human_checkpoint",
+    "description": "Root-review needs_revision verdicts surface as human checkpoints; downstream ledger, synthesis, and final-review jobs remain blocked until the owner revises the RFC or records an override."
+  },
+  "lanes": {
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "-"],
+      "capabilities": ["review", "write", "synthesis"],
+      "constraints": {"network": "forbidden", "transcripts": "off", "repo_scope": "local_only"}
+    },
+    "gemini": {
+      "adapter": "process",
+      "display_model": "Gemini 3.1 Pro Preview",
+      "command": ["gemini", "--model", "gemini-3.1-pro-preview"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "transcripts": "off", "repo_scope": "local_only"}
+    },
+    "claude": {
+      "adapter": "process",
+      "display_model": "Claude Opus",
+      "command": ["claude", "--model", "opus", "-p"],
+      "capabilities": ["review", "synthesis"],
+      "constraints": {"network": "forbidden", "transcripts": "off", "repo_scope": "local_only"}
+    }
+  },
+  "roles": {
+    "reviewer": {"definition_path": "striatum/rfc-0027-interview-web-ui-review/roles/reviewer.md"},
+    "ledger": {"definition_path": "striatum/rfc-0027-interview-web-ui-review/roles/ledger.md"},
+    "synthesizer": {"definition_path": "striatum/rfc-0027-interview-web-ui-review/roles/synthesizer.md"},
+    "coordinator": {"definition_path": "striatum/rfc-0027-interview-web-ui-review/roles/coordinator.md"}
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "BUILD_PHASES.md", "required": true},
+    {"path": "HUMAN_REQUIREMENTS.md", "required": true},
+    {"path": "DECISION_LOG.md", "required": true},
+    {"path": "ROADMAP.md", "required": true},
+    {"path": "SPEC.md", "required": true},
+    {"path": "docs/rfcs/README.md", "required": true},
+    {"path": "docs/rfcs/0027-interview-web-ui.md", "required": true},
+    {"path": "docs/rfcs/0021-gold-set-interview-curation.md", "required": true},
+    {"path": "docs/rfcs/0022-server-binary-api-mcp.md", "required": true},
+    {"path": "docs/howto/gold-set-interview.md", "required": true},
+    {"path": "docs/process/multi-agent-review-loop.md", "required": true},
+    {"path": "docs/process/project-judgment.md", "required": true},
+    {"path": "src/engram/cli.py", "required": true},
+    {"path": "migrations/010_gold_labels.sql", "required": true}
+  ],
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 3,
+    "require_disjoint_write_scopes": true
+  },
+  "jobs": [
+    {
+      "id": "review_claude",
+      "type": "review",
+      "title": "Review RFC 0027 with Claude",
+      "role_id": "reviewer",
+      "lane_id": "claude",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Review RFC 0027 for privacy posture (localhost-only, D020), reuse-vs-duplication of CLI rendering, htmx delivery model, and whether the proposal preserves D044/D069 advisory-only semantics in a browser surface.",
+      "task_prompt": {"path": "striatum/rfc-0027-interview-web-ui-review/prompts/review.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0027-interview-web-ui.md", "kind": "rfc_root"},
+        {"path": "docs/rfcs/0021-gold-set-interview-curation.md", "kind": "upstream_rfc"},
+        {"path": "docs/rfcs/0022-server-binary-api-mcp.md", "kind": "upstream_rfc"},
+        {"path": "src/engram/cli.py", "kind": "command_surface"},
+        {"path": "src/engram/interview/agent.py", "kind": "module"},
+        {"path": "src/engram/interview/sampler.py", "kind": "module"},
+        {"path": "src/engram/interview/storage.py", "kind": "module"},
+        {"path": "migrations/010_gold_labels.sql", "kind": "schema_baseline"},
+        {"path": "HUMAN_REQUIREMENTS.md", "kind": "principles"},
+        {"path": "DECISION_LOG.md", "kind": "decision_log"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0027/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "BUILD_PHASES.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md", "Makefile", "src/engram/", "migrations/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0027/RFC_0027_INTERVIEW_WEB_UI_REVIEW_claude.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_codex",
+      "type": "review",
+      "title": "Review RFC 0027 with Codex",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Review RFC 0027 for FastAPI/Uvicorn implementation feasibility, render.py extraction correctness, the persistent target order question (table vs deterministic re-sample), test surface, and whether v1 routes are sufficient and v1.1 deferrals defensible.",
+      "task_prompt": {"path": "striatum/rfc-0027-interview-web-ui-review/prompts/review.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0027-interview-web-ui.md", "kind": "rfc_root"},
+        {"path": "docs/rfcs/0021-gold-set-interview-curation.md", "kind": "upstream_rfc"},
+        {"path": "src/engram/cli.py", "kind": "command_surface"},
+        {"path": "src/engram/interview/agent.py", "kind": "module"},
+        {"path": "src/engram/interview/sampler.py", "kind": "module"},
+        {"path": "src/engram/interview/storage.py", "kind": "module"},
+        {"path": "migrations/010_gold_labels.sql", "kind": "schema_baseline"},
+        {"path": "tests/test_interview_cli.py", "kind": "test_surface"},
+        {"path": "tests/test_interview_storage.py", "kind": "test_surface"},
+        {"path": "Makefile", "kind": "command_surface"},
+        {"path": "pyproject.toml", "kind": "package_metadata"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0027/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "BUILD_PHASES.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md", "Makefile", "src/engram/", "migrations/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0027/RFC_0027_INTERVIEW_WEB_UI_REVIEW_codex.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_gemini",
+      "type": "review",
+      "title": "Review RFC 0027 with Gemini",
+      "role_id": "reviewer",
+      "lane_id": "gemini",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Review RFC 0027 for operator UX (keyboard shortcuts, save-and-quit semantics, evidence-thread expansion, rationale ergonomics), accessibility, and whether the worked example actually solves the friction sources cited in §Background.",
+      "task_prompt": {"path": "striatum/rfc-0027-interview-web-ui-review/prompts/review.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0027-interview-web-ui.md", "kind": "rfc_root"},
+        {"path": "docs/rfcs/0021-gold-set-interview-curation.md", "kind": "upstream_rfc"},
+        {"path": "docs/howto/gold-set-interview.md", "kind": "operator_docs"},
+        {"path": "src/engram/cli.py", "kind": "command_surface"},
+        {"path": "HUMAN_REQUIREMENTS.md", "kind": "principles"},
+        {"path": "BUILD_PHASES.md", "kind": "phase_spec_root"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0027/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "BUILD_PHASES.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md", "Makefile", "src/engram/", "migrations/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0027/RFC_0027_INTERVIEW_WEB_UI_REVIEW_gemini.md", "required": true}
+      ]
+    },
+    {
+      "id": "findings_ledger",
+      "type": "ledger",
+      "title": "Record RFC 0027 web-UI findings ledger",
+      "role_id": "ledger",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Normalize the three independent RFC 0027 reviews into a stable findings ledger without deciding whether the RFC should be accepted.",
+      "task_prompt": {"path": "striatum/rfc-0027-interview-web-ui-review/prompts/findings_ledger.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0027/RFC_0027_INTERVIEW_WEB_UI_REVIEW_claude.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0027/RFC_0027_INTERVIEW_WEB_UI_REVIEW_codex.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0027/RFC_0027_INTERVIEW_WEB_UI_REVIEW_gemini.md", "kind": "review"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0027/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "BUILD_PHASES.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md", "Makefile", "src/engram/", "migrations/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "ledger", "kind": "findings_ledger", "path": "docs/reviews/rfc0027/RFC_0027_INTERVIEW_WEB_UI_FINDINGS_LEDGER.md", "required": true}
+      ]
+    },
+    {
+      "id": "synthesis",
+      "type": "synthesis",
+      "title": "Synthesize RFC 0027 web-UI findings",
+      "role_id": "synthesizer",
+      "lane_id": "claude",
+      "fresh_session_required": true,
+      "objective": "Synthesize RFC 0027 findings; recommend accept-rfc / revise-rfc / split-rfc / reject-rfc; on accept, produce concrete spec deltas (route table, template list, render.py boundaries, test list, dependency additions).",
+      "task_prompt": {"path": "striatum/rfc-0027-interview-web-ui-review/prompts/synthesis.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0027/RFC_0027_INTERVIEW_WEB_UI_FINDINGS_LEDGER.md", "kind": "findings_ledger"},
+        {"path": "docs/rfcs/0027-interview-web-ui.md", "kind": "rfc_root"},
+        {"path": "docs/rfcs/0021-gold-set-interview-curation.md", "kind": "upstream_rfc"},
+        {"path": "src/engram/cli.py", "kind": "command_surface"},
+        {"path": "src/engram/interview/agent.py", "kind": "module"},
+        {"path": "src/engram/interview/sampler.py", "kind": "module"},
+        {"path": "HUMAN_REQUIREMENTS.md", "kind": "principles"},
+        {"path": "DECISION_LOG.md", "kind": "decision_log"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0027/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "BUILD_PHASES.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md", "Makefile", "src/engram/", "migrations/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "synthesis", "kind": "synthesis", "path": "docs/reviews/rfc0027/RFC_0027_INTERVIEW_WEB_UI_SYNTHESIS.md", "required": true}
+      ]
+    },
+    {
+      "id": "final_review",
+      "type": "review",
+      "title": "Final review of RFC 0027 synthesis",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Audit whether the synthesis is grounded in the ledger, preserves D020/D044/D069 invariants, and produces a buildable spec contract.",
+      "task_prompt": {"path": "striatum/rfc-0027-interview-web-ui-review/prompts/final_review.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0027/RFC_0027_INTERVIEW_WEB_UI_SYNTHESIS.md", "kind": "synthesis"},
+        {"path": "docs/reviews/rfc0027/RFC_0027_INTERVIEW_WEB_UI_FINDINGS_LEDGER.md", "kind": "findings_ledger"},
+        {"path": "docs/rfcs/0027-interview-web-ui.md", "kind": "rfc_root"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0027/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "BUILD_PHASES.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md", "Makefile", "src/engram/", "migrations/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0027/RFC_0027_INTERVIEW_WEB_UI_FINAL_REVIEW.md", "required": true}
+      ]
+    }
+  ],
+  "edges": [
+    {"from": "review_claude", "to": "findings_ledger", "on": "completed"},
+    {"from": "review_codex", "to": "findings_ledger", "on": "completed"},
+    {"from": "review_gemini", "to": "findings_ledger", "on": "completed"},
+    {"from": "findings_ledger", "to": "synthesis", "on": "completed"},
+    {"from": "synthesis", "to": "final_review", "on": "completed"}
+  ],
+  "cycles": [
+    {"from": "final_review", "to": "synthesis", "on_verdict": "needs_revision", "max_iterations": 1}
+  ]
+}

@@ -42,6 +42,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trigger-error troubleshooting, cold-start clone+install
   prerequisites). README points at the guide instead of inlining the
   example commands.
+- RFC 0027: Interview web UI proposal (FastAPI + Jinja2 + htmx,
+  loopback-only, in-process Origin-allowlist CSRF posture).
+- Spec 0027 at `docs/specs/0027-interview-web-ui-spec.md` (1230-line
+  implementation contract; RFC 0027 promoted via D080).
+- Striatum scaffold at `striatum/rfc-0027-interview-web-ui-review/`
+  driving the multi-agent review run (claude / codex / gemini reviewers
+  + ledger + claude synthesis + codex final review).
+- Run artifacts at `docs/reviews/rfc0027/` (3 reviews, ledger with 29
+  findings — 2 blocking + 19 major + 7 minor + 1 nit, synthesis
+  recommending revise-rfc with full spec deltas, final review
+  `accept_with_findings`, evidence + run summary).
+- `.claude/skills/` populated by `striatum skills install --profile
+  claude_code --scope project` (5 lazily-loadable skills:
+  striatum-workflow, striatum-scaffold, striatum-claim-loop,
+  striatum-supervise, striatum-recover; striatum 1.1.0).
 - RFC 0018: Evidence-to-claim audit schema.
 - Phase 4 spec review scaffolding and smoke build.
 - RFC 0024 Phase 4 Tier 0-2 Striatum gate scaffold.
@@ -83,6 +98,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trigger and the (since-fixed) missing
   `phase3-interview-enable-active-learning` Make target are documented
   as the only residual gaps.
+- Promoted RFC 0027 (interview web UI) to spec 0027 after a second
+  Striatum-orchestrated multi-agent review. Synthesis recommended
+  `revise-rfc`; 29 accepted deltas applied to the RFC text and
+  consolidated into the buildable spec at
+  `docs/specs/0027-interview-web-ui-spec.md`. Recorded as **D080**;
+  BUILD_PHASES Phase 3 follow-on gains a web-UI subsection. Blocking
+  findings resolved: fictional `striatum serve` precedent replaced
+  with RFC 0022 (`engramd`) as the actual D020 anchor, and the
+  RFC 0022 parallel-surface concern resolved via an explicit
+  forward-compat path (when `engramd` lands, web routes migrate from
+  direct module calls to `engramd` HTTP endpoints).
 - Documented corrected RFC 0023 slot-aware extraction benchmark findings:
   1 worker / 1 server slot = 546.90s, 2 / 2 = 226.44s, 4 / 4 = 190.84s, and
   8 / 8 = 522.19s on the 20-segment slice.

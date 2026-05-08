@@ -264,6 +264,50 @@ trigger.
 D016. Promotion of label clusters into formal `GOLD_SET_TEMPLATE` entries
 remains a downstream step (RFC 0021 § Open question 1).
 
+**Web UI (RFC 0027 / D080):** local-only browser UI over the same
+gold-label substrate, surfaced via `engram phase3 interview serve
+[--port 8765]`. FastAPI + Jinja2 + htmx; no JS framework, no build
+step. Renders share helpers in `src/engram/interview/render.py`
+(extracted from `cli.py`); CLI loop continues to exist and is unchanged
+in behavior. Loopback-only bind; no auth, no TLS, no CSRF token in v1
+(Origin-header allowlist enforced instead). Tier 1 ceiling hard-coded
+on full-message and context routes. Verdict-button single-click commit
+for `true` / `skip`; rationale-required flow for `false` / `stale` /
+`unsupported` / `unsure`. Sampled order materialized at session creation
+in `gold_label_session_targets` (migration
+`011_gold_label_session_targets.sql`) with the typed version triple
+stamped to preserve resume-against-frozen-pool semantics under
+re-extraction. Inline strata strip ships in v1; coverage dashboard,
+export, history, and active-learning toggle remain CLI-only until v1.1.
+Ships as `engram[serve]` optional extra; headless / CI installs
+unchanged. The implementation contract is the spec at
+`docs/specs/0027-interview-web-ui-spec.md`.
+
+**Acceptance criteria (Tier 0 smoke):**
+
+- `engram phase3 interview serve` boots on `127.0.0.1:8765`, refuses
+  non-loopback bind (no escape clause in v1).
+- Index page lists open sessions with progress; new-session form creates
+  a session, samples `n` targets, materializes the order in
+  `gold_label_session_targets`, and redirects to `/q/1`.
+- Verdict commit round-trips through the existing `gold_labels` triggers
+  (`fn_gold_labels_append_only`, `fn_gold_labels_validate_target`,
+  `fn_gold_labels_carry_privacy_tier`).
+- Trigger rejections render an inline error banner; the session stays
+  open.
+- Non-`Origin`-allowlisted POSTs return 403.
+- `/messages/{id}` and `/messages/{id}/context` reject Tier 2+ rows with
+  403.
+- `/static/htmx.min.js` is served from the wheel; no CDN reference is
+  reachable from any rendered page.
+- A web import-graph test verifies `engram.consolidator.transitions` is
+  unreachable from `engram.interview.web` (D044 / D069).
+
+**Leaves for next phase:** when `engramd` (RFC 0022) lands, web routes
+migrate from calling `engram.interview.{agent,sampler,storage}` directly
+to calling `engramd`'s interview HTTP endpoints; the FastAPI app becomes
+a Jinja layer mounted on `engramd`'s ASGI tree.
+
 <a id="phase-0004"></a>
 ## Phase 4 — Entity canonicalization + review surface
 
