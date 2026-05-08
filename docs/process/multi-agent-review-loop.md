@@ -118,7 +118,7 @@ file under `prompts/<phase>/workflow.json`:
 - `striatum decision record --outcome accepted|rejected|accepted_with_follow_up`
   records the durable Markdown decision artifact when the loop closes.
 
-The reference workflow is `prompts/phase4/workflow.json`. To prepare a
+The reference workflow is `striatum/phase-4-spec-review/workflow.json`. To prepare a
 run:
 
 ```sh

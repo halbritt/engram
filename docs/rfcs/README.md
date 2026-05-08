@@ -92,7 +92,7 @@ prescriptive — a `none` here is not a TODO unless promoted via
   (S001–S005, S008, S009 of the spec), and the legacy-marker preservation
   rule all stand unchanged. Striatum is wired in via `make
   install-striatum` / `make striatum-init`; Phase 4 multi-agent review
-  workflow lives at `prompts/phase4/workflow.json` (validates clean
+  workflow lives at `striatum/phase-4-spec-review/workflow.json` (validates clean
   against `striatum.workflow.v1`). See `docs/process/multi-agent-review-
   loop.md` § Striatum-orchestrated reviews.
 - **0015** — top-priority gaps and most secondary gaps landed 2026-05-07:

@@ -77,16 +77,16 @@
   },
   "roles": {
     "reviewer": {
-      "definition_path": "prompts/phase4/roles/reviewer.md"
+      "definition_path": "striatum/phase-4-spec-review/roles/reviewer.md"
     },
     "ledger": {
-      "definition_path": "prompts/phase4/roles/ledger.md"
+      "definition_path": "striatum/phase-4-spec-review/roles/ledger.md"
     },
     "synthesizer": {
-      "definition_path": "prompts/phase4/roles/synthesizer.md"
+      "definition_path": "striatum/phase-4-spec-review/roles/synthesizer.md"
     },
     "coordinator": {
-      "definition_path": "prompts/phase4/roles/coordinator.md"
+      "definition_path": "striatum/phase-4-spec-review/roles/coordinator.md"
     }
   },
   "context_docs": [
@@ -135,7 +135,7 @@
       "fresh_session_required": true,
       "objective": "Review the Phase 4 build-spec inputs (BUILD_PHASES.md Phase 4 row, HUMAN_REQUIREMENTS, relevant decisions) for entity-canonicalization correctness risks, review-queue UX gaps, and current_beliefs view design risks.",
       "task_prompt": {
-        "path": "prompts/phase4/prompts/review.md"
+        "path": "striatum/phase-4-spec-review/prompts/review.md"
       },
       "inputs": [
         {
@@ -195,7 +195,7 @@
       "fresh_session_required": true,
       "objective": "Review the Phase 4 build-spec inputs for implementation feasibility, schema-migration risk, and the recursive-CTE 1\u20132 hop entity-edge query plan.",
       "task_prompt": {
-        "path": "prompts/phase4/prompts/review.md"
+        "path": "striatum/phase-4-spec-review/prompts/review.md"
       },
       "inputs": [
         {
@@ -255,7 +255,7 @@
       "fresh_session_required": true,
       "objective": "Review the Phase 4 build-spec inputs for HITL surface ergonomics, the accept/reject/correct/promote-to-pinned semantics, and provenance-chain implications of corrections-as-captures (D017).",
       "task_prompt": {
-        "path": "prompts/phase4/prompts/review.md"
+        "path": "striatum/phase-4-spec-review/prompts/review.md"
       },
       "inputs": [
         {
@@ -314,7 +314,7 @@
       "fresh_session_required": true,
       "objective": "Normalize the three independent Phase 4 build-spec reviews into a stable findings ledger without deciding readiness.",
       "task_prompt": {
-        "path": "prompts/phase4/prompts/findings_ledger.md"
+        "path": "striatum/phase-4-spec-review/prompts/findings_ledger.md"
       },
       "inputs": [
         {
@@ -361,7 +361,7 @@
       "fresh_session_required": true,
       "objective": "Synthesize Phase 4 build-spec findings and recommend whether to author a Phase 4 RFC, an implementation spec, or to revise the Phase 4 row in BUILD_PHASES.md before proceeding.",
       "task_prompt": {
-        "path": "prompts/phase4/prompts/synthesis.md"
+        "path": "striatum/phase-4-spec-review/prompts/synthesis.md"
       },
       "inputs": [
         {
@@ -407,7 +407,7 @@
       "fresh_session_required": true,
       "objective": "Review whether the synthesis is internally supported by the ledger, whether Phase 4 inputs need revision before a build spec is authored, and whether human checkpoints are appropriately surfaced.",
       "task_prompt": {
-        "path": "prompts/phase4/prompts/final_review.md"
+        "path": "striatum/phase-4-spec-review/prompts/final_review.md"
       },
       "inputs": [
         {

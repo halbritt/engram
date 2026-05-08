@@ -277,7 +277,7 @@ should live under `docs/operations/phase4-build/<loop_id>/reports/`.
 Full-corpus Phase 4 execution is ready only when all of the following hold:
 
 1. The Phase 4 spec has passed the multi-agent review loop in
-   `prompts/phase4/workflow.json`.
+   `striatum/phase-4-spec-review/workflow.json`.
 2. Tier 0 and Tier 1 pass with no blocking findings.
 3. Tier 2 bounded production preflight completes with no failed jobs and no
    human-checkpoint blocker.

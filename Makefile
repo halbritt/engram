@@ -136,10 +136,10 @@ striatum-init: install-striatum
 	$(STRIATUM) --repo . init
 
 phase4-validate: install-striatum
-	$(STRIATUM) --repo . workflow validate prompts/phase4/workflow.json
+	$(STRIATUM) --repo . workflow validate striatum/phase-4-spec-review/workflow.json
 
 phase4-prepare: install-striatum
-	$(STRIATUM) --repo . run prepare --workflow prompts/phase4/workflow.json
+	$(STRIATUM) --repo . run prepare --workflow striatum/phase-4-spec-review/workflow.json
 
 phase4-status: install-striatum
 	$(STRIATUM) --repo . status
