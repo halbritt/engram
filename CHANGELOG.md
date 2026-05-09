@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   creation so CLI- and web-started sessions are mutually resumable.
   FastAPI / Uvicorn / Jinja2 ship under the `engram[serve]` optional
   extra; headless installs unchanged.
+- Origin allowlist on the RFC 0027 web UI is operator-extensible via
+  `ENGRAM_INTERVIEW_ALLOWED_ORIGINS` (comma-separated host names,
+  appended to the default loopback set) — recorded as **D081**.
+  Defaults remain loopback-only; the bind stays loopback-only (D080
+  unchanged). The env var only extends which `Origin` header values
+  are accepted on POST routes, so a user-space TCP forwarder bridging
+  a trusted-network interface (e.g., a Tailscale tailnet) to the
+  loopback bind can reach the UI from another device the operator
+  controls. The howto guide gains a "Tailnet access" section.
+  Non-loopback bind plus token auth remains the F005 follow-on.
 - Initial creation of `CHANGELOG.md` based on repository commit history and project phases.
 - Mandated `CHANGELOG.md` maintenance in `AGENTS.md` and `GEMINI.md`.
 - RFC 0025: Command naming review.

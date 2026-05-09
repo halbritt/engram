@@ -58,12 +58,44 @@ from engram.interview.storage import (
 # Constants
 # ---------------------------------------------------------------------------
 
-ALLOWED_ORIGIN_HOSTS: tuple[str, ...] = ("127.0.0.1", "localhost")
-"""Loopback-only Origin allowlist (Spec 0027 § Origin allowlist behavior).
+_DEFAULT_ALLOWED_ORIGIN_HOSTS: tuple[str, ...] = ("127.0.0.1", "localhost")
 
-We accept any port on these hosts since the operator picks the bind port at
-``engram phase3 interview serve --port``. Origin checks compare scheme=http
-plus host membership; no upgrade to https in v1.
+
+def _resolve_allowed_origin_hosts() -> tuple[str, ...]:
+    """Build the Origin allowlist at module load time.
+
+    Defaults to the loopback set ``("127.0.0.1", "localhost")``. Operators
+    on a trusted network (e.g., a Tailscale tailnet) extend it via
+    ``ENGRAM_INTERVIEW_ALLOWED_ORIGINS`` — a comma-separated list of host
+    names appended to the default set. The env-var pattern follows the
+    Engram Python coding standard (RFC 0012): tunables behind ``ENGRAM_*``
+    env vars read at module top.
+
+    Defaults remain loopback-only; opt-in is explicit. The env var extends
+    only the host portion; the scheme check below is still locked to
+    ``http`` (no https upgrade in v1, matching the original Spec 0027
+    posture and the user-space TCP-bridge pattern documented in the
+    howto's "Tailnet access" section).
+    """
+    extra = os.environ.get("ENGRAM_INTERVIEW_ALLOWED_ORIGINS", "")
+    extra_hosts = tuple(h.strip() for h in extra.split(",") if h.strip())
+    seen: set[str] = set()
+    out: list[str] = []
+    for h in (*_DEFAULT_ALLOWED_ORIGIN_HOSTS, *extra_hosts):
+        if h not in seen:
+            seen.add(h)
+            out.append(h)
+    return tuple(out)
+
+
+ALLOWED_ORIGIN_HOSTS: tuple[str, ...] = _resolve_allowed_origin_hosts()
+"""Origin allowlist (Spec 0027 § Origin allowlist behavior, extended per D081).
+
+Defaults to the loopback set ``("127.0.0.1", "localhost")``; extended at
+module load by the comma-separated ``ENGRAM_INTERVIEW_ALLOWED_ORIGINS``
+env var. We accept any port on these hosts since the operator picks the
+bind port at ``engram phase3 interview serve --port``. Origin checks
+compare scheme=http plus host membership; no upgrade to https in v1.
 """
 
 CONTEXT_BEFORE_AFTER_CAP: int = 20

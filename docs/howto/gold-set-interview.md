@@ -146,6 +146,42 @@ What the web UI does NOT expose in v1 (CLI-only): `export`, `history`,
 deferred), `enable-active-learning`, `--include-superseded`,
 `--ignore-cooldown`. Drop to the CLI for those.
 
+### Tailnet access (operator opt-in, D081)
+
+The bind is loopback-only by design (D080). Reaching the UI from another
+device on your Tailscale tailnet uses a two-piece operator setup:
+
+1. **A user-space TCP forwarder** that listens on the host's tailnet
+   interface IP and pipes bytes to the loopback bind. Engram itself
+   does not bind to the tailnet IP — the forwarder is a separate
+   operator-controlled process. A reference implementation lives at
+   `/tmp/engram-tailscale-bridge.py`; the same pattern is documented
+   for striatum and copy-paste portable. The forwarder respects
+   D080 because the engram process boundary still binds loopback
+   only.
+2. **An extended Origin allowlist.** When your laptop reaches the
+   bridge over Tailscale, the browser sends
+   `Origin: http://<tailnet-host>:<port>`, which the default
+   loopback-only allowlist rejects with `origin_mismatch`. Set
+   `ENGRAM_INTERVIEW_ALLOWED_ORIGINS` to the comma-separated list of
+   trusted tailnet host names before starting the server:
+
+```sh
+# tailnet IP, short hostname, and full *.ts.net hostname
+ENGRAM_INTERVIEW_ALLOWED_ORIGINS="100.85.100.81,proximal,proximal.tail0ecc2e.ts.net" \
+  engram phase3 interview serve --port 8765
+
+# in another terminal, run the bridge
+.venv/bin/python /tmp/engram-tailscale-bridge.py
+```
+
+The env var only extends the Origin-header allowlist; defaults remain
+loopback-only. The bind itself stays loopback. Non-loopback bind plus
+token auth is a separate, larger piece of work tracked under F005 in
+the deferred-decisions table; until then, the trust boundary you're
+relying on is the tailnet's own peer authentication, applied via the
+forwarder.
+
 ## Driving the loop from your own code
 
 If you want to script the loop (e.g., feed verdicts from a file, or wrap

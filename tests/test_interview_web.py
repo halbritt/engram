@@ -12,6 +12,7 @@ storage so the trigger-rejection banner test depends on real triggers firing.
 from __future__ import annotations
 
 import importlib
+import os
 import sys
 import uuid
 from contextlib import contextmanager
@@ -473,6 +474,42 @@ def test_post_verdict_403_origin_mismatch(
     assert resp.status_code == 403
     body = resp.json()
     assert body.get("error") == "origin_mismatch"
+
+
+def test_allowed_origin_hosts_default_is_loopback_only() -> None:
+    """Default allowlist is the loopback set, no env var set (D081)."""
+    import importlib
+
+    import engram.interview.web as web
+
+    # Re-resolve under a clean env to assert the default. This test does not
+    # mutate the live ALLOWED_ORIGIN_HOSTS module attribute (other tests rely
+    # on whatever it was at import time); it just checks the resolver.
+    saved = os.environ.pop("ENGRAM_INTERVIEW_ALLOWED_ORIGINS", None)
+    try:
+        hosts = web._resolve_allowed_origin_hosts()
+        assert hosts == ("127.0.0.1", "localhost")
+    finally:
+        if saved is not None:
+            os.environ["ENGRAM_INTERVIEW_ALLOWED_ORIGINS"] = saved
+
+
+def test_allowed_origin_hosts_env_var_extends_default(monkeypatch) -> None:
+    """ENGRAM_INTERVIEW_ALLOWED_ORIGINS appends operator-trusted hosts (D081)."""
+    import engram.interview.web as web
+
+    monkeypatch.setenv(
+        "ENGRAM_INTERVIEW_ALLOWED_ORIGINS",
+        "100.85.100.81, proximal.tail0ecc2e.ts.net,  ,localhost",
+    )
+    hosts = web._resolve_allowed_origin_hosts()
+    # Defaults preserved, extras appended in order, dedup, whitespace stripped.
+    assert hosts == (
+        "127.0.0.1",
+        "localhost",
+        "100.85.100.81",
+        "proximal.tail0ecc2e.ts.net",
+    )
 
 
 def test_post_verdict_completes_session_at_n(
