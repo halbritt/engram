@@ -1,9 +1,9 @@
-<a id="rfc-0029"></a>
-# RFC 0029: Public-Dataset Entity Grounding for Claim Extraction
+<a id="rfc-0030"></a>
+# RFC 0030: Public-Dataset Entity Grounding for Claim Extraction
 
 | Field | Value |
 |-------|-------|
-| RFC | 0029 |
+| RFC | 0030 |
 | Title | Public-Dataset Entity Grounding for Claim Extraction |
 | Status | proposal |
 | Implementation | none |
@@ -371,7 +371,7 @@ questions; those are the primary content for the loop. Beyond those:
    `docs/process/multi-agent-review-loop.md`. The loop should resolve
    D-A through D-H, the open questions above, and produce a tightened
    spec ready for promotion.
-2. **Promote the tightened spec** to `docs/specs/0029-*` if accepted,
+2. **Promote the tightened spec** to `docs/specs/0030-*` if accepted,
    following the RFC 0027 / D080 pattern. Record the spec acceptance
    in `DECISION_LOG.md` (next available `D###`). Mark this RFC
    `promoted` and link the spec.
