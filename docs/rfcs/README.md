@@ -46,6 +46,7 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0025](0025-phase-scoped-command-names.md) | accepted | partial | Phase-scoped command names |
 | [0027](0027-interview-web-ui.md) | promoted | scaffolded | Interview web UI (promoted to [spec 0027](../specs/0027-interview-web-ui-spec.md) via D080) |
 | [0028](0028-predicate-intent-surfacing.md) | proposal | none | Predicate-intent surfacing across extraction and interview |
+| [0029](0029-public-dataset-entity-grounding.md) | proposal | none | Public-dataset entity grounding for claim extraction |
 
 ## Implementation notes (2026-05-07 sweep)
 
