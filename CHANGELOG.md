@@ -30,6 +30,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loopback bind can reach the UI from another device the operator
   controls. The howto guide gains a "Tailnet access" section.
   Non-loopback bind plus token auth remains the F005 follow-on.
+- RFC 0028: Predicate-intent surfacing across extraction and
+  interview. Empirically grounded in the first 32 gold-label
+  verdicts: 5 of 6 `false` rationales reduce to predicate-intent
+  mismatches (`has_name` on a restaurant / a city; `uses_tool` on a
+  spice mix; `feels` on a hardware fault; `is_related_to` on an
+  app). Proposes (a) including `predicate_vocabulary.description`
+  plus a new `subject_kind_hint` column in the extractor prompt
+  (RFC 0017 version bump to `extractor.v6.d082.predicate-intent`),
+  (b) rendering predicate intent on its own line in the interview
+  UI with a soft heuristic warning when the subject obviously
+  doesn't fit, and (c) broadening the `false` rationale prompt
+  label so it stops over-fitting to "wrong object value." No
+  schema changes to claims/beliefs/gold_labels; no D044/D069 posture
+  change. Promotion path includes a bounded re-extraction bench
+  before any full-corpus re-extraction.
 - Initial creation of `CHANGELOG.md` based on repository commit history and project phases.
 - Mandated `CHANGELOG.md` maintenance in `AGENTS.md` and `GEMINI.md`.
 - RFC 0025: Command naming review.
