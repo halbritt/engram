@@ -7,14 +7,17 @@ required for the help/dispatch checks.
 
 from __future__ import annotations
 
+import uuid
 from contextlib import contextmanager
 from collections.abc import Iterator
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from engram import cli
+from engram.interview.sampler import SampledTarget
 
 
 @pytest.fixture()
@@ -235,3 +238,156 @@ def test_phase3_interview_enable_active_learning_dispatches(
     )
     assert rc == 0
     assert captured["signal_version"] == "rfc0018.reviewer.v1"
+
+
+# ---------------------------------------------------------------------------
+# RFC 0027 / Spec 0027: gold_label_session_targets materialization on start
+# ---------------------------------------------------------------------------
+
+
+def _build_sampled_target(
+    *,
+    target_kind: str,
+    target_id: str,
+    snapshot_id: str,
+    stability_class: str = "identity",
+    conf_band: str = "0.6-0.8",
+    recency_band: str = "<30d",
+    belief_status: str | None = None,
+) -> SampledTarget:
+    if target_kind == "claim":
+        ext_prompt: str | None = "ext-prompt-v1"
+        ext_model: str | None = "ext-model-v1"
+        cons_prompt: str | None = None
+        cons_model: str | None = None
+    else:
+        ext_prompt = None
+        ext_model = None
+        cons_prompt = "cons-prompt-v1"
+        cons_model = "cons-model-v1"
+    return SampledTarget(
+        target_kind=target_kind,
+        target_id=target_id,
+        stability_class=stability_class,
+        confidence=0.7,
+        observed_at=datetime(2024, 6, 1, 12, 0, tzinfo=timezone.utc),
+        conf_band=conf_band,
+        recency_band=recency_band,
+        belief_status=belief_status,
+        candidate_pool_snapshot_id=snapshot_id,
+        active_learning_signal_version=None,
+        extraction_prompt_version=ext_prompt,
+        extraction_model_version=ext_model,
+        consolidation_prompt_version=cons_prompt,
+        consolidation_model_version=cons_model,
+        request_profile_version="profile-v1",
+    )
+
+
+def test_phase3_interview_start_writes_session_targets(
+    monkeypatch: pytest.MonkeyPatch,
+    conn: Any,
+) -> None:
+    """Spec 0027 Migration 011: ``run_phase3_interview_start`` writes one
+    ``gold_label_session_targets`` row per sampled target before returning,
+    even on the non-interactive path."""
+
+    @contextmanager
+    def _fake_connect(*args: Any, **kwargs: Any) -> Iterator[Any]:
+        yield conn
+
+    monkeypatch.setattr(cli, "connect", _fake_connect)
+
+    snapshot_id = str(uuid.uuid4())
+    sampled = [
+        _build_sampled_target(
+            target_kind="claim",
+            target_id=str(uuid.uuid4()),
+            snapshot_id=snapshot_id,
+            stability_class="identity",
+            conf_band="0.6-0.8",
+            recency_band="<30d",
+        ),
+        _build_sampled_target(
+            target_kind="belief",
+            target_id=str(uuid.uuid4()),
+            snapshot_id=snapshot_id,
+            stability_class="preference",
+            conf_band="0.4-0.6",
+            recency_band="<90d",
+            belief_status="candidate",
+        ),
+        _build_sampled_target(
+            target_kind="claim",
+            target_id=str(uuid.uuid4()),
+            snapshot_id=snapshot_id,
+            stability_class="task",
+            conf_band="0.0-0.2",
+            recency_band="<7d",
+        ),
+    ]
+
+    class _StubSampler:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def sample(self, n: int) -> list[SampledTarget]:
+            return list(sampled[:n])
+
+    monkeypatch.setattr(cli, "GoldLabelSampler", _StubSampler)
+
+    args = SimpleNamespace(
+        n=3,
+        seed=99,
+        include_superseded=False,
+        ignore_cooldown=False,
+        non_interactive=True,
+    )
+    rc = cli.run_phase3_interview_start(args)
+    assert rc == 0
+
+    rows = conn.execute(
+        """
+        SELECT
+            idx,
+            target_kind,
+            target_id::text,
+            candidate_pool_snapshot_id::text,
+            extraction_prompt_version,
+            extraction_model_version,
+            consolidation_prompt_version,
+            consolidation_model_version,
+            request_profile_version,
+            stability_class,
+            conf_band,
+            recency_band,
+            belief_status
+        FROM gold_label_session_targets
+        ORDER BY idx
+        """
+    ).fetchall()
+    assert len(rows) == 3
+    assert [row[0] for row in rows] == [0, 1, 2]
+    # First row mirrors the claim version triple.
+    first = rows[0]
+    assert first[1] == "claim"
+    assert first[2] == sampled[0].target_id
+    assert first[3] == snapshot_id
+    assert first[4] == "ext-prompt-v1"
+    assert first[5] == "ext-model-v1"
+    assert first[6] is None
+    assert first[7] is None
+    assert first[8] == "profile-v1"
+    assert first[9] == "identity"
+    assert first[10] == "0.6-0.8"
+    assert first[11] == "<30d"
+    assert first[12] is None
+    # Second row is a belief: extraction columns must be NULL,
+    # consolidation columns populated, belief_status preserved.
+    belief_row = rows[1]
+    assert belief_row[1] == "belief"
+    assert belief_row[4] is None
+    assert belief_row[5] is None
+    assert belief_row[6] == "cons-prompt-v1"
+    assert belief_row[7] == "cons-model-v1"
+    assert belief_row[12] == "candidate"

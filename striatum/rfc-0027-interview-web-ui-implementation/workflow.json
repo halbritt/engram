@@ -1,0 +1,151 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "rfc-0027-interview-web-ui-implementation",
+  "workflow_version": "2026-05-08+spec0027",
+  "name": "Engram RFC 0027 Interview Web UI Implementation",
+  "branch": {
+    "mode": "confirm",
+    "suggested_name": "engram/rfc0027-interview-web-ui-implementation",
+    "allow_dirty": true
+  },
+  "coordinator": {
+    "role_id": "author",
+    "lane_id": "codex"
+  },
+  "lanes": {
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "-"],
+      "capabilities": ["write", "review"],
+      "constraints": {"network": "forbidden", "transcripts": "off", "repo_scope": "local_only"}
+    }
+  },
+  "roles": {
+    "author": {"definition_path": "striatum/rfc-0027-interview-web-ui-implementation/roles/author.md"},
+    "reviewer": {"definition_path": "striatum/rfc-0027-interview-web-ui-implementation/roles/reviewer.md"}
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "HUMAN_REQUIREMENTS.md", "required": true},
+    {"path": "DECISION_LOG.md", "required": true},
+    {"path": "BUILD_PHASES.md", "required": true},
+    {"path": "docs/specs/0027-interview-web-ui-spec.md", "required": true},
+    {"path": "docs/rfcs/0027-interview-web-ui.md", "required": true},
+    {"path": "docs/rfcs/0021-gold-set-interview-curation.md", "required": true},
+    {"path": "docs/howto/gold-set-interview.md", "required": true},
+    {"path": "docs/process/project-judgment.md", "required": true}
+  ],
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 1,
+    "require_disjoint_write_scopes": true
+  },
+  "jobs": [
+    {
+      "id": "implement_web_ui",
+      "type": "draft",
+      "title": "Implement RFC 0027 / spec 0027 interview web UI",
+      "role_id": "author",
+      "lane_id": "codex",
+      "objective": "Implement the spec at docs/specs/0027-interview-web-ui-spec.md: render.py extraction with golden-output tests, migration 011, FastAPI web app + Jinja templates + vendored htmx, CLI serve subparser, Makefile target, and tests.",
+      "task_prompt": {"path": "striatum/rfc-0027-interview-web-ui-implementation/prompts/implement.md"},
+      "inputs": [
+        {"path": "docs/specs/0027-interview-web-ui-spec.md", "kind": "accepted_spec"},
+        {"path": "docs/rfcs/0027-interview-web-ui.md", "kind": "promoted_rfc"},
+        {"path": "docs/reviews/rfc0027/RFC_0027_INTERVIEW_WEB_UI_SYNTHESIS.md", "kind": "synthesis"},
+        {"path": "src/engram/cli.py", "kind": "command_surface"},
+        {"path": "src/engram/interview/agent.py", "kind": "module"},
+        {"path": "src/engram/interview/sampler.py", "kind": "module"},
+        {"path": "src/engram/interview/storage.py", "kind": "module"},
+        {"path": "migrations/010_gold_labels.sql", "kind": "schema_baseline"},
+        {"path": "tests/test_interview_cli.py", "kind": "test_surface"},
+        {"path": "tests/test_interview_storage.py", "kind": "test_surface"},
+        {"path": "tests/conftest.py", "kind": "test_fixture"},
+        {"path": "Makefile", "kind": "command_surface"},
+        {"path": "pyproject.toml", "kind": "package_metadata"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/",
+          "tests/",
+          "migrations/",
+          "Makefile",
+          "pyproject.toml",
+          "docs/howto/gold-set-interview.md",
+          "CHANGELOG.md",
+          "docs/reviews/rfc0027-interview-web-ui-implementation/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "docs/rfcs/",
+          "docs/specs/",
+          "BUILD_PHASES.md",
+          "DECISION_LOG.md",
+          "HUMAN_REQUIREMENTS.md"
+        ]
+      },
+      "expected_artifacts": [
+        {"logical_name": "implementation_handoff", "kind": "handoff", "path": "docs/reviews/rfc0027-interview-web-ui-implementation/IMPLEMENTATION_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "verify_web_ui",
+      "type": "review",
+      "title": "Verify RFC 0027 web UI implementation",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Run focused local checks against spec 0027: migration 011 applies, render.py extraction is no-behavior-change, FastAPI app dispatches all routes, Origin allowlist enforced, Tier 1 ceiling enforced, tests pass.",
+      "task_prompt": {"path": "striatum/rfc-0027-interview-web-ui-implementation/prompts/verify.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0027-interview-web-ui-implementation/IMPLEMENTATION_HANDOFF.md", "kind": "handoff"},
+        {"path": "docs/specs/0027-interview-web-ui-spec.md", "kind": "accepted_spec"},
+        {"path": "docs/rfcs/0027-interview-web-ui.md", "kind": "promoted_rfc"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0027-interview-web-ui-implementation/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "Makefile", "pyproject.toml", "docs/rfcs/", "docs/specs/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "verification_report", "kind": "finding", "path": "docs/reviews/rfc0027-interview-web-ui-implementation/VERIFICATION_REPORT.md", "required": true}
+      ]
+    },
+    {
+      "id": "final_review",
+      "type": "review",
+      "title": "Final review of RFC 0027 implementation",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Audit the completed implementation against spec 0027: route surface, render extraction, migration 011, Origin allowlist, Tier 1 ceiling, D044/D069 invariants, accessibility, test coverage.",
+      "task_prompt": {"path": "striatum/rfc-0027-interview-web-ui-implementation/prompts/final_review.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0027-interview-web-ui-implementation/IMPLEMENTATION_HANDOFF.md", "kind": "handoff"},
+        {"path": "docs/reviews/rfc0027-interview-web-ui-implementation/VERIFICATION_REPORT.md", "kind": "finding"},
+        {"path": "docs/specs/0027-interview-web-ui-spec.md", "kind": "accepted_spec"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0027-interview-web-ui-implementation/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "Makefile", "pyproject.toml", "docs/rfcs/", "docs/specs/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "final_review", "kind": "finding", "path": "docs/reviews/rfc0027-interview-web-ui-implementation/FINAL_REVIEW.md", "required": true}
+      ]
+    }
+  ],
+  "edges": [
+    {"from": "implement_web_ui", "to": "verify_web_ui", "on": "completed"},
+    {"from": "verify_web_ui", "to": "final_review", "on": "completed"}
+  ],
+  "cycles": [
+    {"from": "final_review", "to": "implement_web_ui", "on_verdict": "needs_revision", "max_iterations": 1}
+  ]
+}

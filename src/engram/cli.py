@@ -52,6 +52,18 @@ from engram.interview import (
     list_sessions,
     mark_session_completed,
 )
+from engram.interview.render import (
+    VERDICT_ALIAS,
+    VERDICT_PROMPT,
+    VERDICT_VALID,
+    fetch_target_display,
+    format_evidence_dates,
+    format_evidence_excerpts,
+    format_header,
+    format_summary_line,
+    pick_question,
+    rationale_prompt_for,
+)
 from engram.migrations import migrate, migration_integrity_errors
 from engram.phase4 import (
     Phase4SchemaPreflightError,
@@ -1655,206 +1667,38 @@ def print_re_extract_result(result: ReExtractResult) -> None:
         )
 
 
-_VERDICT_PROMPT = "verdict [t/f/stale/unsupported/unsure/skip] (q to save and quit) > "
-_VERDICT_ALIAS = {"t": "true", "f": "false", "true": "true", "false": "false"}
-_VERDICT_VALID = {"true", "false", "stale", "unsupported", "unsure", "skip"}
-_RATIONALE_PROMPT_BY_VERDICT = {
-    "false": "correct value > ",
-    "stale": "when did it change? > ",
-    "unsupported": "what's missing from the evidence? > ",
-    "unsure": "note (Enter to skip) > ",
-}
-_EVIDENCE_EXCERPT_LIMIT = 280
-_EVIDENCE_ROWS_SHOWN = 3
-
-
-def _fetch_evidence_excerpts(conn, evidence_ids: list[str]) -> list[dict[str, Any]]:  # type: ignore[no-untyped-def]
-    """Fetch up to _EVIDENCE_ROWS_SHOWN messages by id, in chronological order."""
-    if not evidence_ids:
-        return []
-    rows = conn.execute(
-        """
-        SELECT
-            m.id::text,
-            m.role,
-            m.created_at,
-            m.content_text,
-            m.source_kind::text,
-            c.title
-        FROM messages m
-        LEFT JOIN conversations c ON c.id = m.conversation_id
-        WHERE m.id = ANY(%s)
-        ORDER BY m.created_at NULLS LAST, m.sequence_index
-        LIMIT %s
-        """,
-        (evidence_ids, _EVIDENCE_ROWS_SHOWN),
-    ).fetchall()
-    excerpts: list[dict[str, Any]] = []
-    for row in rows:
-        msg_id, role, created_at, content, source_kind, conv_title = row
-        body = content or ""
-        if len(body) > _EVIDENCE_EXCERPT_LIMIT:
-            body = body[:_EVIDENCE_EXCERPT_LIMIT].rstrip() + "…"
-        excerpts.append(
-            {
-                "id": msg_id,
-                "role": role,
-                "created_at": created_at,
-                "content": body,
-                "source_kind": source_kind,
-                "conv_title": conv_title,
-            }
-        )
-    return excerpts
-
-
-def _print_evidence_excerpts(excerpts: list[dict[str, Any]], total: int) -> None:
-    if not excerpts:
-        return
-    print("  evidence:")
-    for ex in excerpts:
-        ts = ex["created_at"].strftime("%Y-%m-%d") if ex["created_at"] else "?"
-        role = ex["role"] or "?"
-        src = ex["source_kind"] or "?"
-        title = f"  [{ex['conv_title']}]" if ex.get("conv_title") else ""
-        print(f"    {ts}  {role}  ({src}){title}")
-        if ex["content"]:
-            indented = "\n".join(f"      {line}" for line in ex["content"].splitlines() or [""])
-            print(indented)
-    if total > len(excerpts):
-        print(f"    … {total - len(excerpts)} more row(s) not shown")
-
-
-def _fetch_target_display(conn, target) -> dict[str, Any]:  # type: ignore[no-untyped-def]
-    """Pull an operator-readable summary plus evidence excerpts for a target."""
-    if target.target_kind == "claim":
-        row = conn.execute(
-            """
-            SELECT
-                c.subject_text,
-                c.predicate,
-                c.object_text,
-                c.object_json,
-                c.evidence_message_ids,
-                cardinality(c.evidence_message_ids),
-                pv.description,
-                pv.cardinality_class,
-                (SELECT MIN(m.created_at) FROM messages m
-                 WHERE m.id = ANY(c.evidence_message_ids)) AS evidence_min,
-                (SELECT MAX(m.created_at) FROM messages m
-                 WHERE m.id = ANY(c.evidence_message_ids)) AS evidence_max
-            FROM claims c
-            LEFT JOIN predicate_vocabulary pv ON pv.predicate = c.predicate
-            WHERE c.id = %s
-            """,
-            (target.target_id,),
-        ).fetchone()
-        if row is None:
-            return {"summary": "<missing claim row>", "excerpts": [], "evidence_count": 0}
-        (
-            subj, pred, obj_text, obj_json, ev_ids, ev_count,
-            pred_doc, card_class, ev_min, ev_max,
-        ) = row
-        obj = obj_text if obj_text is not None else (str(obj_json) if obj_json else "")
-        excerpts = _fetch_evidence_excerpts(conn, list(ev_ids or []))
-        return {
-            "summary": f'{subj} -[{pred}]-> {obj}',
-            "predicate": pred,
-            "predicate_doc": pred_doc or "",
-            "cardinality_class": card_class,
-            "excerpts": excerpts,
-            "evidence_count": int(ev_count),
-            "evidence_min": ev_min,
-            "evidence_max": ev_max,
-            "valid_from": None,
-            "valid_to": None,
-        }
-    row = conn.execute(
-        """
-        SELECT
-            b.subject_text,
-            b.predicate,
-            b.object_text,
-            b.object_json,
-            b.valid_from,
-            b.valid_to,
-            b.evidence_ids,
-            cardinality(b.evidence_ids),
-            pv.description,
-            pv.cardinality_class,
-            (SELECT MIN(m.created_at) FROM messages m
-             WHERE m.id = ANY(b.evidence_ids)) AS evidence_min,
-            (SELECT MAX(m.created_at) FROM messages m
-             WHERE m.id = ANY(b.evidence_ids)) AS evidence_max
-        FROM beliefs b
-        LEFT JOIN predicate_vocabulary pv ON pv.predicate = b.predicate
-        WHERE b.id = %s
-        """,
-        (target.target_id,),
-    ).fetchone()
-    if row is None:
-        return {"summary": "<missing belief row>", "excerpts": [], "evidence_count": 0}
-    (
-        subj, pred, obj_text, obj_json, vfrom, vto, ev_ids, ev_count,
-        pred_doc, card_class, ev_min, ev_max,
-    ) = row
-    obj = obj_text if obj_text is not None else (str(obj_json) if obj_json else "")
-    excerpts = _fetch_evidence_excerpts(conn, list(ev_ids or []))
-    return {
-        "summary": f'{subj} -[{pred}]-> {obj}',
-        "predicate": pred,
-        "predicate_doc": pred_doc or "",
-        "cardinality_class": card_class,
-        "excerpts": excerpts,
-        "evidence_count": int(ev_count),
-        "evidence_min": ev_min,
-        "evidence_max": ev_max,
-        "valid_from": vfrom,
-        "valid_to": vto,
-    }
-
-
-def _pick_question(target, display: dict[str, Any]) -> str:  # type: ignore[no-untyped-def]
-    """Choose a question framing based on stability_class and cardinality_class.
-
-    Claim targets always ask about the cited evidence — claims are time-stamped
-    paraphrases by definition. For belief targets the framing depends on
-    whether the predicate is point-in-time (event), transient (mood/task),
-    or genuinely current (identity / preference / project_status / goal /
-    relationship).
-    """
-    ev_max = display.get("evidence_max")
-    ev_date = ev_max.date().isoformat() if ev_max else "the cited time"
-    if target.target_kind == "claim":
-        return f"Q: Is this an accurate paraphrase of what was said on {ev_date}?"
-    cardinality = (display.get("cardinality_class") or "").strip()
-    if cardinality == "event":
-        return f"Q: Did this event happen as paraphrased on {ev_date}?"
-    if target.stability_class in {"mood", "task"}:
-        return f"Q: Was this true around {ev_date}?"
-    return "Q: Is this currently true?"
-
-
 def _prompt_verdict(stdin_isatty: bool) -> str | None:
-    """Prompt until a valid verdict is entered. Returns None on EOF/q."""
+    """Prompt until a valid verdict is entered. Returns None on EOF/q.
+
+    The prompt copy and verdict vocabulary live in
+    :mod:`engram.interview.render` so the CLI and the web UI share one
+    source of truth.
+    """
     while True:
         try:
-            raw = input(_VERDICT_PROMPT).strip().lower()
+            raw = input(VERDICT_PROMPT).strip().lower()
         except EOFError:
             return None
         if raw in {"q", "quit", "save-and-quit"}:
             return None
-        canonical = _VERDICT_ALIAS.get(raw, raw)
-        if canonical in _VERDICT_VALID:
+        canonical = VERDICT_ALIAS.get(raw, raw)
+        if canonical in VERDICT_VALID:
             return canonical
-        print(f"  invalid verdict: {raw!r}; choose from {sorted(_VERDICT_VALID)} or 'q' to save and quit")
+        print(
+            f"  invalid verdict: {raw!r}; choose from {sorted(VERDICT_VALID)} "
+            "or 'q' to save and quit"
+        )
 
 
 def _prompt_rationale(verdict: str) -> str | None:
-    """Verdict-specific rationale prompt; ``true``/``skip`` skip the prompt."""
-    if verdict in {"true", "skip"}:
+    """Verdict-specific rationale prompt; ``true``/``skip`` skip the prompt.
+
+    Wraps :func:`engram.interview.render.rationale_prompt_for` with the
+    blocking ``input()`` call that only the CLI needs.
+    """
+    prompt = rationale_prompt_for(verdict)
+    if prompt is None:
         return None
-    prompt = _RATIONALE_PROMPT_BY_VERDICT.get(verdict, "rationale (Enter to skip) > ")
     try:
         raw = input(prompt).strip()
     except EOFError:
@@ -1889,6 +1733,59 @@ def run_phase3_interview_start(args) -> int:  # type: ignore[no-untyped-def]
             ignore_cooldown=bool(args.ignore_cooldown),
         )
         sampled = sampler.sample(n)
+
+        if sampled:
+            # Materialize the sampled order in gold_label_session_targets
+            # (RFC 0027 / Spec 0027 Migration 011) so a CLI-started session
+            # is web-resumable and a Ctrl-C mid-loop preserves the order.
+            # Commit immediately, before the interactive prompt begins.
+            target_rows = [
+                (
+                    session_id,
+                    idx,
+                    target.target_kind,
+                    target.target_id,
+                    target.candidate_pool_snapshot_id,
+                    target.extraction_prompt_version,
+                    target.extraction_model_version,
+                    target.consolidation_prompt_version,
+                    target.consolidation_model_version,
+                    target.request_profile_version,
+                    target.stability_class,
+                    target.conf_band,
+                    target.recency_band,
+                    target.belief_status,
+                )
+                for idx, target in enumerate(sampled)
+            ]
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO gold_label_session_targets (
+                        session_id,
+                        idx,
+                        target_kind,
+                        target_id,
+                        candidate_pool_snapshot_id,
+                        extraction_prompt_version,
+                        extraction_model_version,
+                        consolidation_prompt_version,
+                        consolidation_model_version,
+                        request_profile_version,
+                        stability_class,
+                        conf_band,
+                        recency_band,
+                        belief_status
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s
+                    )
+                    """,
+                    target_rows,
+                )
+            conn.commit()
 
         if not interactive:
             print(
@@ -1925,44 +1822,19 @@ def run_phase3_interview_start(args) -> int:  # type: ignore[no-untyped-def]
         answered = 0
         try:
             for idx, target in enumerate(sampled, start=1):
-                display = _fetch_target_display(conn, target)
-                header = (
-                    f"[{idx}/{len(sampled)}] {target.target_kind} {target.target_id}"
-                    f"  stability={target.stability_class}  conf={target.confidence:.2f}"
-                    f"  conf_band={target.conf_band}  recency={target.recency_band}"
-                )
-                if target.target_kind == "belief" and target.belief_status:
-                    header += f"  status={target.belief_status}"
-                print(header)
-                summary_line = display.get("summary", "")
-                pred_doc = display.get("predicate_doc")
-                if pred_doc:
-                    summary_line = f"{summary_line}    ({pred_doc})"
-                print(f"  {summary_line}")
-                if display.get("evidence_count") is not None:
-                    parts: list[str] = []
-                    ev_min = display.get("evidence_min")
-                    ev_max = display.get("evidence_max")
-                    if ev_min and ev_max:
-                        if ev_min.date() == ev_max.date():
-                            parts.append(f"evidence dates: {ev_min.date()}")
-                        else:
-                            parts.append(
-                                f"evidence dates: {ev_min.date()}..{ev_max.date()}"
-                            )
-                    if display.get("valid_from") and display.get("valid_to"):
-                        parts.append(
-                            f"valid {display['valid_from'].date()}"
-                            f"..{display['valid_to'].date()}"
-                        )
-                    elif display.get("valid_from"):
-                        parts.append(f"valid_from {display['valid_from'].date()}")
-                    suffix = (", " + ", ".join(parts)) if parts else ""
-                    print(f"  evidence: {display['evidence_count']} row(s){suffix}")
+                display = fetch_target_display(conn, target)
+                print(format_header(target, idx, len(sampled)))
+                print(f"  {format_summary_line(display)}")
+                ev_dates_line = format_evidence_dates(display)
+                if ev_dates_line is not None:
+                    print(f"  {ev_dates_line}")
                 excerpts = display.get("excerpts") or []
                 if excerpts:
-                    _print_evidence_excerpts(excerpts, display.get("evidence_count", 0))
-                question = _pick_question(target, display)
+                    for line in format_evidence_excerpts(
+                        excerpts, display.get("evidence_count", 0)
+                    ):
+                        print(line)
+                question = pick_question(target, display)
                 print(f"  {question}")
                 verdict = _prompt_verdict(sys.stdin.isatty())
                 if verdict is None:
