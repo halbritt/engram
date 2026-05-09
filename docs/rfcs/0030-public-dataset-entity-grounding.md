@@ -5,17 +5,22 @@
 |-------|-------|
 | RFC | 0030 |
 | Title | Public-Dataset Entity Grounding for Claim Extraction |
-| Status | proposal |
+| Status | accepted (revised after design review 2026-05-09) |
 | Implementation | none |
 | Date | 2026-05-09 |
-| Context | RFC 0011 § Schema (claims/beliefs); RFC 0017 (extraction prompt versioning); RFC 0028 (predicate-intent surfacing — adjacent prompt change); `src/engram/extractor.py:37` (`EXTRACTION_PROMPT_VERSION`); `src/engram/extractor.py:1961` (`build_extraction_prompt`); `migrations/009_phase4_entities_review.sql` (entities table, entity_kind enum); engram principles: local-first, corpus/network separation, raw-is-sacred, eval-as-oracle |
+| Context | RFC 0011 § Schema (claims/beliefs); RFC 0017 (extraction prompt versioning); RFC 0018 (evidence-to-claim audit cascade); RFC 0028 (predicate-intent surfacing — adjacent prompt change); `src/engram/extractor.py:37` (`EXTRACTION_PROMPT_VERSION`); `src/engram/extractor.py:1961` (`build_extraction_prompt`); `migrations/009_phase4_entities_review.sql` (entities table, entity_kind enum); engram principles: local-first, corpus/network separation, raw-is-sacred, eval-as-oracle |
 
 Decision refs:
-  - none yet (proposal)
+  - D020 (LLM endpoint is local-only)
+  - D044 (gold-set is advisory)
+  - D068 (artifact-id model)
+  - D076 (32k context budget)
+  - D080 (RFC 0027 promotion pattern)
 
 Review refs:
-  - none (proposed for striatum-orchestrated multi-agent review per
-    `docs/process/multi-agent-review-loop.md`)
+  - [Design review final review](../reviews/rfc0030-grounding-claim-extraction/FINAL_REVIEW.md)
+  - [Findings ledger](../reviews/rfc0030-grounding-claim-extraction/FINDINGS_LEDGER.md)
+  - [Revision synthesis](../reviews/rfc0030-grounding-claim-extraction/REVISION_SYNTHESIS.md)
 
 Phase refs:
   - PHASE-0003 (extraction)
@@ -102,6 +107,35 @@ These are stated up front so the design loop does not relitigate them:
 If a proposed sub-design violates any of these, the RFC needs to come
 back here, not the design loop.
 
+### Code-side enforcement
+
+The five constraints above are the privacy posture; this subsection
+makes them grep-checkable rather than convention-checkable.
+
+- **Forbidden HTTP-client imports** in `src/engram/grounding/resolver.py`,
+  `src/engram/grounding/attachment.py`, and `src/engram/extractor.py`.
+  The unit test `tests/test_grounding.py::test_no_http_clients` walks
+  the AST of these modules and asserts no `urllib`, `requests`,
+  `httpx`, `aiohttp`, or socket imports.
+- **Sanctioned network module:** `src/engram/grounding/snapshot.py` is
+  the *only* module permitted to make outbound network calls. Its
+  responsibilities are bounded to (a) downloading a public dataset
+  by content-addressed URL, (b) verifying integrity hashes, (c)
+  emitting structured progress to stdout/stderr. The module does not
+  accept corpus content as a parameter; tests pin this.
+- **Single-accessor chokepoint:** every read of an active grant goes
+  through `src/engram/grounding/grants.GrantStore.read_active(role,
+  dataset)`. Tests assert no other module accesses the grants
+  database directly.
+
+### Locked in DECISION_LOG
+
+On RFC acceptance, the five non-negotiables in this section are
+promoted to a new `D###` entry in `DECISION_LOG.md` whose body is the
+verbatim list above. Any future change to the constraints requires a
+new `D###` entry that names the predecessor and explicitly supersedes
+it. This protects the boundary against quiet softening.
+
 ## Scope
 
 In scope:
@@ -145,10 +179,22 @@ Recommended seed: **Wikidata + GeoNames** as the v1 grounding sources.
   and administrative geography. A useful complement to Wikidata's
   place coverage.
 
-Open: should v1 also include **OpenStreetMap (Nominatim)** for
-fine-grained place lookup? Domain-specific datasets (MusicBrainz,
-OpenLibrary, Open Food Facts) are clearly v1.x candidates rather than
-v1.
+**Position (synthesis 2026-05-09):** v1 ships Wikidata + GeoNames with
+filters scoped to the entity classes most-relevant to engram (places,
+organizations, products, public figures). OpenStreetMap is deferred
+to v1.x; domain-specific datasets (MusicBrainz, OpenLibrary, Open
+Food Facts) are deferred until the v1 oracle has produced a measured
+result.
+
+Storage budget is enforced, not aspirational: 10GB target, 12GB
+hard-fail by default (`ENGRAM_GROUNDING_STORAGE_BUDGET_GB`); warn at
+80%. `engram grounding snapshot` refuses to add a new snapshot whose
+inclusion would exceed the hard cap.
+
+Operator-facing dataset names ship as aliases to reduce jargon:
+`places` → GeoNames + Wikidata-places filter, `companies` →
+Wikidata-organizations filter, `public-figures` → Wikidata-people
+filter. The CLI accepts either the alias or the explicit dataset id.
 
 ### D-B. Resolver placement
 
@@ -167,10 +213,48 @@ Three placement options; the loop should pick one:
    form-based; resolution attachment happens post-extraction with the
    resolver's output already cached.
 
-Recommended seed: **(3) hybrid**, on the bet that nudging the LLM
-toward known entities helps quality without forcing it to commit to
-QIDs it can't reason about, while keeping resolution attachment as a
-clean, testable post-pass.
+**Position (synthesis 2026-05-09):** option 3 (hybrid), with three
+guards that the original recommended seed lacked.
+
+**Module split.** The hybrid placement decomposes into three testable
+units:
+- `surface_form_extractor` — scans segment text for entity-shaped
+  phrases. Reuses the existing predicate-vocabulary tokenizer.
+  Output: `tuple[SurfaceFormSpan, ...]`.
+- `candidate_resolver` — maps surface forms to dataset candidates.
+  Input: `(surface_form: str, kind_hint: Optional[EntityKind],
+  snapshot_pin: SnapshotId)`. Output:
+  `tuple[Candidate, ...]` ordered by descending confidence.
+- `attachment_writer` — runs as a post-extraction pass; writes
+  `entity_external_references` rows linking claim entities to the
+  resolver's candidate sets.
+
+**Surface-form normalization.** Surface forms are normalized to
+NFKC + lowercase + collapsed whitespace before resolver lookup. The
+normalization rule is fixed; lookup indexes are built against the
+normalized form. Trade-off: precision over recall (a typo'd surface
+form may miss; this is intentional).
+
+**Prompt-shape guard.** Candidates appear in the extraction prompt
+under a header that names them as hints, not facts. Verbatim:
+
+```
+CANDIDATES-ONLY-HINTS (these are POSSIBLE matches from public
+datasets; treat them as suggestions only. The text of the
+conversation is the source of truth. Disregard any candidate that
+does not match what the segment actually says.)
+```
+
+**Dataset content sanitization.** Description fields supplied by the
+public dataset (Wikidata `schema:description`, GeoNames description)
+are sanitized before insertion: strip control characters, cap length
+at 200 characters, reject any field matching prompt-shape patterns
+(`### `, `BEGIN`, `<|`, etc.). The candidate carries a sanitized
+description or none.
+
+This addresses the bias risk (claude:F004), the dataset-injection
+exfil risk (privacy_adversary:P004), and the interview-cost risk
+(usability_adversary:U004) raised in design review.
 
 ### D-C. Output shape: candidate set vs. single pick
 
@@ -181,11 +265,23 @@ the fruit, Apple Records), should the resolver:
 - Attach the full candidate set with confidences
 - Refuse to resolve and surface the ambiguity for interview-time review
 
-Recommended seed: **attach the full candidate set with confidences**.
-This honors the refusal-of-false-precision principle: collapsing to a
-single ID we are uncertain about bakes errors permanently into the
-biography. The interview UI (RFC 0027 / D080) is the right place for
-the operator to disambiguate.
+**Position (synthesis 2026-05-09):** attach the full candidate set
+with confidences as `entity_external_references` rows. This honors
+refusal-of-false-precision: collapsing to a single ID we are uncertain
+about bakes errors permanently into the biography.
+
+**Tracked-export redaction rule.** Tracked artifacts (`docs/reviews/`,
+benchmark JSON, RFC 0029 bench-triage exports) MAY record candidate
+QIDs / dataset-ids and confidence scores. They MUST NOT include the
+descriptive prose attached to those candidates. Resolved-entity
+descriptions stay in scratch state.
+
+**Interview UI default.** The interview surface (RFC 0027 / D080)
+renders the top-1 candidate above a configurable confidence threshold
+(default 0.85), with a "see N more" affordance for the operator to
+expand the full set. The full set is not rendered by default. This
+keeps interview throughput intact for operators who do not need to
+disambiguate every claim.
 
 ### D-D. Schema: where the external reference lives
 
@@ -199,27 +295,87 @@ Three plausible homes:
 3. Sidecar `claim_resolutions` table, scoped to claim-level resolution
    without disturbing the entity model.
 
-Recommended seed: **(2) `entity_external_references` table**, because
-an entity can legitimately have a Wikidata QID *and* a GeoNames ID
-*and* a MusicBrainz MBID; multi-row is natural. The
-`projection_audits` cascade (RFC 0018) is the model for how to keep
-this auditable.
+**Position (synthesis 2026-05-09):** option 2,
+`entity_external_references` table, with append-only / tombstone /
+cascade discipline.
+
+**Schema (DDL sketch):**
+- `entity_external_references` columns: `eer_id PRIMARY KEY`,
+  `entity_id REFERENCES entities`, `dataset TEXT`,
+  `external_id TEXT`, `snapshot_id TEXT`, `confidence NUMERIC`,
+  `superseded_by REFERENCES entity_external_references (NULLable)`,
+  `created_at TIMESTAMP`.
+- Unique constraint: `(entity_id, dataset, external_id, snapshot_id)`.
+- Index: `(dataset, external_id)` for resolver lookups.
+- Trigger: `BEFORE UPDATE OR DELETE` raises; the table is append-only
+  by enforcement.
+
+**Tombstone supersession.** Replacing a resolution inserts a new row
+and stores its id in the predecessor's `superseded_by`. Current-state
+queries filter `WHERE superseded_by IS NULL AND <grant active>`.
+Audit queries see all rows including tombstones.
+
+**Cascade integration with RFC 0018.** Cascade walks the join order
+raw evidence → `entities` (via segment_id provenance) →
+`entity_external_references` (joined on `entity_id`) → `claims`. When
+a snapshot is rolled back (D-E), all `entity_external_references`
+rows with that `snapshot_id` are tombstoned by inserting "rolled back"
+markers. Claim rows are unaffected; `projection_audits` records the
+rollback.
+
+**Live vs audit query semantics.** Live consumer queries filter to
+grant-active rows. Audit queries (`projection_audits` and similar)
+include all rows. Tests pin both behaviors.
+
+**Backfill semantics.** Claims extracted under prior `prompt_version`
+have no `entity_external_references` rows; absence of a join row
+means "not grounded under any snapshot." Documented in
+`docs/schema/README.md`.
 
 ### D-E. Snapshot discipline
 
 Open: per-dataset versioning, per-extraction-run versioning, or both.
 
-Recommended seed: **per-dataset versioned snapshots, recorded per
-resolution.** Each dataset is downloaded as `dataset@snapshot_id`
-(e.g., `wikidata@2026-04-15`), stored under
-`~/.engram/grounding/<dataset>/<snapshot_id>/`. Each `claim_resolution`
-or `entity_external_reference` row records the snapshot used. Multiple
-snapshots may co-exist; the active snapshot per extraction run is
-explicit (CLI flag or config).
+**Position (synthesis 2026-05-09):** per-dataset content-hashed
+snapshots stored under tightened mode bits, indexed at fetch time,
+rolled back via tombstone insertion.
 
-This dovetails with RFC 0017's prompt-version immutability: a claim's
-provenance becomes (segment_id, prompt_version, model_version,
-{dataset@snapshot}\*).
+**Snapshot id with content hash.** Snapshot identifier is
+`<dataset>@<date>@sha256:<hash>` — for example,
+`wikidata@2026-04-15@sha256:abcd1234...`. The hash is computed at
+registration time over a Merkle-rooted index of the snapshot's files
+and stored in a snapshot manifest. The loader recomputes the hash on
+every access and refuses to load on mismatch (loud failure, not
+silent). This turns "snapshot reproducibility" from a directory-name
+promise into a verifiable invariant.
+
+**Storage layout and mode bits.** Snapshots live at
+`~/.engram/grounding/<dataset>/<snapshot_id>/`; directories at
+mode 0700, manifest files at mode 0600. Engram refuses to use a
+snapshot directory whose permissions are looser. This narrows the
+shared-machine fingerprint surface.
+
+**Indexing at fetch time.** The resolver's lookup index (e.g.,
+SQLite or Lance over the snapshot subset) is built when the snapshot
+is fetched, not lazily on first extraction. `engram grounding
+snapshot --dataset <name>` blocks until indexing completes;
+extraction never indexes lazily.
+
+**Snapshot rollback semantics.** Rolling back a snapshot tombstones
+all `entity_external_references` rows recorded under it (per D-D
+cascade); claim rows are unaffected. Re-extraction under a new
+snapshot is the operator's path to fresh resolutions. The rollback
+itself is an operator-initiated CLI action
+(`engram grounding rollback --snapshot-id <id>`); the system never
+rolls back automatically.
+
+**Provenance shape (RFC 0017 interaction).** Snapshot provenance
+does NOT extend the claim row's `(prompt_version, model_version,
+request_profile_version)` tuple. Instead it lives on a new sidecar
+table `grounding_resolution_set` keyed by `(claim_id, run_id)` and
+storing the set of `(dataset, snapshot_id)` pairs consulted for that
+extraction. This preserves RFC 0017's immutability while preserving
+reproducibility.
 
 ### D-F. Grant model
 
@@ -230,11 +386,56 @@ Operator grants are per-dataset, recorded in a new
 - Are grants time-bounded?
 - Is there an audit trail of grant exercises?
 
-Recommended seed: **per agent role, persistent until revoked, with an
-audit log of access.** A simple `engram grants` CLI surface (`grant
-<role> <dataset>`, `revoke`, `list`) keeps the model legible. The
-extraction agent role is one of several; striatum's claim-loop agents
-get separately-named roles.
+**Position (synthesis 2026-05-09):** per agent role, persistent until
+revoked, scratch-SQLite-stored, non-syncing, with templates and
+forward-only revocation.
+
+**Storage.** Grants live at `~/.engram/grants/grants.sqlite3`. Schema:
+- `grants(role, dataset, granted_at, granted_by, revoked_at NULLable)`.
+- `grants_audit(audit_id, role, dataset, action, occurred_at,
+  process_pid)` — append-only access log.
+
+**Non-sync stance.** A marker file at
+`~/.engram/grants/.engram-no-sync` documents that the grants
+directory must not replicate via dotfile sync (chezmoi, mackup,
+Dropbox-mounted home, etc.). The grant log is per-machine; tooling
+that respects the marker honors that boundary.
+
+**Retention.** Grant-exercise audit rows are kept 90 days, then
+truncated. Grant-state rows (`grants` table) are append-only via
+`revoked_at` rather than DELETE.
+
+**CLI surface.** `engram grants list [--usage]` (with `--usage` showing
+last-accessed dates), `engram grants grant <role> <dataset>`,
+`engram grants revoke <role> <dataset>`, `engram grants
+apply-template <template> <role>`. Default templates ship:
+`places-only`, `places-and-companies`, `everything-public`. The
+templates reduce the role × dataset matrix to "pick one of N
+templates per role."
+
+**Revocation behavior.** Forward-only. Existing
+`entity_external_references` rows persist as historical record. Live
+consumer queries filter by grant-active. Audit queries see all rows.
+The operator's path to *removing* grounded resolutions is
+re-extraction under a no-grant configuration (or `engram grounding
+detach` per Q4 below for cheap rollback).
+
+**Default for non-role-typed CLI invocations.** Default is
+operator-inherits — a CLI invocation outside a striatum lane runs as
+the operator and sees the operator's union of role grants. State
+explicitly so future operators do not assume default-deny.
+
+**Run-summary surfacing.** Every extraction run summary includes a
+machine-readable line:
+
+```json
+{"grounding_status": {"active": true|false,
+                      "active_grants": ["wikidata", "geonames"],
+                      "lock_state": "matches" | "lost_grants" | "fresh"}}
+```
+
+Downstream tooling (RFC 0029 bench triage, benchmarks, interview
+exports) detects grounded vs ungrounded runs from this field.
 
 ### D-G. Extraction prompt impact
 
@@ -244,37 +445,116 @@ If the resolver passes candidates into the extraction prompt
 modestly-sized candidate block per entity-shaped phrase could push
 toward the 32k-slot context (RFC 0023 / D076) on long segments.
 
-Open: budget cap on candidate-block size per segment? Truncation
-strategy when the cap is hit? Recommended seed: cap at ~1000 tokens
-per segment, truncate by descending candidate confidence.
+**Position (synthesis 2026-05-09):** per-segment cap with
+batch-level fail-fast.
 
-This change bumps `EXTRACTION_PROMPT_VERSION` per RFC 0017.
+- Per-segment cap: 1000 tokens of candidate block per segment,
+  truncated by descending candidate confidence. Soft cap (warn);
+  fail at 1500 tokens.
+- Batch-level cap: in batched extraction (RFC 0019 / RFC 0023), total
+  candidate-block tokens across all segments in one request must not
+  exceed `CANDIDATE_BATCH_CAP` (default 8000 tokens,
+  `ENGRAM_CANDIDATE_BATCH_CAP_TOKENS`). The batched-prompt assembler
+  fails fast on overflow with a loud error rather than silently
+  truncating; the extraction worker must produce a smaller batch.
+- `EXTRACTION_PROMPT_VERSION` bump rule: any change to the
+  candidate-block format, the prompt-shape guard sentence, or the
+  per-segment cap triggers a version bump per RFC 0017.
 
 ### D-H. Eval oracle
 
 The eval-as-oracle principle bites hard here: "grounding improves
 extraction quality" is the hypothesis, and we need a way to measure it
-before claiming the win.
+before claiming the win. The first version of this section was
+fundamentally insufficient — confounded with prompt-version effects,
+gameable by coverage drop, under-powered at 100 segments,
+selection-biased on slice, and contaminated at the secondary signal.
+The position below addresses each of those.
 
-Open: which signal is the oracle?
+**Three-arm bench (mandatory).** Promotion-grade evaluation uses three
+arms, not two:
 
-- Drop in operator `false` verdicts in the entity-mismatch class
-  (RFC 0028's failure taxonomy).
-- Drop in entity-consolidation merge work (PHASE-0004) per N
-  conversations.
-- A held-out gold set of pre-resolved entity references that the
-  grounded extractor must recover.
-- All of the above.
+1. **Arm A — v8 baseline.** Existing prompt, no grounding, the
+   pre-existing extraction behavior at the time of the bench.
+2. **Arm B — v9 negative control.** New `EXTRACTION_PROMPT_VERSION`
+   with the candidate-block format present but grounding *disabled*.
+   This isolates the prompt-format effect from the grounding effect.
+3. **Arm C — v9 grounded.** New prompt + grounding enabled with the
+   active snapshot pin.
 
-Recommended seed: **operator `false`-rate in the entity-mismatch
-class** as the primary signal (cheap to capture, already collected via
-RFC 0021 gold-set interview), with PHASE-0004 merge-rate as a
-secondary signal once enough corpus has been re-extracted.
+Only the **Arm B vs Arm C** comparison isolates the grounding
+contribution. Arm A is reported for context (drift over time) but is
+not the gate.
 
-The "before/after" measurement protocol should mirror RFC 0017's
-re-extraction discipline: run grounded extraction on a bounded slice
-first; compare against the v8 baseline; only proceed to full-corpus
-re-extraction if the slice shows the predicted improvement.
+**Paired metric (false-rate AND coverage).**
+
+- Primary: operator-`false`-rate on entity-mismatch claims (lower is
+  better). RFC 0028's failure taxonomy is the source of truth for
+  what counts as an entity-mismatch claim.
+- Required paired: coverage = fraction of entity-shaped surface forms
+  in the slice that received any candidate attachment at all.
+  Reporting only false-rate would let a resolver "win" by suppressing
+  low-confidence candidates (lower false-rate, lower coverage, no
+  actual quality gain).
+
+Both metrics are reported for both Arm B and Arm C.
+
+**Pre-registered decision rule.**
+
+Promotion to spec → bench → implementation requires:
+
+- Arm C false-rate ≥ **30% relative reduction** vs Arm B false-rate
+  on the entity-mismatch class.
+- Arm C coverage drop ≤ **5%** vs Arm B coverage.
+- Both conditions hold simultaneously.
+
+The thresholds are pre-registered to remove after-the-fact latitude.
+
+**Sample size and slice spec.**
+
+- 100-segment **sanity slice** (same slice as RFC 0028's failure-class
+  slice) for fast-fail. If Arm C does not move the false-rate in the
+  predicted direction at 100 segments, abort before scaling.
+- 600-segment **promotion slice**: stratified random selection across
+  the corpus. The 600 figure derives from a Poisson-rate power
+  calculation (~5 entity-mismatch events per 100 segments at
+  baseline; detecting a 50% reduction at 80% power, alpha 0.05
+  requires ~600).
+- Both slices reported. The 100 is precondition; the 600 is the gate.
+
+**Independent secondary signal (replaces PHASE-0004 merge-rate).**
+
+PHASE-0004 entity-consolidation merge-rate is *downstream of
+grounding* (resolved external refs feed consolidation), so it is a
+correlated signal, not an independent one. Drop it as secondary.
+
+The replacement secondary is a held-out gold set of 100 segments with
+operator-curated `(surface_form → external_id)` pairs (Wikidata QIDs,
+GeoNames ids), built specifically for grounding evaluation.
+Reports: precision, recall, F1 of the resolver's top-1 candidate
+versus the gold pairs. The gold set is *not* used as the primary
+oracle (D044 stands — gold labels are advisory), but a dramatic
+precision/recall regression on this set is a separate-axis signal
+that something is wrong with the resolver itself even if Arm C
+false-rate is fine.
+
+**Baseline reproducibility.**
+
+Arm A (v8 baseline) artifacts must be content-hash-pinned and
+verified at bench preflight. If the cached v8 artifacts are
+unavailable or stale, the bench is blocked until the operator either
+re-runs v8 under the original `(prompt_version, model_version,
+request_profile_version)` or accepts a v9-disabled run as the
+new baseline (and loses the historical comparison, which the bench
+preflight states explicitly).
+
+**Bench-and-iterate cost (operator-honest).**
+
+A full promotion-grade bench cycle (Arm A regen if needed + Arm B +
+Arm C + 600-segment interview pass) is on the order of **6-12
+operator-hours** plus **2-6 wall-clock hours** of compute. The
+promotion path's "iterate dataset coverage only after v1 produces
+measured value" applies; the iterate cost is real.
 
 ## Privacy and provenance
 
@@ -304,10 +584,16 @@ those:
 - **Eval-as-oracle.** No grounding wiring lands without a measured
   before/after on the targeted failure class.
 - **Refusal-of-false-precision.** The candidate-set output (D-C
-  recommended seed) refuses to collapse to a single QID we cannot
-  defend.
-- **Adversarial-review.** This RFC is explicitly authored to be
-  reviewed through striatum's multi-agent loop before implementation.
+  position) refuses to collapse to a single QID we cannot defend.
+  The D-B prompt-shape guard prevents premature collapse to a single
+  ID at extraction time, even when a high-confidence candidate is
+  available.
+- **Adversarial-review.** This RFC was explicitly authored to be
+  reviewed through striatum's multi-agent loop before implementation,
+  and was so reviewed (8 lanes, including 5 adversarial lenses) on
+  2026-05-09. The five non-negotiables are grep-checkable in the
+  resulting code (see § Non-negotiable constraints / Code-side
+  enforcement), not just stated in this document.
 
 ## What this RFC does not propose
 
@@ -328,42 +614,63 @@ those:
   operator-curated; the system does not auto-refresh datasets in the
   background.
 
-## Open questions for the design loop
+## Open questions, resolved
 
-The design-space items above (D-A through D-H) each carry open
-questions; those are the primary content for the loop. Beyond those:
+The design loop took explicit positions on each. They are recorded
+here for future readers and as inputs to the spec-authoring run.
 
-1. **What is the smallest deliverable that proves the thesis?**
-   Recommended: Wikidata-only, places-only resolver, post-extraction
-   attachment, on a 100-segment slice. If that does not move the
-   `false`-rate needle on the place-mismatch class, the larger design
-   needs revision before further build.
-2. **How does this interact with RFC 0028's `subject_kind_hint`
-   heuristic?** The two efforts share the entity_kind surface. Is
-   this RFC a deepening of RFC 0028 (resolution as the high-end of
-   the heuristic spectrum) or an orthogonal pass?
-3. **How does this interact with PHASE-0004 consolidation?** A
-   resolved external reference is strong de-dup signal. Should
-   consolidation consume external refs before falling back to text
-   similarity? Likely yes; the loop should specify the precedence.
-4. **What happens when the resolver disagrees with the user?**
-   E.g., user says "Tartine" meaning a friend's nickname; resolver
-   wants to attach the bakery. The interview UI is the natural
-   correction surface, but the design needs to specify how a
-   correction back-propagates: does it suppress future resolution
-   for this surface form? In this user's corpus only? Forever?
-5. **Cost and storage budget.** A Wikidata subset can land in a few
-   GB; a full Wikidata index is ~100GB+. What is the operator-facing
-   storage budget the resolver targets? Recommended: ≤10GB total for
-   v1, configurable.
-6. **Resolution latency.** What latency budget per segment is the
-   resolver allowed before it slows the extraction pipeline below
-   useful throughput? Bench against the existing pipeline rate.
-7. **Failure mode when grants are missing.** If the extraction agent
-   has no grants, does extraction proceed without grounding (silent
-   downgrade) or refuse to run (loud failure)? Recommended: silent
-   downgrade with a one-line warning per run, because grounding is
-   an enhancement, not a precondition.
+1. **Smallest deliverable that proves the thesis.** 100-segment
+   sanity slice (Wikidata-places-only, post-extraction attachment) for
+   fast-fail; **600-segment stratified random slice as the
+   promotion gate.** The single-stage 100-segment claim from the prior
+   draft was under-powered by ~6x; sample-size revision is the most
+   consequential D-H change.
+2. **Interaction with RFC 0028 `subject_kind_hint`.** **Deepening with
+   type-narrowing.** When RFC 0028 supplies `subject_kind=person`, the
+   resolver narrows the candidate-type filter to person-class
+   candidates. When the operator's interview verdict disagrees with
+   either, the verdict wins and supersedes the candidate set.
+3. **Interaction with PHASE-0004 consolidation.** External refs are a
+   strong de-dup signal; **consolidation consumes them before
+   falling back to text similarity.** Two candidate-merge entities
+   sharing an `(dataset, external_id)` pair are presumptively merged;
+   conflicting refs require operator intervention. PHASE-0004
+   merge-rate is no longer a grounding oracle (D-H removes it from
+   the bench); it is a downstream consumer.
+4. **Resolver disagrees with the user.** **Per-corpus private alias
+   suppression.** The operator's interview verdict on a wrong
+   grounding case populates a `private_aliases` table at
+   `~/.engram/grounding/private_aliases.sqlite3`:
+   `(surface_form, scope, reason, suppressed_dataset,
+   suppressed_external_id)`. Scope is per-segment (precise) or
+   per-corpus (broad); operator picks. The resolver consults
+   `private_aliases` before any dataset; matching aliases yield no
+   attachment.
+5. **Storage budget.** **10GB target, 12GB hard-fail by default**
+   (`ENGRAM_GROUNDING_STORAGE_BUDGET_GB`). Warn at 80%. `engram
+   grounding snapshot` refuses to add a new snapshot whose inclusion
+   would exceed the hard cap.
+6. **Resolution latency.** **≤100ms per segment with fail-fast on
+   overflow; ≤2x extraction time per corpus.** A segment whose
+   resolution exceeds the per-segment budget skips resolution (one
+   warning per run, surfaced in the run summary). The resolver caches
+   per-process via an LRU keyed by `(surface_form, snapshot)` capped
+   at 100k entries.
+7. **Failure mode when grants are missing.** **Silent downgrade in
+   the extraction path; loud surfacing in the run summary; lock-file
+   detection of prior-grants-now-absent.**
+   - Default: extraction proceeds without grounding (conservative
+     ergonomics).
+   - Run-summary JSON includes `grounding_status` (per § D-F);
+     downstream tooling detects ungrounded runs.
+   - Lock file at `~/.engram/grounding/active-grants.lock` records
+     prior grants. If extraction starts and the difference between
+     current grants and the lock is "lost grants", interactive runs
+     prompt; non-interactive runs fail unless `--ungrounded-ok` is
+     passed.
+
+The design-loop synthesis is recorded at
+`docs/reviews/rfc0030-grounding-claim-extraction/REVISION_SYNTHESIS.md`.
 
 ## Promotion path
 
@@ -379,17 +686,35 @@ questions; those are the primary content for the loop. Beyond those:
    changes land in the main loop. Measure the `false`-rate signal
    from D-H against the v8 baseline. If the slice shows no
    improvement, return to the design loop.
-4. **Land schema and resolver in three commits** if the bench passes:
-   a. `migrations/0NN_grounding_grants_and_external_refs.sql` —
-      new tables for grants, snapshots, and external references;
-      append-only triggers consistent with the existing pattern.
-   b. Resolver module under `src/engram/grounding/` with explicit
-      grant-check at every read; CLI surface `engram grants
-      [list|grant|revoke]` and `engram grounding [snapshot|index]`.
-   c. Extractor / consolidator integration: extraction prompt bump
-      per RFC 0017, post-extraction resolution pass, claim-row
-      provenance writes. Update `tests/test_extractor.py` and add
-      `tests/test_grounding.py` covering grant enforcement.
+4. **Land schema and resolver in four commits** if the bench passes.
+   The original three-commit framing under-weights the realistic
+   1500-3000 LOC implementation footprint. Split:
+   a. `migrations/0NN_grounding_grants_and_external_refs.sql` — new
+      tables for grants, snapshots, `entity_external_references`, and
+      `grounding_resolution_set`; append-only triggers; index list
+      with `CONCURRENTLY` annotations where required; idempotent.
+      Snapshot-internal indexes live outside production PG (under
+      `~/.engram/grounding/<snapshot>/index/`).
+   b. `src/engram/grounding/` module with `snapshot.py` (the only
+      sanctioned-network module), `resolver.py`, `attachment.py`,
+      `grants.py` (single-accessor chokepoint), and `private_aliases.py`.
+      CLI surface: `engram grants {list,grant,revoke,apply-template}`
+      and `engram grounding {snapshot,rollback,detach,versions}`.
+      `tests/test_grounding.py` covers grant enforcement,
+      `test_no_http_clients` AST walk, and resolver determinism.
+   c. Extractor integration: prompt-version bump per RFC 0017,
+      candidate-block assembly with the prompt-shape guard,
+      per-segment / per-batch budget enforcement, post-extraction
+      attachment writes, run-summary `grounding_status` field.
+      Update `tests/test_extractor.py`.
+   d. Consolidator integration: PHASE-0004 consolidation consumes
+      external refs before text-similarity (Q3 precedence).
+      `projection_audits` integration so the cascade sees grounding
+      tombstones. Update `tests/test_consolidator.py`.
+
+   **Iteration cost (operator-honest):** each promotion-path bench
+   cycle is on the order of **6-12 operator-hours plus 2-6 wall-clock
+   compute hours** (per D-H). Plan iterations accordingly.
 5. **Run grounded re-extraction on the consolidated corpus** per
    RFC 0017's `re-extract --version` surface. Old claim rows stay
    under the prior version; grounded rows land alongside.
