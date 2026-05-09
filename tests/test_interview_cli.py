@@ -391,3 +391,80 @@ def test_phase3_interview_start_writes_session_targets(
     assert belief_row[6] == "cons-prompt-v1"
     assert belief_row[7] == "cons-model-v1"
     assert belief_row[12] == "candidate"
+
+
+# ---------------------------------------------------------------------------
+# RFC 0027 / Spec 0027: ``engram phase3 interview serve`` subparser
+# ---------------------------------------------------------------------------
+
+
+def test_phase3_interview_serve_subparser_registered(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Spec 0027 § CLI integration: ``serve`` shows up under ``phase3 interview``."""
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["phase3", "interview", "--help"])
+    assert excinfo.value.code == 0
+    captured = capsys.readouterr()
+    assert "serve" in (captured.out + captured.err)
+
+
+def test_phase3_interview_serve_default_host_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """argparse defaults match the spec: 127.0.0.1 / 8765."""
+
+    captured: dict[str, Any] = {}
+
+    def fake_serve(args: Any) -> int:
+        captured["host"] = args.host
+        captured["port"] = args.port
+        return 0
+
+    monkeypatch.setattr(cli, "run_phase3_interview_serve", fake_serve)
+    rc = cli.main(["phase3", "interview", "serve"])
+    assert rc == 0
+    assert captured["host"] == "127.0.0.1"
+    assert captured["port"] == 8765
+
+
+def test_phase3_interview_serve_refuses_non_loopback(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Spec 0027 § Privacy and security: non-loopback host exits 8 before
+    any FastAPI/Uvicorn import runs."""
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["phase3", "interview", "serve", "--host", "0.0.0.0"])
+    assert excinfo.value.code == 8
+    err = capsys.readouterr().err
+    assert "loopback" in err
+    assert "0.0.0.0" in err
+
+
+def test_phase3_interview_serve_pip_install_hint_when_imports_fail(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """When the optional ``engram[serve]`` deps are missing, the driver
+    must exit 2 with a ``pip install engram[serve]`` hint rather than
+    crashing with an ImportError."""
+
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "engram.interview.web" or name.startswith("engram.interview.web."):
+            raise ImportError("No module named 'engram.interview.web' (test stub)")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    args = SimpleNamespace(host="127.0.0.1", port=8765)
+    with pytest.raises(SystemExit) as excinfo:
+        cli.run_phase3_interview_serve(args)
+    assert excinfo.value.code == 2
+    err = capsys.readouterr().err
+    assert "pip install engram[serve]" in err

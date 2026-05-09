@@ -111,6 +111,41 @@ engram phase3 interview history --target <belief-or-claim-uuid>
 # → all verdicts on that target across sessions, newest first
 ```
 
+## Web UI (alternative to the CLI loop)
+
+`engram phase3 interview serve` runs a local browser UI for the same
+interview surface (RFC 0027 / spec 0027). The app binds to
+127.0.0.1 by default; non-loopback hosts are refused. There is no
+auth and no TLS — same posture as the CLI.
+
+```sh
+# install the optional FastAPI / Uvicorn / Jinja2 deps if you haven't yet
+pip install -e ".[serve]"
+
+# start the server
+engram phase3 interview serve            # http://127.0.0.1:8765
+engram phase3 interview serve --port 9000
+```
+
+Open `http://127.0.0.1:8765/` in your browser. The index page lists
+open sessions and exposes a "New session" form (`n`, `seed`). Click
+"Start" and you'll be on a per-question page with the same metadata
+the CLI shows: header, predicate gloss, evidence excerpts, and the
+six verdict buttons. `true` and `skip` commit on a single click;
+`false` / `stale` / `unsupported` / `unsure` reveal a verdict-specific
+rationale prompt before committing. Press `?` to see all keyboard
+shortcuts; `Esc` closes the help. `q` (or the "Save and quit" button)
+leaves the session open and prints a resume command.
+
+The CLI loop continues to work unchanged — sessions started in the
+CLI are resumable in the web UI and vice-versa, since both write to
+`gold_label_sessions` and `gold_label_session_targets`.
+
+What the web UI does NOT expose in v1 (CLI-only): `export`, `history`,
+`coverage` (a small inline strata strip ships in v1; the dashboard is
+deferred), `enable-active-learning`, `--include-superseded`,
+`--ignore-cooldown`. Drop to the CLI for those.
+
 ## Driving the loop from your own code
 
 If you want to script the loop (e.g., feed verdicts from a file, or wrap

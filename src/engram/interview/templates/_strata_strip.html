@@ -1,0 +1,10 @@
+<div id="strata-strip" class="strata-strip">
+  this session:
+  {% if strata_rows %}
+    {% for sc, count in strata_rows %}
+      {{ sc }}={{ count }}{% if not loop.last %} {% endif %}
+    {% endfor %}
+  {% else %}
+    <span class="muted">(no verdicts yet)</span>
+  {% endif %}
+</div>

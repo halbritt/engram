@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Engram interview — open sessions{% endblock %}
+{% block main %}
+<main id="main">
+  <h1>Engram interview — open sessions</h1>
+
+  {% if empty_corpus_banner %}
+    <section id="empty-corpus-banner" role="status" class="banner-status">
+      <p>{{ empty_corpus_banner }}</p>
+      <p class="muted">
+        Try refreshing current beliefs:
+        <code>engram phase4 refresh-current-beliefs</code>
+      </p>
+    </section>
+  {% else %}
+    <section id="empty-corpus-banner" hidden role="status"></section>
+  {% endif %}
+
+  {% if save_and_quit_banner %}
+    <section id="save-and-quit-banner" role="status" class="banner-status">
+      {{ save_and_quit_banner }}
+    </section>
+  {% endif %}
+
+  <section id="open-sessions">
+    <h2 tabindex="-1">Open sessions</h2>
+    {% if open_sessions %}
+      <ul>
+        {% for s in open_sessions %}
+          <li>
+            <a href="/sessions/{{ s.session_id }}">
+              {{ s.n_answered }}/{{ s.n_targets }} answered, opened {{ s.age }}
+            </a>
+            <form method="post" action="/sessions/{{ s.session_id }}/abandon">
+              <button type="submit" aria-label="Abandon session {{ s.session_id }}">[Abandon]</button>
+            </form>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No open sessions.</p>
+    {% endif %}
+  </section>
+
+  <section id="new-session-section">
+    <h2>Start a new session</h2>
+    <form id="new-session" method="post" action="/sessions">
+      <label for="n">Number of questions</label>
+      <input id="n" name="n" type="number" min="1" value="10"
+             aria-label="number of questions">
+      <label for="seed">Seed</label>
+      <input id="seed" name="seed" type="number"
+             aria-label="random seed (optional)">
+      <button type="submit">Start</button>
+    </form>
+  </section>
+</main>
+{% endblock %}

@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- RFC 0027 implementation: FastAPI + htmx web UI for the gold-set
+  interview surface, served by `engram phase3 interview serve` (RFC
+  0027 / spec 0027 / D080). Loopback-only with no escape clause;
+  Origin-allowlist enforces CSRF posture; Tier 1 ceiling on
+  full-message and context routes; vendored htmx (no CDN). Verdict
+  commit single-click for `true`/`skip` and two-click rationale-required
+  for `false`/`stale`/`unsupported`/`unsure`; the CLI loop continues to
+  exist and shares the new `engram.interview.render` helpers landed in
+  Pass A. Migration 011 materializes the sampled order at session
+  creation so CLI- and web-started sessions are mutually resumable.
+  FastAPI / Uvicorn / Jinja2 ship under the `engram[serve]` optional
+  extra; headless installs unchanged.
 - Initial creation of `CHANGELOG.md` based on repository commit history and project phases.
 - Mandated `CHANGELOG.md` maintenance in `AGENTS.md` and `GEMINI.md`.
 - RFC 0025: Command naming review.

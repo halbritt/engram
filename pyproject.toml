@@ -17,6 +17,13 @@ dev = [
     "pytest>=8,<9",
     "ruff>=0.6,<1",
     "pyright>=1.1.380,<2",
+    "engram[serve]",
+]
+serve = [
+    "fastapi>=0.110,<1",
+    "uvicorn>=0.30,<1",
+    "jinja2>=3.1,<4",
+    "python-multipart>=0.0.9,<1",
 ]
 
 [project.scripts]
@@ -24,6 +31,9 @@ engram = "engram.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"engram.interview" = ["templates/*.html", "templates/*", "static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

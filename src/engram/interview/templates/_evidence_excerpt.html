@@ -1,0 +1,19 @@
+<article class="evidence-row" id="evidence-{{ excerpt.id }}">
+  <header>
+    {% if excerpt.created_at %}
+      <span class="ev-date">{{ excerpt.created_at.strftime("%Y-%m-%d") }}</span>
+    {% else %}
+      <span class="ev-date">?</span>
+    {% endif %}
+    <span class="ev-role">{{ excerpt.role or "?" }}</span>
+    <span class="ev-source">({{ excerpt.source_kind or "?" }})</span>
+    {% if excerpt.conv_title %}
+      <span class="ev-title">[{{ excerpt.conv_title }}]</span>
+    {% endif %}
+  </header>
+  <pre>{{ excerpt.content }}</pre>
+  {% if not full %}
+    <a href="#" hx-get="/sessions/{{ session_id }}/messages/{{ excerpt.id }}"
+       hx-target="closest .evidence-row" hx-swap="outerHTML">show full message</a>
+  {% endif %}
+</article>

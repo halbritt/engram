@@ -504,6 +504,18 @@ def main(argv: list[str] | None = None) -> int:
         command="phase3-interview-enable-active-learning"
     )
 
+    phase3_interview_serve_parser = interview_subparsers.add_parser(
+        "serve",
+        help="Run the local web UI for the gold-set interview (RFC 0027)",
+    )
+    phase3_interview_serve_parser.add_argument(
+        "--host", type=str, default="127.0.0.1"
+    )
+    phase3_interview_serve_parser.add_argument(
+        "--port", type=int, default=8765
+    )
+    phase3_interview_serve_parser.set_defaults(command="phase3-interview-serve")
+
     phase4_parser = subparsers.add_parser(
         "phase4",
         help="Phase 4 current-belief, entity, smoke, and review commands",
@@ -907,6 +919,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_phase3_interview_coverage(args)
         if args.command == "phase3-interview-enable-active-learning":
             return run_phase3_interview_enable_active_learning(args)
+        if args.command == "phase3-interview-serve":
+            return run_phase3_interview_serve(args)
     except (ChatGPTIngestConflict, ClaudeIngestConflict, GeminiIngestConflict) as exc:
         print(f"ingest conflict: {exc}", file=sys.stderr)
         return 1
@@ -2041,6 +2055,53 @@ def run_phase3_interview_enable_active_learning(args) -> int:  # type: ignore[no
         f"signal_version={args.signal_version} "
         "(v1 stamps the version onto next-session rows; bias selection is deferred to v1.1)"
     )
+    return 0
+
+
+# RFC 0027 / Spec 0027: loopback hosts the serve driver accepts. The
+# `--allow-non-loopback` escape clause is intentionally absent (F005); a
+# follow-on RFC will land non-loopback bind if/when the design lands.
+_SERVE_LOOPBACK_HOSTS: frozenset[str] = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def run_phase3_interview_serve(args) -> int:  # type: ignore[no-untyped-def]
+    """RFC 0027 v1: run the local FastAPI/htmx web UI for the gold-set interview.
+
+    The driver enforces the loopback-only invariant before importing FastAPI
+    so that the CLI can refuse a non-loopback bind even on installs that
+    don't have the optional ``engram[serve]`` extras. The
+    ``engram.interview.web`` import is deferred until after the host check
+    so that non-serve subcommands (and headless installs) never load
+    FastAPI/Uvicorn/Jinja2.
+    """
+
+    host = str(args.host)
+    if host not in _SERVE_LOOPBACK_HOSTS:
+        print(
+            "phase3 interview serve: refusing non-loopback host "
+            f"(--host={host}); v1 is loopback-only",
+            file=sys.stderr,
+        )
+        sys.exit(8)
+
+    try:
+        from engram.interview.web import app  # noqa: PLC0415 — deferred import
+
+        import uvicorn  # noqa: PLC0415 — deferred import
+    except ImportError as exc:
+        print(
+            "phase3 interview serve: missing dependency "
+            f"({exc}). Install with: pip install engram[serve]",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    port = int(args.port)
+    print(
+        f"phase3 interview serve: listening on http://{host}:{port} "
+        "(ctrl-c to stop; non-loopback hosts refused)"
+    )
+    uvicorn.run(app, host=host, port=port, workers=1, log_level="warning")
     return 0
 
 
