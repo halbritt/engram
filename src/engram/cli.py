@@ -516,6 +516,48 @@ def main(argv: list[str] | None = None) -> int:
     )
     phase3_interview_serve_parser.set_defaults(command="phase3-interview-serve")
 
+    phase3_bench_review_parser = phase3_subparsers.add_parser(
+        "bench-review",
+        help="Review extraction benchmark deltas in a local workbench (RFC 0029)",
+    )
+    bench_review_subparsers = phase3_bench_review_parser.add_subparsers(
+        dest="phase3_bench_review_command", required=True
+    )
+    phase3_bench_review_serve_parser = bench_review_subparsers.add_parser(
+        "serve",
+        help="Run the local bench review web UI",
+    )
+    phase3_bench_review_serve_parser.add_argument("--slice", required=True)
+    phase3_bench_review_serve_parser.add_argument("--run", required=True)
+    phase3_bench_review_serve_parser.add_argument("--segments")
+    phase3_bench_review_serve_parser.add_argument("--review-db")
+    phase3_bench_review_serve_parser.add_argument("--prior-prompt-version", required=True)
+    phase3_bench_review_serve_parser.add_argument("--prior-model-version", required=True)
+    phase3_bench_review_serve_parser.add_argument(
+        "--prior-request-profile-version", required=True
+    )
+    phase3_bench_review_serve_parser.add_argument("--host", type=str, default="127.0.0.1")
+    phase3_bench_review_serve_parser.add_argument("--port", type=int, default=8770)
+    phase3_bench_review_serve_parser.set_defaults(command="phase3-bench-review-serve")
+
+    phase3_bench_review_status_parser = bench_review_subparsers.add_parser(
+        "status",
+        help="Print bench review progress",
+    )
+    phase3_bench_review_status_parser.add_argument("--review-db", required=True)
+    phase3_bench_review_status_parser.set_defaults(command="phase3-bench-review-status")
+
+    phase3_bench_review_export_parser = bench_review_subparsers.add_parser(
+        "export",
+        help="Export a redacted bench review summary",
+    )
+    phase3_bench_review_export_parser.add_argument("--review-db", required=True)
+    phase3_bench_review_export_parser.add_argument("--output", required=True)
+    phase3_bench_review_export_parser.add_argument(
+        "--allow-outside-reviews", action="store_true", default=False
+    )
+    phase3_bench_review_export_parser.set_defaults(command="phase3-bench-review-export")
+
     phase4_parser = subparsers.add_parser(
         "phase4",
         help="Phase 4 current-belief, entity, smoke, and review commands",
@@ -921,6 +963,24 @@ def main(argv: list[str] | None = None) -> int:
             return run_phase3_interview_enable_active_learning(args)
         if args.command == "phase3-interview-serve":
             return run_phase3_interview_serve(args)
+        if args.command == "phase3-bench-review-serve":
+            from engram.bench_review.cli import (
+                run_phase3_bench_review_serve,
+            )
+
+            return run_phase3_bench_review_serve(args)
+        if args.command == "phase3-bench-review-status":
+            from engram.bench_review.cli import (
+                run_phase3_bench_review_status,
+            )
+
+            return run_phase3_bench_review_status(args)
+        if args.command == "phase3-bench-review-export":
+            from engram.bench_review.cli import (
+                run_phase3_bench_review_export,
+            )
+
+            return run_phase3_bench_review_export(args)
     except (ChatGPTIngestConflict, ClaudeIngestConflict, GeminiIngestConflict) as exc:
         print(f"ingest conflict: {exc}", file=sys.stderr)
         return 1
@@ -979,6 +1039,8 @@ def phase3_schema_preflight(conn) -> None:
             "object_kind",
             "group_object_keys",
             "required_object_keys",
+            "description",
+            "subject_kind_hint",
         ],
         "claims": [
             "extraction_id",
@@ -998,6 +1060,7 @@ def phase3_schema_preflight(conn) -> None:
         "belief_audit": ["evidence_message_ids", "request_uuid"],
         "contradictions": ["detection_kind", "resolution_status"],
     }
+    table_columns: dict[str, set[str]] = {}
     for table, columns in required_columns.items():
         existing_columns = {
             row[0]
@@ -1011,10 +1074,11 @@ def phase3_schema_preflight(conn) -> None:
                 (table,),
             ).fetchall()
         }
+        table_columns[table] = existing_columns
         for column in columns:
             if column not in existing_columns:
                 errors.append(f"{table}.{column} is missing")
-    _check_phase3_predicate_vocabulary(conn, existing_tables, errors)
+    _check_phase3_predicate_vocabulary(conn, existing_tables, table_columns, errors)
     _check_phase3_indexes(conn, errors)
     _check_phase3_functions(conn, errors)
     _check_phase3_triggers(conn, errors)
@@ -1025,9 +1089,21 @@ def phase3_schema_preflight(conn) -> None:
 def _check_phase3_predicate_vocabulary(
     conn,
     existing_tables: set[str],
+    table_columns: dict[str, set[str]],
     errors: list[str],
 ) -> None:
     if "predicate_vocabulary" not in existing_tables:
+        return
+    if {
+        "predicate",
+        "stability_class",
+        "cardinality_class",
+        "object_kind",
+        "group_object_keys",
+        "required_object_keys",
+        "description",
+        "subject_kind_hint",
+    } - table_columns.get("predicate_vocabulary", set()):
         return
 
     actual = {
@@ -1038,11 +1114,14 @@ def _check_phase3_predicate_vocabulary(
             "object_kind": row[3],
             "group_object_keys": list(row[4]),
             "required_object_keys": list(row[5]),
+            "description": row[6],
+            "subject_kind_hint": row[7],
         }
         for row in conn.execute(
             """
             SELECT predicate, stability_class, cardinality_class, object_kind,
-                   group_object_keys, required_object_keys
+                   group_object_keys, required_object_keys, description,
+                   subject_kind_hint
             FROM predicate_vocabulary
             """
         ).fetchall()
@@ -1062,6 +1141,8 @@ def _check_phase3_predicate_vocabulary(
             "object_kind",
             "group_object_keys",
             "required_object_keys",
+            "description",
+            "subject_kind_hint",
         ]:
             if actual_row[key] != expected_row[key]:
                 errors.append(

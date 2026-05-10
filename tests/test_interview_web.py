@@ -462,6 +462,25 @@ def test_post_verdict_422_unknown_verdict(
     assert body.get("error") == "unknown verdict"
 
 
+def test_question_page_uses_shared_false_rationale_prompt(
+    client: TestClient, conn: Any
+) -> None:
+    session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=1)
+    resp = client.get(f"/sessions/{session_id}/q/1")
+    assert resp.status_code == 200
+    assert "what\\u0027s wrong? (e.g., wrong predicate, wrong subject" in resp.text
+    assert "correct value > " not in resp.text
+
+
+def test_question_page_preserves_summary_line_whitespace(
+    client: TestClient, conn: Any
+) -> None:
+    session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=1)
+    resp = client.get(f"/sessions/{session_id}/q/1")
+    assert resp.status_code == 200
+    assert ".summary-line { white-space: pre-wrap; }" in resp.text
+
+
 def test_post_verdict_403_origin_mismatch(
     client: TestClient, conn: Any
 ) -> None:

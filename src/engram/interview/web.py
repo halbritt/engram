@@ -41,6 +41,7 @@ from engram.interview.errors import GoldLabelStorageError, GoldLabelVerdictError
 from engram.interview.render import (
     EVIDENCE_EXCERPT_LIMIT,
     EVIDENCE_ROWS_SHOWN,
+    RATIONALE_PROMPT_BY_VERDICT,
     VERDICT_VALID,
     fetch_target_display,
     format_evidence_dates,
@@ -509,6 +510,7 @@ def _render_question_template(
     glosses = _load_verdict_glosses(conn)
     header_line = format_header(sampled, url_idx, n_targets)
     summary_line = format_summary_line(display)
+    summary_lines = summary_line.splitlines() or [""]
     evidence_dates_line = format_evidence_dates(display)
     question_line = pick_question(sampled, display)
 
@@ -529,6 +531,7 @@ def _render_question_template(
         "n_answered": n_answered,
         "header_line": header_line,
         "summary_line": summary_line,
+        "summary_lines": summary_lines,
         "evidence_dates_line": evidence_dates_line,
         "question_line": question_line,
         "display": display,
@@ -544,6 +547,7 @@ def _render_question_template(
             (v, glosses.get(v, ""), _VERDICT_KEY_LETTERS[v])
             for v in ("true", "false", "stale", "unsupported", "unsure", "skip")
         ],
+        "rationale_prompts": RATIONALE_PROMPT_BY_VERDICT,
         "strata_rows": strata,
         "error_banner": error_banner,
     }

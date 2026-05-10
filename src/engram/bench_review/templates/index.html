@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid">
+  <div class="metric"><span>Decided</span><strong>{{ summary.decided }}/{{ summary.total }}</strong></div>
+  <div class="metric"><span>Remaining</span><strong>{{ summary.remaining }}</strong></div>
+  <div class="metric"><span>Follow-up</span><strong>{{ summary.by_decision.get("needs_followup", 0) }}</strong></div>
+  <div class="metric"><span>Regressions</span><strong>{{ summary.by_decision.get("flag_candidate_regression", 0) }}</strong></div>
+  <div class="metric"><span>Excluded</span><strong>{{ summary.by_decision.get("exclude_from_review", 0) }}</strong></div>
+</section>
+
+<h2>Review queues</h2>
+<section class="grid">
+  <a class="panel" href="/segments?state=candidate_zero&remaining=1">Zeroed segments<br><strong>{{ summary.by_state.get("candidate_zero", 0) }}</strong></a>
+  <a class="panel" href="/segments?remaining=1&reviewable=1">All reviewable remaining<br><strong>Start</strong></a>
+</section>
+<section class="grid">
+  {% for state, count in summary.by_state.items() %}
+  <a class="panel" href="/segments?state={{ state }}&remaining=1">{{ state }}<br><strong>{{ count }}</strong></a>
+  {% endfor %}
+</section>
+
+<h2>Tags</h2>
+<section class="grid">
+  {% for tag, count in summary.by_tag.items() %}
+  <a class="panel" href="/segments?tag={{ tag }}&remaining=1&reviewable=1">{{ tag }}<br><strong>{{ count }}</strong></a>
+  {% endfor %}
+</section>
+
+<h2>Run</h2>
+<div class="panel">
+  <p><strong>{{ session.run_id }}</strong></p>
+  <p>candidate={{ session.candidate_prompt_version or "unknown" }}/{{ session.candidate_model_version or "unknown" }}/{{ session.candidate_request_profile_version or "unknown" }}</p>
+  <p>prior={{ session.prior_prompt_version }}/{{ session.prior_model_version }}/{{ session.prior_request_profile_version }}</p>
+  {% if summary.run_decision_label %}<p>Decision: {{ summary.run_decision_label }}</p>{% endif %}
+</div>
+{% endblock %}

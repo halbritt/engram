@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- RFC 0030 suspect autonomous work audit proposal: marks the recent
+  autonomous RFC 0028 / RFC 0029 / Striatum-driven checkpoint as suspect
+  pending provenance, byline, code, benchmark, and artifact-disposition
+  review before further promotion.
 - RFC 0027 implementation: FastAPI + htmx web UI for the gold-set
   interview surface, served by `engram phase3 interview serve` (RFC
   0027 / spec 0027 / D080). Loopback-only with no escape clause;
@@ -30,21 +34,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loopback bind can reach the UI from another device the operator
   controls. The howto guide gains a "Tailnet access" section.
   Non-loopback bind plus token auth remains the F005 follow-on.
-- RFC 0028: Predicate-intent surfacing across extraction and
-  interview. Empirically grounded in the first 32 gold-label
-  verdicts: 5 of 6 `false` rationales reduce to predicate-intent
-  mismatches (`has_name` on a restaurant / a city; `uses_tool` on a
-  spice mix; `feels` on a hardware fault; `is_related_to` on an
-  app). Proposes (a) including `predicate_vocabulary.description`
-  plus a new `subject_kind_hint` column in the extractor prompt
-  (RFC 0017 version bump to `extractor.v6.d082.predicate-intent`),
-  (b) rendering predicate intent on its own line in the interview
-  UI with a soft heuristic warning when the subject obviously
-  doesn't fit, and (c) broadening the `false` rationale prompt
-  label so it stops over-fitting to "wrong object value." No
-  schema changes to claims/beliefs/gold_labels; no D044/D069 posture
-  change. Promotion path includes a bounded re-extraction bench
-  before any full-corpus re-extraction.
+- RFC 0028 / D082 implementation slice: migration 012 adds nullable
+  `predicate_vocabulary.subject_kind_hint` metadata and seeds the
+  existing vocabulary; the extractor prompt version bumps to
+  `extractor.v9.d082.predicate-intent` and renders predicate
+  descriptions plus subject-kind hints; interview CLI/web rendering now
+  places predicate intent on its own line, adds a local heuristic warning
+  for obvious subject/predicate mismatches, and broadens the `false`
+  rationale prompt beyond "correct value." No claims, beliefs, or
+  gold-label row contracts change, and full-corpus re-extraction remains
+  gated on a bounded bench.
+- RFC 0029 bench triage workbench proposal and Striatum design workflow:
+  a local-only FastAPI/Jinja2/htmx UI proposal for reducing cognitive
+  overhead when validating extraction/re-extraction benchmark deltas.
+  The completed review run includes Claude/Codex/Gemini lanes plus an
+  adversarial usability review; accepted findings tightened segment
+  data-availability semantics, full prior version identity, CLI-only
+  redacted export, RFC 0027-style local web security, promotion readiness,
+  resume state, and UI contract tests.
+- Spec 0029 and Striatum spec workflow for the bench triage workbench:
+  promotes RFC 0029 into a buildable implementation contract covering
+  artifact inputs, data-availability states, classification tags,
+  scratch SQLite review state, CLI commands, loopback-only web routes,
+  redacted exports, and focused acceptance tests.
+- RFC 0029 implementation: `engram phase3 bench-review serve|status|export`,
+  `src/engram/bench_review/` FastAPI/Jinja2 workbench, scratch SQLite review
+  state, deterministic artifact normalization, redacted Markdown exports,
+  loopback/cross-origin guards, and focused loader/storage/export/web/CLI tests.
+- RFC 0024 Phase 4 tiered gate execution artifacts:
+  Tier 0 bounded smoke, Tier 1 non-human evidence, Tier 2 bounded
+  preflight scaffold, final gate review, and run summary under
+  `docs/operations/phase4-build/tiered-gate/`. The gate remains
+  blocked on human-labeled entity precision/recall and review-queue UX
+  evidence before any full-corpus Phase 4 promotion.
 - Initial creation of `CHANGELOG.md` based on repository commit history and project phases.
 - Mandated `CHANGELOG.md` maintenance in `AGENTS.md` and `GEMINI.md`.
 - RFC 0025: Command naming review.

@@ -33,7 +33,10 @@ VERDICT_VALID: frozenset[str] = frozenset(
     {"true", "false", "stale", "unsupported", "unsure", "skip"}
 )
 RATIONALE_PROMPT_BY_VERDICT: dict[str, str] = {
-    "false": "correct value > ",
+    "false": (
+        "what's wrong? (e.g., wrong predicate, wrong subject, different "
+        "object value, predicate doesn't apply) > "
+    ),
     "stale": "when did it change? > ",
     "unsupported": "what's missing from the evidence? > ",
     "unsure": "note (Enter to skip) > ",
@@ -42,6 +45,21 @@ RATIONALE_PROMPT_BY_VERDICT: dict[str, str] = {
 # Evidence layout caps (moved verbatim from cli.py).
 EVIDENCE_EXCERPT_LIMIT: int = 280
 EVIDENCE_ROWS_SHOWN: int = 3
+
+_NON_PERSON_ENTITY_KIND_LABELS: dict[str, str] = {
+    "place": "place/business",
+    "organization": "organization/business",
+    "tool": "tool/app",
+    "concept": "concept",
+    "project": "project",
+}
+_KNOWN_NON_PERSON_SUBJECTS: dict[str, str] = {
+    "alameda": "place",
+    "encinal": "place/street",
+    "evnotify": "app/tool",
+    "hobnob": "place/business",
+    "nob hill foods": "business",
+}
 
 
 def fetch_evidence_excerpts(
@@ -98,12 +116,13 @@ def fetch_target_display(
     """Pull operator-readable summary plus evidence excerpts for a target.
 
     Dispatches on ``target.target_kind``. Returns a dict with keys
-    ``summary``, ``predicate``, ``predicate_doc``, ``cardinality_class``,
-    ``excerpts``, ``evidence_count``, ``evidence_min``, ``evidence_max``,
-    ``valid_from``, ``valid_to``. Missing target rows return a dict with
-    ``summary='<missing claim row>'`` (or ``'<missing belief row>'``) and
-    an empty ``excerpts`` list — the caller renders the missing row
-    visibly rather than crashing.
+    ``summary``, ``predicate``, ``predicate_doc``, ``subject_kind_hint``,
+    ``subject_kind_hint_match``, ``subject_kind_warning``,
+    ``cardinality_class``, ``excerpts``, ``evidence_count``,
+    ``evidence_min``, ``evidence_max``, ``valid_from``, ``valid_to``.
+    Missing target rows return a dict with ``summary='<missing claim row>'``
+    (or ``'<missing belief row>'``) and an empty ``excerpts`` list — the
+    caller renders the missing row visibly rather than crashing.
     """
     if target.target_kind == "claim":
         row = conn.execute(
@@ -116,6 +135,7 @@ def fetch_target_display(
                 c.evidence_message_ids,
                 cardinality(c.evidence_message_ids),
                 pv.description,
+                pv.subject_kind_hint,
                 pv.cardinality_class,
                 (SELECT MIN(m.created_at) FROM messages m
                  WHERE m.id = ANY(c.evidence_message_ids)) AS evidence_min,
@@ -130,15 +150,28 @@ def fetch_target_display(
         if row is None:
             return {"summary": "<missing claim row>", "excerpts": [], "evidence_count": 0}
         (
-            subj, pred, obj_text, obj_json, ev_ids, ev_count,
-            pred_doc, card_class, ev_min, ev_max,
+            subj,
+            pred,
+            obj_text,
+            obj_json,
+            ev_ids,
+            ev_count,
+            pred_doc,
+            subject_kind_hint,
+            card_class,
+            ev_min,
+            ev_max,
         ) = row
         obj = obj_text if obj_text is not None else (str(obj_json) if obj_json else "")
         excerpts = fetch_evidence_excerpts(conn, list(ev_ids or []))
+        subject_warning = subject_kind_warning(conn, str(subj or ""), subject_kind_hint)
         return {
-            "summary": f'{subj} -[{pred}]-> {obj}',
+            "summary": f"{subj} -[{pred}]-> {obj}",
             "predicate": pred,
             "predicate_doc": pred_doc or "",
+            "subject_kind_hint": subject_kind_hint or "",
+            "subject_kind_hint_match": subject_warning is None,
+            "subject_kind_warning": subject_warning or "",
             "cardinality_class": card_class,
             "excerpts": excerpts,
             "evidence_count": int(ev_count),
@@ -159,6 +192,7 @@ def fetch_target_display(
             b.evidence_ids,
             cardinality(b.evidence_ids),
             pv.description,
+            pv.subject_kind_hint,
             pv.cardinality_class,
             (SELECT MIN(m.created_at) FROM messages m
              WHERE m.id = ANY(b.evidence_ids)) AS evidence_min,
@@ -173,15 +207,30 @@ def fetch_target_display(
     if row is None:
         return {"summary": "<missing belief row>", "excerpts": [], "evidence_count": 0}
     (
-        subj, pred, obj_text, obj_json, vfrom, vto, ev_ids, ev_count,
-        pred_doc, card_class, ev_min, ev_max,
+        subj,
+        pred,
+        obj_text,
+        obj_json,
+        vfrom,
+        vto,
+        ev_ids,
+        ev_count,
+        pred_doc,
+        subject_kind_hint,
+        card_class,
+        ev_min,
+        ev_max,
     ) = row
     obj = obj_text if obj_text is not None else (str(obj_json) if obj_json else "")
     excerpts = fetch_evidence_excerpts(conn, list(ev_ids or []))
+    subject_warning = subject_kind_warning(conn, str(subj or ""), subject_kind_hint)
     return {
-        "summary": f'{subj} -[{pred}]-> {obj}',
+        "summary": f"{subj} -[{pred}]-> {obj}",
         "predicate": pred,
         "predicate_doc": pred_doc or "",
+        "subject_kind_hint": subject_kind_hint or "",
+        "subject_kind_hint_match": subject_warning is None,
+        "subject_kind_warning": subject_warning or "",
         "cardinality_class": card_class,
         "excerpts": excerpts,
         "evidence_count": int(ev_count),
@@ -190,6 +239,77 @@ def fetch_target_display(
         "valid_from": vfrom,
         "valid_to": vto,
     }
+
+
+def subject_kind_warning(
+    conn: psycopg.Connection,
+    subject_text: str,
+    subject_kind_hint: str | None,
+) -> str | None:
+    """Return an operator warning when subject intent likely mismatches.
+
+    RFC 0028 intentionally keeps this as a small render-time heuristic. It is
+    advisory text for the interview operator, not validation logic and not a
+    claim/belief status transition.
+    """
+    if not _subject_hint_is_person_only(subject_kind_hint):
+        return None
+    subject = subject_text.strip()
+    if not subject:
+        return None
+
+    known_label = _known_non_person_subject_label(subject)
+    if known_label is not None:
+        return _format_subject_kind_warning(subject, known_label)
+
+    entity_kinds = _active_entity_kinds_for_subject(conn, subject)
+    for entity_kind in entity_kinds:
+        label = _NON_PERSON_ENTITY_KIND_LABELS.get(entity_kind)
+        if label is not None:
+            return _format_subject_kind_warning(subject, label)
+    return None
+
+
+def _subject_hint_is_person_only(subject_kind_hint: str | None) -> bool:
+    normalized = " ".join((subject_kind_hint or "").casefold().split())
+    return normalized in {"person only", "persons only"}
+
+
+def _known_non_person_subject_label(subject_text: str) -> str | None:
+    normalized = " ".join(subject_text.casefold().split())
+    if normalized in _KNOWN_NON_PERSON_SUBJECTS:
+        return _KNOWN_NON_PERSON_SUBJECTS[normalized]
+    for needle, label in _KNOWN_NON_PERSON_SUBJECTS.items():
+        if needle in normalized:
+            return label
+    return None
+
+
+def _active_entity_kinds_for_subject(
+    conn: psycopg.Connection,
+    subject_text: str,
+) -> list[str]:
+    rows = conn.execute(
+        """
+        SELECT entity_kind
+        FROM entities
+        WHERE status = 'active'
+          AND (
+              lower(canonical_text) = lower(%s)
+              OR canonical_key = engram_normalize_subject(%s)
+          )
+        ORDER BY entity_kind
+        """,
+        (subject_text, subject_text),
+    ).fetchall()
+    return [str(row[0]) for row in rows]
+
+
+def _format_subject_kind_warning(subject_text: str, label: str) -> str:
+    return (
+        f'subject "{subject_text}" looks like a {label}; predicate intent is '
+        "persons. Likely a `false` extraction."
+    )
 
 
 def pick_question(
@@ -261,16 +381,23 @@ def format_header(target: SampledTarget, idx: int, total: int) -> str:
 
 
 def format_summary_line(display: dict[str, Any]) -> str:
-    """Render summary plus optional ``(predicate_doc)`` append.
+    """Render summary plus predicate intent and advisory warning lines.
 
     The four-space prefix the CLI prepends before printing is the caller's
     responsibility; this helper returns just the line content.
     """
-    summary_line = display.get("summary", "")
+    lines = [str(display.get("summary", ""))]
     pred_doc = display.get("predicate_doc")
+    subject_kind_hint = display.get("subject_kind_hint")
     if pred_doc:
-        summary_line = f"{summary_line}    ({pred_doc})"
-    return summary_line
+        intent = str(pred_doc)
+        if subject_kind_hint:
+            intent = f"{intent} ({subject_kind_hint})"
+        lines.append(f"  intent: {intent}")
+    warning = display.get("subject_kind_warning")
+    if warning:
+        lines.append(f"  [warning] {warning}")
+    return "\n".join(lines)
 
 
 def format_evidence_dates(display: dict[str, Any]) -> str | None:

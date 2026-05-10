@@ -28,6 +28,7 @@ from engram.interview.render import (
     format_summary_line,
     pick_question,
     rationale_prompt_for,
+    subject_kind_warning,
 )
 from engram.interview.sampler import SampledTarget
 
@@ -136,11 +137,44 @@ def test_format_summary_line_with_predicate_doc() -> None:
     display: dict[str, Any] = {
         "summary": "user -[drives]-> Subaru",
         "predicate_doc": "subject drives a vehicle",
+        "subject_kind_hint": "",
     }
     assert (
         format_summary_line(display)
-        == "user -[drives]-> Subaru    (subject drives a vehicle)"
+        == "user -[drives]-> Subaru\n  intent: subject drives a vehicle"
     )
+
+
+def test_format_summary_line_with_subject_kind_hint() -> None:
+    display: dict[str, Any] = {
+        "summary": "Hobnob -[has_name]-> Hobnob",
+        "predicate_doc": "legal or preferred name",
+        "subject_kind_hint": "persons only",
+    }
+    assert (
+        format_summary_line(display) == "Hobnob -[has_name]-> Hobnob\n"
+        "  intent: legal or preferred name (persons only)"
+    )
+
+
+def test_format_summary_line_with_subject_kind_warning() -> None:
+    display: dict[str, Any] = {
+        "summary": "Hobnob -[has_name]-> Hobnob",
+        "predicate_doc": "legal or preferred name",
+        "subject_kind_hint": "persons only",
+        "subject_kind_warning": (
+            'subject "Hobnob" looks like a place/business; predicate intent '
+            "is persons. Likely a `false` extraction."
+        ),
+    }
+    assert format_summary_line(display).splitlines() == [
+        "Hobnob -[has_name]-> Hobnob",
+        "  intent: legal or preferred name (persons only)",
+        (
+            '  [warning] subject "Hobnob" looks like a place/business; '
+            "predicate intent is persons. Likely a `false` extraction."
+        ),
+    ]
 
 
 def test_format_summary_line_without_predicate_doc() -> None:
@@ -391,7 +425,10 @@ def test_rationale_prompt_for_skip_returns_none() -> None:
 
 
 def test_rationale_prompt_for_false_returns_correct_value() -> None:
-    assert rationale_prompt_for("false") == "correct value > "
+    assert rationale_prompt_for("false") == (
+        "what's wrong? (e.g., wrong predicate, wrong subject, different "
+        "object value, predicate doesn't apply) > "
+    )
 
 
 def test_rationale_prompt_for_stale_returns_when_did_it_change() -> None:
@@ -435,6 +472,49 @@ def test_rationale_prompt_table_covers_all_non_terminal_verdicts() -> None:
 def test_evidence_layout_caps() -> None:
     assert EVIDENCE_EXCERPT_LIMIT == 280
     assert EVIDENCE_ROWS_SHOWN == 3
+
+
+# ---------------------------------------------------------------------------
+# subject_kind_warning
+# ---------------------------------------------------------------------------
+
+
+def test_subject_kind_warning_uses_curated_non_person_terms() -> None:
+    conn = MagicMock()
+    warning = subject_kind_warning(conn, "Hobnob", "persons only")
+    assert warning == (
+        'subject "Hobnob" looks like a place/business; predicate intent is '
+        "persons. Likely a `false` extraction."
+    )
+    conn.execute.assert_not_called()
+
+
+def test_subject_kind_warning_uses_active_entity_kind() -> None:
+    conn = MagicMock()
+    conn.execute.return_value.fetchall.return_value = [("place",)]
+    warning = subject_kind_warning(conn, "The Venue", "persons only")
+    assert warning == (
+        'subject "The Venue" looks like a place/business; predicate intent is '
+        "persons. Likely a `false` extraction."
+    )
+
+
+def test_subject_kind_warning_skips_non_person_hints() -> None:
+    conn = MagicMock()
+    assert subject_kind_warning(conn, "A Project", "projects only") is None
+    conn.execute.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "subject_kind_hint",
+    ["persons or projects", "persons or organizations", "persons or households"],
+)
+def test_subject_kind_warning_skips_mixed_allowed_person_hints(
+    subject_kind_hint: str,
+) -> None:
+    conn = MagicMock()
+    assert subject_kind_warning(conn, "A Project", subject_kind_hint) is None
+    conn.execute.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

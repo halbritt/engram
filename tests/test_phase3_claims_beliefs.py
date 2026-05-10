@@ -26,6 +26,9 @@ from engram.extractor import (
     EXTRACTION_REQUEST_PROFILE_VERSION,
     ClaimDraft,
     ExtractorResponseError,
+    SegmentMessage,
+    SegmentPayload,
+    build_extraction_prompt,
     extract_claims_from_segment,
     parse_extraction_response,
     reap_stale_extractions,
@@ -222,7 +225,7 @@ def insert_extracted_claim(
 
 
 def test_predicate_vocabulary_and_extractor_schema_parity(conn):
-    assert EXTRACTION_PROMPT_VERSION == "extractor.v8.d064.accounted-zero"
+    assert EXTRACTION_PROMPT_VERSION == "extractor.v9.d082.predicate-intent"
     assert (
         EXTRACTION_REQUEST_PROFILE_VERSION
         == "ik-llama-json-schema.d034.v10.extractor-8192-accounted-zero"
@@ -240,6 +243,23 @@ def test_predicate_vocabulary_and_extractor_schema_parity(conn):
         "properties"
     ]["claims"]["items"]["properties"]["predicate"]["enum"]
     assert sorted(schema_enum) == db_predicates
+    intent_rows = {
+        row[0]: {
+            "description": row[1],
+            "subject_kind_hint": row[2],
+        }
+        for row in conn.execute(
+            """
+            SELECT predicate, description, subject_kind_hint
+            FROM predicate_vocabulary
+            """
+        ).fetchall()
+    }
+    for row in extractor.PREDICATE_VOCABULARY:
+        assert intent_rows[row["predicate"]] == {
+            "description": row["description"],
+            "subject_kind_hint": row["subject_kind_hint"],
+        }
     strict_item = extractor.extraction_json_schema(
         ["00000000-0000-0000-0000-000000000000"]
     )["properties"]["claims"]["items"]
@@ -270,6 +290,32 @@ def test_predicate_vocabulary_and_extractor_schema_parity(conn):
     assert sorted(relaxed["predicate"]["enum"]) == db_predicates
     assert "pattern" in relaxed["evidence_message_ids"]["items"]
     assert "enum" not in relaxed["evidence_message_ids"]["items"]
+
+
+def test_build_extraction_prompt_surfaces_predicate_intent() -> None:
+    segment = SegmentPayload(
+        id="segment-1",
+        generation_id="generation-1",
+        conversation_id="conversation-1",
+        source_kind="chatgpt_export",
+        message_ids=["00000000-0000-0000-0000-000000000001"],
+        content_text="My name is Ada.",
+        summary_text=None,
+        privacy_tier=1,
+        messages=[
+            SegmentMessage(
+                id="00000000-0000-0000-0000-000000000001",
+                sequence_index=0,
+                role="user",
+                content_text="My name is Ada.",
+            )
+        ],
+    )
+    prompt = build_extraction_prompt(segment)
+    assert "- has_name: stability=identity" in prompt
+    assert "intent: legal or preferred name (persons only)" in prompt
+    assert "intent: software or hardware tool (persons or projects)" in prompt
+    assert 'Return one JSON object with key "claims"' in prompt
 
 
 def test_claim_schema_guards_and_rationale(conn):
@@ -2254,6 +2300,26 @@ def test_phase3_schema_preflight_accepts_current_schema(conn):
             WHERE predicate = 'project_status_is'
             """,
             "project_status_is\\.cardinality_class",
+        ),
+        (
+            """
+            UPDATE predicate_vocabulary
+            SET description = 'renamed intent'
+            WHERE predicate = 'has_name'
+            """,
+            "has_name\\.description",
+        ),
+        (
+            """
+            UPDATE predicate_vocabulary
+            SET subject_kind_hint = 'places only'
+            WHERE predicate = 'has_name'
+            """,
+            "has_name\\.subject_kind_hint",
+        ),
+        (
+            "ALTER TABLE predicate_vocabulary DROP COLUMN subject_kind_hint",
+            "predicate_vocabulary\\.subject_kind_hint is missing",
         ),
         (
             "DROP INDEX beliefs_active_group_unique_idx",

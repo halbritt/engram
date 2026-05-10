@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h2><code>{{ row.segment_id }}</code></h2>
+<div class="warning">{{ row.data_state }}: {{ instruction }}</div>
+{% if detail.error %}
+<div class="error">Detail load failed: {{ detail.error }}</div>
+{% endif %}
+{% if detail.summary_text %}
+<div class="panel"><strong>Summary</strong><br>{{ detail.summary_text }}</div>
+{% endif %}
+{% if detail.segment_excerpt %}
+<div class="panel"><pre>{{ detail.segment_excerpt }}</pre>{% if detail.excerpt_truncated %}<p>Excerpt truncated for display.</p>{% endif %}</div>
+{% elif detail.privacy_tier and detail.privacy_tier > 1 %}
+<div class="warning">Segment text is hidden because privacy tier {{ detail.privacy_tier }} is above the workbench display ceiling.</div>
+{% else %}
+<div class="warning">No segment excerpt was found for this segment.</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title or "Engram bench review" }}</title>
+  <script src="/static/htmx.min.js"></script>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #f7f7f4; color: #20211f; }
+    header, main { max-width: 1120px; margin: 0 auto; padding: 20px; }
+    header { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+    nav a { margin-left: 12px; color: #24516b; }
+    h1 { font-size: 24px; margin: 0; }
+    h2 { font-size: 18px; margin: 24px 0 8px; }
+    table { width: 100%; border-collapse: collapse; background: white; }
+    th, td { padding: 8px; border-bottom: 1px solid #ddd; text-align: left; vertical-align: top; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    .metric, .panel { background: white; border: 1px solid #ddd; border-radius: 6px; padding: 12px; }
+    .stack { display: grid; gap: 12px; }
+    .claim { background: white; border: 1px solid #ddd; border-radius: 6px; padding: 12px; }
+    .claim h3 { font-size: 15px; margin: 0 0 8px; }
+    .claim dl { display: grid; grid-template-columns: minmax(96px, 160px) 1fr; gap: 6px 10px; margin: 0; }
+    .claim dt { color: #5c6258; }
+    .claim dd { margin: 0; overflow-wrap: anywhere; }
+    .metric strong { display: block; font-size: 24px; }
+    .badge { display: inline-block; padding: 2px 7px; border: 1px solid #aaa; border-radius: 999px; margin: 1px; font-size: 12px; }
+    .warning { background: #fff3d6; border: 1px solid #d9a441; padding: 10px; border-radius: 6px; }
+    .error { background: #ffe5e5; border: 1px solid #c95c5c; padding: 10px; border-radius: 6px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    button, .button { border: 1px solid #7b8176; border-radius: 6px; background: white; color: #20211f; padding: 8px 10px; cursor: pointer; text-decoration: none; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    textarea { width: 100%; min-height: 72px; }
+    code { white-space: nowrap; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Engram bench review</h1>
+    <nav>
+      <a href="/">Run</a>
+      <a href="/segments?remaining=1&reviewable=1">Queue</a>
+      <a href="/summary">Summary</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

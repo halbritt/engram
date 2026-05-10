@@ -1,5 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Engram interview — Q{{ idx }}/{{ total }}{% endblock %}
+{% block head_extra %}
+<style>
+  .summary-line { white-space: pre-wrap; }
+</style>
+{% endblock %}
 {% block main %}
 <main id="main">
   <h2 tabindex="-1">{{ header_line }}</h2>
@@ -10,7 +15,11 @@
     profile={{ version_triple.request_profile_version }}
   </p>
 
-  <p class="summary-line">{{ summary_line }}</p>
+  <div class="summary-line">
+    {% for line in summary_lines %}
+      <div>{{ line }}</div>
+    {% endfor %}
+  </div>
 
   {% if evidence_dates_line %}
     <p class="evidence-dates muted">{{ evidence_dates_line }}</p>
@@ -115,12 +124,7 @@
   // Two-click rationale flow: click on a "rationale-required" verdict button
   // reveals the textarea and stamps the verdict in the hidden input.
   (function () {
-    var rationalePrompts = {
-      "false": "correct value > ",
-      "stale": "when did it change? > ",
-      "unsupported": "what's missing from the evidence? > ",
-      "unsure": "note (Enter to skip) > "
-    };
+    var rationalePrompts = {{ rationale_prompts | tojson }};
     var twoClick = ["false", "stale", "unsupported", "unsure"];
     var verdictInput = document.getElementById("verdict-input");
     var rationaleArea = document.getElementById("rationale-area");

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid">
+  <div class="metric"><span>Decided</span><strong>{{ summary.decided }}/{{ summary.total }}</strong></div>
+  <div class="metric"><span>Remaining</span><strong>{{ summary.remaining }}</strong></div>
+  <div class="metric"><span>Follow-up</span><strong>{{ summary.by_decision.get("needs_followup", 0) }}</strong></div>
+  <div class="metric"><span>Regressions</span><strong>{{ summary.by_decision.get("flag_candidate_regression", 0) }}</strong></div>
+</section>
+<h2>Run decision</h2>
+<p class="warning">Bench review decisions do not mutate production data or bypass Phase 4 gates.</p>
+<form method="post" action="/run-decision">
+  <label for="rationale">Review note, no excerpts</label>
+  <textarea id="rationale" name="rationale">{{ summary.run_rationale or "" }}</textarea>
+  <div class="actions">
+  {% for decision in run_decisions %}
+    <button name="decision" value="{{ decision }}">{{ run_labels.get(decision, decision) }}</button>
+  {% endfor %}
+  </div>
+</form>
+{% if summary.run_decision_label %}<p>Current: {{ summary.run_decision_label }}</p>{% endif %}
+{% endblock %}
+

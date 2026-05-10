@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Segments</h2>
+{% if filters.reviewable %}
+<div class="panel">Showing reviewable rows with prior/candidate comparison data.</div>
+{% endif %}
+<table>
+  <thead><tr><th>Segment</th><th>State</th><th>Tags</th><th>Prior</th><th>Candidate</th><th>Decision</th></tr></thead>
+  <tbody>
+  {% for item in items %}
+  {% set row = item.row %}
+  <tr>
+    <td><a href="/segments/{{ row.segment_id }}{{ query_suffix }}"><code>{{ row.segment_id }}</code></a></td>
+    <td>{{ row.data_state }}</td>
+    <td>{% for tag in item.tags %}<span class="badge">{{ tag }}</span>{% endfor %}</td>
+    <td>{{ row.prior_claim_count if row.prior_claim_count is not none else "n/a" }}</td>
+    <td>{{ row.candidate_claim_count if row.candidate_claim_count is not none else "n/a" }}</td>
+    <td>{{ row.decision or "undecided" }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

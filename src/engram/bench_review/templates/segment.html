@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<h2><code>{{ row.segment_id }}</code></h2>
+<div class="warning">{{ row.data_state }}: {{ instruction }}</div>
+<section class="grid">
+  <div class="metric"><span>Prior claims</span><strong>{{ row.prior_claim_count if row.prior_claim_count is not none else "n/a" }}</strong></div>
+  <div class="metric"><span>Candidate claims</span><strong>{{ row.candidate_claim_count if row.candidate_claim_count is not none else "n/a" }}</strong></div>
+  <div class="metric"><span>Prior dropped</span><strong>{{ row.prior_dropped_count if row.prior_dropped_count is not none else "n/a" }}</strong></div>
+  <div class="metric"><span>Candidate dropped</span><strong>{{ row.candidate_dropped_count if row.candidate_dropped_count is not none else "n/a" }}</strong></div>
+</section>
+<p>{% for tag in tags %}<span class="badge">{{ tag }}</span>{% endfor %}</p>
+
+{% if detail.error %}
+<div class="error">Detail load failed: {{ detail.error }}</div>
+{% endif %}
+
+<h2>Segment Excerpt</h2>
+{% if detail.summary_text %}
+<div class="panel"><strong>Summary</strong><br>{{ detail.summary_text }}</div>
+{% endif %}
+{% if detail.segment_excerpt %}
+<div class="panel"><pre>{{ detail.segment_excerpt }}</pre>{% if detail.excerpt_truncated %}<p>Excerpt truncated for display.</p>{% endif %}</div>
+{% elif detail.privacy_tier and detail.privacy_tier > 1 %}
+<div class="warning">Segment text is hidden because privacy tier {{ detail.privacy_tier }} is above the workbench display ceiling.</div>
+{% else %}
+<div class="warning">No segment excerpt was found for this segment.</div>
+{% endif %}
+
+<h2>Prior Claims</h2>
+{% if detail.prior_claims %}
+<div class="stack">
+  {% for claim in detail.prior_claims %}
+  <article class="claim">
+    <h3>{{ claim.predicate }} <span class="badge">{{ claim.stability_class }}</span></h3>
+    <dl>
+      <dt>Subject</dt><dd>{{ claim.subject_text or "[redacted]" }}</dd>
+      <dt>Object</dt><dd>{{ claim.object_display or "[redacted]" }}</dd>
+      <dt>Confidence</dt><dd>{{ "%.2f"|format(claim.confidence) }}</dd>
+      <dt>Evidence</dt><dd>{{ claim.evidence_count }} message{% if claim.evidence_count != 1 %}s{% endif %}</dd>
+      <dt>Claim ID</dt><dd><code>{{ claim.claim_id }}</code></dd>
+    </dl>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<div class="warning">No prior claims were found for this segment and prior version tuple.</div>
+{% endif %}
+
+<h2>Candidate Claims</h2>
+{% if detail.candidate_detail_note %}
+<div class="panel">{{ detail.candidate_detail_note }}</div>
+{% endif %}
+{% if detail.candidate_claims %}
+<div class="stack">
+  {% for claim in detail.candidate_claims %}
+  <article class="claim">
+    <h3>{{ claim.predicate or "unknown predicate" }}{% if claim.stability_class %} <span class="badge">{{ claim.stability_class }}</span>{% endif %}</h3>
+    <dl>
+      <dt>Confidence</dt><dd>{{ "%.2f"|format(claim.confidence) if claim.confidence is not none else "n/a" }}</dd>
+      <dt>Evidence</dt><dd>{{ claim.evidence_count if claim.evidence_count is not none else "n/a" }}</dd>
+      <dt>Object kind</dt><dd>{{ claim.object_kind or "n/a" }}</dd>
+      <dt>Object present</dt><dd>{{ claim.object_present if claim.object_present is not none else "n/a" }}</dd>
+      <dt>Subject present</dt><dd>{{ claim.subject_text_present if claim.subject_text_present is not none else "n/a" }}</dd>
+      <dt>Rationale present</dt><dd>{{ claim.rationale_present if claim.rationale_present is not none else "n/a" }}</dd>
+    </dl>
+  </article>
+  {% endfor %}
+</div>
+{% endif %}
+
+<form method="post" action="/segments/{{ row.segment_id }}/decision">
+  <input type="hidden" name="next_state" value="{{ next_context.state or "" }}">
+  <input type="hidden" name="next_tag" value="{{ next_context.tag or "" }}">
+  <input type="hidden" name="next_decision" value="{{ next_context.decision or "" }}">
+  <input type="hidden" name="next_remaining" value="{{ 1 if next_context.remaining else 0 }}">
+  <input type="hidden" name="next_reviewable" value="{{ 1 if next_context.reviewable else 0 }}">
+  <label for="rationale">Review note, no excerpts</label>
+  <textarea id="rationale" name="rationale">{{ row.rationale or "" }}</textarea>
+  <div class="actions">
+    <button name="decision" value="accept_candidate_change" {% if strong_disabled %}disabled{% endif %}>{% if row.data_state == "candidate_zero" %}Accept zero claims{% else %}Accept candidate change{% endif %}</button>
+    <button name="decision" value="flag_candidate_regression" {% if strong_disabled %}disabled{% endif %}>{% if row.data_state == "candidate_zero" %}Flag zero-claim regression{% else %}Flag candidate regression{% endif %}</button>
+    <button name="decision" value="needs_followup">Needs follow-up</button>
+    <button name="decision" value="exclude_from_review">Exclude from review</button>
+  </div>
+</form>
+<p><a class="button" href="/segments{{ next_query_suffix }}">Back to this queue</a></p>
+{% endblock %}

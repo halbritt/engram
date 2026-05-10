@@ -34,7 +34,7 @@ from engram.segmenter import (
 
 logger = logging.getLogger(__name__)
 
-EXTRACTION_PROMPT_VERSION = "extractor.v8.d064.accounted-zero"
+EXTRACTION_PROMPT_VERSION = "extractor.v9.d082.predicate-intent"
 EXTRACTION_PROMPT_VERSION_REGEX = re.compile(
     r"^extractor\.v\d+\.[a-z0-9_-]+\.[a-z0-9_-]+$"
 )
@@ -80,36 +80,314 @@ STABILITY_CLASSES = [
 ]
 
 
+PREDICATE_INTENT_METADATA: dict[str, dict[str, str]] = {
+    "has_name": {
+        "description": "legal or preferred name",
+        "subject_kind_hint": "persons only",
+    },
+    "has_pronouns": {"description": "pronouns", "subject_kind_hint": "persons only"},
+    "born_on": {"description": "birth date string", "subject_kind_hint": "persons only"},
+    "lives_at": {
+        "description": "current address as structured JSON",
+        "subject_kind_hint": "persons or households",
+    },
+    "holds_role_at": {
+        "description": "current role and employer",
+        "subject_kind_hint": "persons only",
+    },
+    "has_pet": {
+        "description": "pet with optional name and species",
+        "subject_kind_hint": "persons only",
+    },
+    "is_related_to": {
+        "description": "family relation",
+        "subject_kind_hint": "persons only",
+    },
+    "is_friends_with": {
+        "description": "friend name or alias",
+        "subject_kind_hint": "persons only",
+    },
+    "works_with": {
+        "description": "coworker or collaborator name",
+        "subject_kind_hint": "persons or organizations",
+    },
+    "prefers": {"description": "preference", "subject_kind_hint": "persons only"},
+    "dislikes": {"description": "dispreference", "subject_kind_hint": "persons only"},
+    "believes": {"description": "open opinion", "subject_kind_hint": "persons only"},
+    "uses_tool": {
+        "description": "software or hardware tool",
+        "subject_kind_hint": "persons or projects",
+    },
+    "drives": {"description": "current vehicle", "subject_kind_hint": "persons only"},
+    "eats_diet": {"description": "current diet", "subject_kind_hint": "persons only"},
+    "working_on": {"description": "active project", "subject_kind_hint": "persons only"},
+    "project_status_is": {
+        "description": "status for one project",
+        "subject_kind_hint": "projects only",
+    },
+    "owns_repo": {
+        "description": "repository path or URL",
+        "subject_kind_hint": "persons or organizations",
+    },
+    "wants_to": {"description": "aspirational goal", "subject_kind_hint": "persons only"},
+    "plans_to": {"description": "planned action", "subject_kind_hint": "persons only"},
+    "intends_to": {"description": "stated intention", "subject_kind_hint": "persons only"},
+    "must_do": {"description": "action item", "subject_kind_hint": "persons only"},
+    "committed_to": {"description": "commitment event", "subject_kind_hint": "persons only"},
+    "feels": {"description": "emotion or disposition", "subject_kind_hint": "persons only"},
+    "relationship_with": {
+        "description": "relationship status for one person",
+        "subject_kind_hint": "persons only",
+    },
+    "met_with": {"description": "meeting event", "subject_kind_hint": "persons only"},
+    "talked_about": {
+        "description": "topic discussed as an event",
+        "subject_kind_hint": "persons only",
+    },
+    "studied": {
+        "description": "school, program, or subject",
+        "subject_kind_hint": "persons only",
+    },
+    "traveled_to": {"description": "travel event", "subject_kind_hint": "persons only"},
+}
+
+_BASE_PREDICATE_VOCABULARY: list[dict[str, Any]] = [
+    {
+        "predicate": "has_name",
+        "stability_class": "identity",
+        "cardinality_class": "single_current",
+        "object_kind": "text",
+        "group_object_keys": [],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "has_pronouns",
+        "stability_class": "identity",
+        "cardinality_class": "single_current",
+        "object_kind": "text",
+        "group_object_keys": [],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "born_on",
+        "stability_class": "identity",
+        "cardinality_class": "single_current",
+        "object_kind": "text",
+        "group_object_keys": [],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "lives_at",
+        "stability_class": "identity",
+        "cardinality_class": "single_current",
+        "object_kind": "json",
+        "group_object_keys": [],
+        "required_object_keys": ["address_line1"],
+    },
+    {
+        "predicate": "holds_role_at",
+        "stability_class": "identity",
+        "cardinality_class": "single_current",
+        "object_kind": "json",
+        "group_object_keys": [],
+        "required_object_keys": ["role", "employer"],
+    },
+    {
+        "predicate": "has_pet",
+        "stability_class": "identity",
+        "cardinality_class": "multi_current",
+        "object_kind": "json",
+        "group_object_keys": ["name", "species"],
+        "required_object_keys": ["species"],
+    },
+    {
+        "predicate": "is_related_to",
+        "stability_class": "relationship",
+        "cardinality_class": "multi_current",
+        "object_kind": "json",
+        "group_object_keys": ["name"],
+        "required_object_keys": ["name", "kind"],
+    },
+    {
+        "predicate": "is_friends_with",
+        "stability_class": "relationship",
+        "cardinality_class": "multi_current",
+        "object_kind": "text",
+        "group_object_keys": ["text"],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "works_with",
+        "stability_class": "relationship",
+        "cardinality_class": "multi_current",
+        "object_kind": "text",
+        "group_object_keys": ["text"],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "prefers",
+        "stability_class": "preference",
+        "cardinality_class": "multi_current",
+        "object_kind": "text",
+        "group_object_keys": ["text"],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "dislikes",
+        "stability_class": "preference",
+        "cardinality_class": "multi_current",
+        "object_kind": "text",
+        "group_object_keys": ["text"],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "believes",
+        "stability_class": "preference",
+        "cardinality_class": "multi_current",
+        "object_kind": "text",
+        "group_object_keys": ["text"],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "uses_tool",
+        "stability_class": "preference",
+        "cardinality_class": "multi_current",
+        "object_kind": "text",
+        "group_object_keys": ["text"],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "drives",
+        "stability_class": "preference",
+        "cardinality_class": "single_current",
+        "object_kind": "text",
+        "group_object_keys": [],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "eats_diet",
+        "stability_class": "preference",
+        "cardinality_class": "single_current",
+        "object_kind": "text",
+        "group_object_keys": [],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "working_on",
+        "stability_class": "project_status",
+        "cardinality_class": "multi_current",
+        "object_kind": "text",
+        "group_object_keys": ["text"],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "project_status_is",
+        "stability_class": "project_status",
+        "cardinality_class": "single_current_per_object",
+        "object_kind": "json",
+        "group_object_keys": ["project"],
+        "required_object_keys": ["project", "status"],
+    },
+    {
+        "predicate": "owns_repo",
+        "stability_class": "project_status",
+        "cardinality_class": "multi_current",
+        "object_kind": "text",
+        "group_object_keys": ["text"],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "wants_to",
+        "stability_class": "goal",
+        "cardinality_class": "multi_current",
+        "object_kind": "text",
+        "group_object_keys": ["text"],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "plans_to",
+        "stability_class": "goal",
+        "cardinality_class": "multi_current",
+        "object_kind": "json",
+        "group_object_keys": ["action"],
+        "required_object_keys": ["action"],
+    },
+    {
+        "predicate": "intends_to",
+        "stability_class": "goal",
+        "cardinality_class": "multi_current",
+        "object_kind": "text",
+        "group_object_keys": ["text"],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "must_do",
+        "stability_class": "task",
+        "cardinality_class": "event",
+        "object_kind": "text",
+        "group_object_keys": ["text"],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "committed_to",
+        "stability_class": "task",
+        "cardinality_class": "event",
+        "object_kind": "json",
+        "group_object_keys": ["action", "with_party"],
+        "required_object_keys": ["action"],
+    },
+    {
+        "predicate": "feels",
+        "stability_class": "mood",
+        "cardinality_class": "multi_current",
+        "object_kind": "text",
+        "group_object_keys": ["text"],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "relationship_with",
+        "stability_class": "relationship",
+        "cardinality_class": "single_current_per_object",
+        "object_kind": "json",
+        "group_object_keys": ["name"],
+        "required_object_keys": ["name", "status"],
+    },
+    {
+        "predicate": "met_with",
+        "stability_class": "relationship",
+        "cardinality_class": "event",
+        "object_kind": "json",
+        "group_object_keys": ["name", "when"],
+        "required_object_keys": ["name"],
+    },
+    {
+        "predicate": "talked_about",
+        "stability_class": "preference",
+        "cardinality_class": "event",
+        "object_kind": "text",
+        "group_object_keys": ["text"],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "studied",
+        "stability_class": "identity",
+        "cardinality_class": "multi_current",
+        "object_kind": "text",
+        "group_object_keys": ["text"],
+        "required_object_keys": [],
+    },
+    {
+        "predicate": "traveled_to",
+        "stability_class": "identity",
+        "cardinality_class": "event",
+        "object_kind": "json",
+        "group_object_keys": ["place", "when"],
+        "required_object_keys": ["place"],
+    },
+]
 PREDICATE_VOCABULARY: list[dict[str, Any]] = [
-    {"predicate": "has_name", "stability_class": "identity", "cardinality_class": "single_current", "object_kind": "text", "group_object_keys": [], "required_object_keys": []},
-    {"predicate": "has_pronouns", "stability_class": "identity", "cardinality_class": "single_current", "object_kind": "text", "group_object_keys": [], "required_object_keys": []},
-    {"predicate": "born_on", "stability_class": "identity", "cardinality_class": "single_current", "object_kind": "text", "group_object_keys": [], "required_object_keys": []},
-    {"predicate": "lives_at", "stability_class": "identity", "cardinality_class": "single_current", "object_kind": "json", "group_object_keys": [], "required_object_keys": ["address_line1"]},
-    {"predicate": "holds_role_at", "stability_class": "identity", "cardinality_class": "single_current", "object_kind": "json", "group_object_keys": [], "required_object_keys": ["role", "employer"]},
-    {"predicate": "has_pet", "stability_class": "identity", "cardinality_class": "multi_current", "object_kind": "json", "group_object_keys": ["name", "species"], "required_object_keys": ["species"]},
-    {"predicate": "is_related_to", "stability_class": "relationship", "cardinality_class": "multi_current", "object_kind": "json", "group_object_keys": ["name"], "required_object_keys": ["name", "kind"]},
-    {"predicate": "is_friends_with", "stability_class": "relationship", "cardinality_class": "multi_current", "object_kind": "text", "group_object_keys": ["text"], "required_object_keys": []},
-    {"predicate": "works_with", "stability_class": "relationship", "cardinality_class": "multi_current", "object_kind": "text", "group_object_keys": ["text"], "required_object_keys": []},
-    {"predicate": "prefers", "stability_class": "preference", "cardinality_class": "multi_current", "object_kind": "text", "group_object_keys": ["text"], "required_object_keys": []},
-    {"predicate": "dislikes", "stability_class": "preference", "cardinality_class": "multi_current", "object_kind": "text", "group_object_keys": ["text"], "required_object_keys": []},
-    {"predicate": "believes", "stability_class": "preference", "cardinality_class": "multi_current", "object_kind": "text", "group_object_keys": ["text"], "required_object_keys": []},
-    {"predicate": "uses_tool", "stability_class": "preference", "cardinality_class": "multi_current", "object_kind": "text", "group_object_keys": ["text"], "required_object_keys": []},
-    {"predicate": "drives", "stability_class": "preference", "cardinality_class": "single_current", "object_kind": "text", "group_object_keys": [], "required_object_keys": []},
-    {"predicate": "eats_diet", "stability_class": "preference", "cardinality_class": "single_current", "object_kind": "text", "group_object_keys": [], "required_object_keys": []},
-    {"predicate": "working_on", "stability_class": "project_status", "cardinality_class": "multi_current", "object_kind": "text", "group_object_keys": ["text"], "required_object_keys": []},
-    {"predicate": "project_status_is", "stability_class": "project_status", "cardinality_class": "single_current_per_object", "object_kind": "json", "group_object_keys": ["project"], "required_object_keys": ["project", "status"]},
-    {"predicate": "owns_repo", "stability_class": "project_status", "cardinality_class": "multi_current", "object_kind": "text", "group_object_keys": ["text"], "required_object_keys": []},
-    {"predicate": "wants_to", "stability_class": "goal", "cardinality_class": "multi_current", "object_kind": "text", "group_object_keys": ["text"], "required_object_keys": []},
-    {"predicate": "plans_to", "stability_class": "goal", "cardinality_class": "multi_current", "object_kind": "json", "group_object_keys": ["action"], "required_object_keys": ["action"]},
-    {"predicate": "intends_to", "stability_class": "goal", "cardinality_class": "multi_current", "object_kind": "text", "group_object_keys": ["text"], "required_object_keys": []},
-    {"predicate": "must_do", "stability_class": "task", "cardinality_class": "event", "object_kind": "text", "group_object_keys": ["text"], "required_object_keys": []},
-    {"predicate": "committed_to", "stability_class": "task", "cardinality_class": "event", "object_kind": "json", "group_object_keys": ["action", "with_party"], "required_object_keys": ["action"]},
-    {"predicate": "feels", "stability_class": "mood", "cardinality_class": "multi_current", "object_kind": "text", "group_object_keys": ["text"], "required_object_keys": []},
-    {"predicate": "relationship_with", "stability_class": "relationship", "cardinality_class": "single_current_per_object", "object_kind": "json", "group_object_keys": ["name"], "required_object_keys": ["name", "status"]},
-    {"predicate": "met_with", "stability_class": "relationship", "cardinality_class": "event", "object_kind": "json", "group_object_keys": ["name", "when"], "required_object_keys": ["name"]},
-    {"predicate": "talked_about", "stability_class": "preference", "cardinality_class": "event", "object_kind": "text", "group_object_keys": ["text"], "required_object_keys": []},
-    {"predicate": "studied", "stability_class": "identity", "cardinality_class": "multi_current", "object_kind": "text", "group_object_keys": ["text"], "required_object_keys": []},
-    {"predicate": "traveled_to", "stability_class": "identity", "cardinality_class": "event", "object_kind": "json", "group_object_keys": ["place", "when"], "required_object_keys": ["place"]},
+    {**row, **PREDICATE_INTENT_METADATA[row["predicate"]]}
+    for row in _BASE_PREDICATE_VOCABULARY
 ]
 PREDICATE_ENUM = [row["predicate"] for row in PREDICATE_VOCABULARY]
 PREDICATE_BY_NAME = {row["predicate"]: row for row in PREDICATE_VOCABULARY}
@@ -270,8 +548,7 @@ class ExtractorClient(Protocol):
         max_tokens: int,
         allowed_message_ids: list[str] | None = None,
         relaxed_schema: bool = False,
-    ) -> ExtractorModelOutput | list[ClaimDraft]:
-        ...
+    ) -> ExtractorModelOutput | list[ClaimDraft]: ...
 
 
 def default_extractor_model_id() -> str:
@@ -357,8 +634,7 @@ def extraction_json_schema(
             message_id_items["enum"] = list(dict.fromkeys(allowed_message_ids))
         else:
             message_id_items["pattern"] = (
-                "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
-                "[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
             )
     predicate_schema: dict[str, Any] = {"type": "string", "enum": PREDICATE_ENUM}
     claim_item: dict[str, Any] = {
@@ -412,7 +688,9 @@ def parse_extraction_response(
         raise ExtractorResponseError("extractor response missing choices", response=response)
     message = choices[0].get("message") if isinstance(choices[0], dict) else None
     if not isinstance(message, dict):
-        raise ExtractorResponseError("extractor response missing choices[0].message", response=response)
+        raise ExtractorResponseError(
+            "extractor response missing choices[0].message", response=response
+        )
     content = message.get("content")
     if not isinstance(content, str) or not content.strip():
         if message.get("reasoning_content"):
@@ -464,11 +742,15 @@ def parse_extraction_payload(payload: Any, *, relaxed_schema: bool = False) -> l
         if not isinstance(item["subject_text"], str) or not item["subject_text"].strip():
             raise ExtractionError(f"claim {index} has empty subject_text")
         predicate = item["predicate"]
-        if not isinstance(predicate, str) or (not relaxed_schema and predicate not in PREDICATE_ENUM):
+        if not isinstance(predicate, str) or (
+            not relaxed_schema and predicate not in PREDICATE_ENUM
+        ):
             raise ExtractionError(f"claim {index} has invalid predicate")
         object_text = item["object_text"]
         object_json = item["object_json"]
-        if object_text is not None and (not isinstance(object_text, str) or not object_text.strip()):
+        if object_text is not None and (
+            not isinstance(object_text, str) or not object_text.strip()
+        ):
             raise ExtractionError(f"claim {index} has empty object_text")
         if object_json is not None and not isinstance(object_json, dict):
             raise ExtractionError(f"claim {index} has invalid object_json")
@@ -784,7 +1066,9 @@ def extract_claims_from_segment(
         position={
             "conversation_id": segment.conversation_id,
             "segment_id": segment.id,
-            "segment_index_within_conversation": segment_index_within_conversation(conn, segment.id),
+            "segment_index_within_conversation": segment_index_within_conversation(
+                conn, segment.id
+            ),
         },
     )
     return ExtractionResult(
@@ -991,7 +1275,11 @@ def extract_chunk_adaptively(
         )
     except Exception as exc:
         subchunks = split_extraction_chunk(chunk)
-        if adaptive_split and split_depth < EXTRACTION_ADAPTIVE_SPLIT_MAX_DEPTH and len(subchunks) > 1:
+        if (
+            adaptive_split
+            and split_depth < EXTRACTION_ADAPTIVE_SPLIT_MAX_DEPTH
+            and len(subchunks) > 1
+        ):
             child_retries = max(0, retries - 1)
             for subindex, subchunk in enumerate(subchunks, start=1):
                 extract_chunk_adaptively(
@@ -1109,9 +1397,7 @@ def retry_after_trigger_violation(
 
 def build_validation_repair_feedback(dropped: list[dict[str, Any]]) -> str:
     error_counts = dropped_error_counts(dropped)
-    rendered_counts = "\n".join(
-        f"- {error}: {count}" for error, count in error_counts.items()
-    )
+    rendered_counts = "\n".join(f"- {error}: {count}" for error, count in error_counts.items())
     if not rendered_counts:
         rendered_counts = "- unknown validation error: 1"
     null_sweep_section = render_null_object_repair_feedback(dropped)
@@ -1146,17 +1432,11 @@ def render_null_object_repair_feedback(dropped: list[dict[str, Any]]) -> str:
         return ""
 
     predicates = sorted(
-        {
-            str(drop["predicate"])
-            for drop in null_drops
-            if isinstance(drop.get("predicate"), str)
-        }
+        {str(drop["predicate"]) for drop in null_drops if isinstance(drop.get("predicate"), str)}
     )
     predicate_list = ", ".join(predicates) if predicates else "(none)"
     label = (
-        "full null-object sweep"
-        if len(null_drops) == len(redacted)
-        else "mixed null-object drops"
+        "full null-object sweep" if len(null_drops) == len(redacted) else "mixed null-object drops"
     )
     return f"""
 Null-object repair diagnostics ({label}):
@@ -1769,7 +2049,9 @@ def fetch_segment_payload(conn: psycopg.Connection, segment_id: str) -> SegmentP
     )
 
 
-def fetch_segment_messages(conn: psycopg.Connection, message_ids: list[str]) -> list[SegmentMessage]:
+def fetch_segment_messages(
+    conn: psycopg.Connection, message_ids: list[str]
+) -> list[SegmentMessage]:
     rows = conn.execute(
         """
         SELECT id::text, sequence_index, role, content_text
@@ -1963,11 +2245,14 @@ def build_extraction_prompt(
     *,
     validation_feedback: str | None = None,
 ) -> str:
-    rendered_messages = "\n".join(format_message_for_prompt(message) for message in segment.messages)
+    rendered_messages = "\n".join(
+        format_message_for_prompt(message) for message in segment.messages
+    )
     vocabulary = "\n".join(
         f"- {row['predicate']}: stability={row['stability_class']}, "
         f"cardinality={row['cardinality_class']}, object_kind={row['object_kind']}, "
-        f"required_object_keys={row['required_object_keys'] or 'none'}"
+        f"required_object_keys={row['required_object_keys'] or 'none'}\n"
+        f"  intent: {row['description']} ({row['subject_kind_hint']})"
         for row in PREDICATE_VOCABULARY
     )
     summary = segment.summary_text or "(none)"
@@ -2771,9 +3056,7 @@ def re_extract(
 
             if progress_callback:
                 progress_callback(
-                    "re_extract_done"
-                    if result.status != "failed"
-                    else "re_extract_failed",
+                    "re_extract_done" if result.status != "failed" else "re_extract_failed",
                     {
                         "index": index,
                         "segment_id": segment_row.segment_id,

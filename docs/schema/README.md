@@ -215,6 +215,72 @@ erDiagram
         JSONB raw_payload
         TIMESTAMPTZ created_at
     }
+    gold_label_session_targets {
+        UUID session_id PK
+        INT idx PK
+        TEXT target_kind
+        UUID target_id
+        UUID candidate_pool_snapshot_id
+        TEXT extraction_prompt_version
+        TEXT extraction_model_version
+        TEXT consolidation_prompt_version
+        TEXT consolidation_model_version
+        TEXT request_profile_version
+        TEXT stability_class
+        TEXT conf_band
+        TEXT recency_band
+        TEXT belief_status
+        TIMESTAMPTZ inserted_at
+    }
+    gold_label_sessions {
+        UUID session_id PK
+        BIGINT seed
+        TEXT sampler_id
+        TEXT sampler_version
+        JSONB strata_weights
+        TIMESTAMPTZ started_at
+        TIMESTAMPTZ completed_at
+        TEXT operator_note
+    }
+    gold_label_strata_vocabulary {
+        TEXT stratum_kind PK
+        TEXT key PK
+        TEXT display
+    }
+    gold_label_verdict_vocabulary {
+        TEXT verdict PK
+        TEXT gloss
+        INT ordinal
+    }
+    gold_labels {
+        UUID id PK
+        UUID session_id
+        TEXT target_kind
+        UUID target_id
+        TEXT extraction_prompt_version
+        TEXT extraction_model_version
+        TEXT consolidation_prompt_version
+        TEXT consolidation_model_version
+        TEXT request_profile_version
+        TEXT prompt_template_version
+        TEXT prompt_template_path
+        TEXT prompt_text
+        TEXT evidence_excerpt
+        TEXT verdict
+        TEXT rationale
+        TEXT sampler_id
+        TEXT sampler_version
+        UUID candidate_pool_snapshot_id
+        TEXT active_learning_signal_version
+        TEXT stability_class
+        TEXT conf_band
+        TEXT recency_band
+        TEXT belief_status
+        JSONB strata_extra
+        TIMESTAMPTZ asked_at
+        TIMESTAMPTZ answered_at
+        INT privacy_tier
+    }
     messages {
         UUID id PK
         UUID source_id
@@ -257,6 +323,7 @@ erDiagram
         TEXT[] group_object_keys
         TEXT[] required_object_keys
         TEXT description
+        TEXT subject_kind_hint
     }
     projection_audits {
         UUID id PK
@@ -346,6 +413,9 @@ erDiagram
     entity_edges }o--|| entities : "target_entity_id"
     entity_resolution_events }o--|| entities : "entity_id"
     entity_resolution_events }o--|| entities : "related_entity_id"
+    gold_label_session_targets }o--|| gold_label_sessions : "session_id"
+    gold_labels }o--|| gold_label_sessions : "session_id"
+    gold_labels }o--|| gold_label_verdict_vocabulary : "verdict"
     messages }o--|| conversations : "conversation_id"
     messages }o--|| sources : "source_id"
     notes }o--|| sources : "source_id"
@@ -616,6 +686,87 @@ erDiagram
 | `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
 | `created_at` | `TIMESTAMPTZ` | NO | `now()` |
 
+## gold_label_session_targets
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `session_id` **PK** | `UUID` | NO | `` |
+| `idx` **PK** | `INT` | NO | `` |
+| `target_kind` | `TEXT` | NO | `` |
+| `target_id` | `UUID` | NO | `` |
+| `candidate_pool_snapshot_id` | `UUID` | NO | `` |
+| `extraction_prompt_version` | `TEXT` | YES | `` |
+| `extraction_model_version` | `TEXT` | YES | `` |
+| `consolidation_prompt_version` | `TEXT` | YES | `` |
+| `consolidation_model_version` | `TEXT` | YES | `` |
+| `request_profile_version` | `TEXT` | NO | `` |
+| `stability_class` | `TEXT` | NO | `` |
+| `conf_band` | `TEXT` | NO | `` |
+| `recency_band` | `TEXT` | NO | `` |
+| `belief_status` | `TEXT` | YES | `` |
+| `inserted_at` | `TIMESTAMPTZ` | NO | `now()` |
+
+## gold_label_sessions
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `session_id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `seed` | `BIGINT` | NO | `` |
+| `sampler_id` | `TEXT` | NO | `` |
+| `sampler_version` | `TEXT` | NO | `` |
+| `strata_weights` | `JSONB` | NO | `` |
+| `started_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `completed_at` | `TIMESTAMPTZ` | YES | `` |
+| `operator_note` | `TEXT` | YES | `` |
+
+## gold_label_strata_vocabulary
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `stratum_kind` **PK** | `TEXT` | NO | `` |
+| `key` **PK** | `TEXT` | NO | `` |
+| `display` | `TEXT` | NO | `` |
+
+## gold_label_verdict_vocabulary
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `verdict` **PK** | `TEXT` | NO | `` |
+| `gloss` | `TEXT` | NO | `` |
+| `ordinal` | `INT` | NO | `` |
+
+## gold_labels
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `session_id` | `UUID` | NO | `` |
+| `target_kind` | `TEXT` | NO | `` |
+| `target_id` | `UUID` | NO | `` |
+| `extraction_prompt_version` | `TEXT` | YES | `` |
+| `extraction_model_version` | `TEXT` | YES | `` |
+| `consolidation_prompt_version` | `TEXT` | YES | `` |
+| `consolidation_model_version` | `TEXT` | YES | `` |
+| `request_profile_version` | `TEXT` | NO | `` |
+| `prompt_template_version` | `TEXT` | NO | `` |
+| `prompt_template_path` | `TEXT` | NO | `` |
+| `prompt_text` | `TEXT` | NO | `` |
+| `evidence_excerpt` | `TEXT` | YES | `` |
+| `verdict` | `TEXT` | NO | `` |
+| `rationale` | `TEXT` | YES | `` |
+| `sampler_id` | `TEXT` | NO | `` |
+| `sampler_version` | `TEXT` | NO | `` |
+| `candidate_pool_snapshot_id` | `UUID` | NO | `` |
+| `active_learning_signal_version` | `TEXT` | YES | `` |
+| `stability_class` | `TEXT` | NO | `` |
+| `conf_band` | `TEXT` | NO | `` |
+| `recency_band` | `TEXT` | NO | `` |
+| `belief_status` | `TEXT` | YES | `` |
+| `strata_extra` | `JSONB` | NO | `'{}'::jsonb` |
+| `asked_at` | `TIMESTAMPTZ` | NO | `` |
+| `answered_at` | `TIMESTAMPTZ` | NO | `` |
+| `privacy_tier` | `INT` | NO | `` |
+
 ## messages
 
 | Column | Type | Nullable | Default |
@@ -670,6 +821,7 @@ erDiagram
 | `group_object_keys` | `TEXT[]` | NO | `'{}'::text[]` |
 | `required_object_keys` | `TEXT[]` | NO | `'{}'::text[]` |
 | `description` | `TEXT` | NO | `` |
+| `subject_kind_hint` | `TEXT` | YES | `` |
 
 ## projection_audits
 

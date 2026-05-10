@@ -108,6 +108,15 @@ def test_rfc0021_migration_010_exists_on_disk() -> None:
     assert "current_gold_label" in text
 
 
+def test_rfc0028_migration_012_exists_on_disk() -> None:
+    path = MIGRATIONS_DIR / "012_predicate_subject_kind_hint.sql"
+    assert path.exists(), f"missing migration: {path}"
+    text = path.read_text(encoding="utf-8")
+    assert "RFC 0028" in text
+    assert "subject_kind_hint" in text
+    assert "has_name" in text
+
+
 def test_rfc0021_migration_010_applies_via_conn_fixture(conn) -> None:
     """The conftest fixture already runs ``migrate(conn)``; presence of the
     new tables/views is the contract."""
@@ -118,14 +127,33 @@ def test_rfc0021_migration_010_applies_via_conn_fixture(conn) -> None:
         "gold_label_verdict_vocabulary",
         "gold_labels",
     ):
-        row = conn.execute(
-            "SELECT to_regclass(%s) IS NOT NULL", (f"public.{table}",)
-        ).fetchone()
+        row = conn.execute("SELECT to_regclass(%s) IS NOT NULL", (f"public.{table}",)).fetchone()
         assert row[0] is True, f"table missing: {table}"
     view_row = conn.execute(
         "SELECT to_regclass('public.current_gold_label') IS NOT NULL"
     ).fetchone()
     assert view_row[0] is True
+
+
+def test_012_predicate_subject_kind_hint_applies(conn) -> None:
+    row = conn.execute(
+        """
+        SELECT description, subject_kind_hint
+        FROM predicate_vocabulary
+        WHERE predicate = 'has_name'
+        """
+    ).fetchone()
+    assert row == ("legal or preferred name", "persons only")
+
+    with pytest.raises(errors.CheckViolation):
+        conn.execute(
+            """
+            UPDATE predicate_vocabulary
+            SET subject_kind_hint = ''
+            WHERE predicate = 'has_name'
+            """
+        )
+    conn.rollback()
 
 
 def test_migration_checksums_detect_changed_applied_file(conn, tmp_path):

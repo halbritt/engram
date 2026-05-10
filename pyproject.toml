@@ -34,6 +34,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "engram.interview" = ["templates/*.html", "templates/*", "static/*"]
+"engram.bench_review" = ["templates/*.html", "templates/*", "static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,21 @@
+# RFC 0028 Predicate Intent Implementation Sources
+
+- `AGENTS.md`
+- `README.md`
+- `HUMAN_REQUIREMENTS.md`
+- `DECISION_LOG.md`
+- `BUILD_PHASES.md`
+- `ROADMAP.md`
+- `SPEC.md`
+- `docs/rfcs/0028-predicate-intent-surfacing.md`
+- `docs/rfcs/0012-python-agentic-coding-standard.md`
+- `docs/rfcs/0017-extraction-prompt-versioning.md`
+- `docs/rfcs/0021-gold-set-interview-curation.md`
+- `docs/rfcs/0027-interview-web-ui.md`
+- `src/engram/extractor.py`
+- `src/engram/interview/render.py`
+- `src/engram/interview/web.py`
+- `src/engram/interview/templates/question.html`
+- `migrations/006_claims_beliefs.sql`
+- `tests/test_phase3_claims_beliefs.py`
+- `tests/test_interview_render.py`

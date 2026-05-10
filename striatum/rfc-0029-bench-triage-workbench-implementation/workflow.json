@@ -1,0 +1,327 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "rfc-0029-bench-triage-workbench-implementation",
+  "workflow_version": "2026-05-09+initial",
+  "name": "Engram RFC 0029 Bench Triage Workbench Implementation",
+  "branch": {
+    "mode": "confirm",
+    "suggested_name": "engram/rfc0029-bench-triage-workbench-implementation",
+    "allow_dirty": true
+  },
+  "coordinator": {
+    "role_id": "implementer",
+    "lane_id": "codex"
+  },
+  "lanes": {
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "-"],
+      "capabilities": ["write", "review", "synthesis"],
+      "constraints": {"network": "forbidden", "transcripts": "off", "repo_scope": "local_only"}
+    },
+    "claude": {
+      "adapter": "process",
+      "display_model": "Claude Opus",
+      "command": ["claude", "--model", "opus", "-p"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "transcripts": "off", "repo_scope": "local_only"}
+    },
+    "gemini": {
+      "adapter": "process",
+      "display_model": "Gemini 3.1 Pro Preview",
+      "command": ["gemini", "--model", "gemini-3.1-pro-preview"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "transcripts": "off", "repo_scope": "local_only"}
+    }
+  },
+  "roles": {
+    "implementer": {"definition_path": "striatum/rfc-0029-bench-triage-workbench-implementation/roles/implementer.md"},
+    "reviewer": {"definition_path": "striatum/rfc-0029-bench-triage-workbench-implementation/roles/reviewer.md"},
+    "usability_adversary": {"definition_path": "striatum/rfc-0029-bench-triage-workbench-implementation/roles/usability_adversary.md"},
+    "ledger": {"definition_path": "striatum/rfc-0029-bench-triage-workbench-implementation/roles/ledger.md"},
+    "synthesizer": {"definition_path": "striatum/rfc-0029-bench-triage-workbench-implementation/roles/synthesizer.md"}
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "HUMAN_REQUIREMENTS.md", "required": true},
+    {"path": "DECISION_LOG.md", "required": true},
+    {"path": "BUILD_PHASES.md", "required": true},
+    {"path": "ROADMAP.md", "required": true},
+    {"path": "SPEC.md", "required": true},
+    {"path": "docs/schema/README.md", "required": true},
+    {"path": "docs/rfcs/README.md", "required": true},
+    {"path": "docs/rfcs/0029-bench-triage-workbench.md", "required": true},
+    {"path": "docs/specs/0029-bench-triage-workbench-spec.md", "required": true},
+    {"path": "docs/reviews/rfc0029-bench-triage-workbench-spec/FINAL_REVIEW.md", "required": true},
+    {"path": "docs/process/multi-agent-review-loop.md", "required": true},
+    {"path": "docs/process/project-judgment.md", "required": true},
+    {"path": "benchmarks/extraction", "required": true},
+    {"path": "src/engram/interview/web.py", "required": true},
+    {"path": "src/engram/cli.py", "required": true},
+    {"path": "pyproject.toml", "required": true}
+  ],
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 4,
+    "require_disjoint_write_scopes": true
+  },
+  "cycles": [
+    {"from": "final_review", "on_verdict": "needs_revision", "to": "apply_findings", "max_iterations": 1}
+  ],
+  "edges": [
+    {"from": "implement_workbench", "on": "completed", "to": "review_claude"},
+    {"from": "implement_workbench", "on": "completed", "to": "review_codex"},
+    {"from": "implement_workbench", "on": "completed", "to": "review_gemini"},
+    {"from": "implement_workbench", "on": "completed", "to": "review_usability_adversary"},
+    {"from": "review_claude", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_codex", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_gemini", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_usability_adversary", "on": "completed", "to": "findings_ledger"},
+    {"from": "findings_ledger", "on": "completed", "to": "revision_synthesis"},
+    {"from": "revision_synthesis", "on": "completed", "to": "apply_findings"},
+    {"from": "apply_findings", "on": "completed", "to": "final_review"}
+  ],
+  "jobs": [
+    {
+      "id": "implement_workbench",
+      "type": "build",
+      "title": "Implement RFC 0029 bench triage workbench",
+      "role_id": "implementer",
+      "lane_id": "codex",
+      "objective": "Implement the local-only bench triage workbench from Spec 0029.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-implementation/prompts/implement.md"},
+      "inputs": [
+        {"path": "docs/specs/0029-bench-triage-workbench-spec.md", "kind": "spec"},
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-spec/FINAL_REVIEW.md", "kind": "spec_review"},
+        {"path": "src/engram/interview/web.py", "kind": "web_reference"},
+        {"path": "src/engram/cli.py", "kind": "cli_reference"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/bench_review/",
+          "src/engram/cli.py",
+          "tests/",
+          "pyproject.toml",
+          "CHANGELOG.md",
+          "docs/rfcs/0029-bench-triage-workbench.md",
+          "docs/rfcs/README.md",
+          "docs/reviews/rfc0029-bench-triage-workbench-implementation/"
+        ],
+        "forbidden_paths": [".striatum/", "migrations/", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "implementation_handoff", "kind": "handoff", "path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/IMPLEMENTATION_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_claude",
+      "type": "review",
+      "title": "Review RFC 0029 implementation with Claude",
+      "role_id": "reviewer",
+      "lane_id": "claude",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Review the implementation for privacy, storage boundaries, and local-first constraints.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-implementation/prompts/review.md"},
+      "inputs": [
+        {"path": "docs/specs/0029-bench-triage-workbench-spec.md", "kind": "spec"},
+        {"path": "src/engram/bench_review", "kind": "implementation"},
+        {"path": "src/engram/cli.py", "kind": "cli"},
+        {"path": "tests", "kind": "tests"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0029-bench-triage-workbench-implementation/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "docs/specs/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/REVIEW_claude.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_codex",
+      "type": "review",
+      "title": "Review RFC 0029 implementation with Codex",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Review the implementation for spec coverage, deterministic loader/state behavior, and tests.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-implementation/prompts/review.md"},
+      "inputs": [
+        {"path": "docs/specs/0029-bench-triage-workbench-spec.md", "kind": "spec"},
+        {"path": "src/engram/bench_review", "kind": "implementation"},
+        {"path": "tests", "kind": "tests"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0029-bench-triage-workbench-implementation/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "docs/specs/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/REVIEW_codex.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_gemini",
+      "type": "review",
+      "title": "Review RFC 0029 implementation with Gemini",
+      "role_id": "reviewer",
+      "lane_id": "gemini",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Review the implementation for operator workflow, route completeness, and CLI ergonomics.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-implementation/prompts/review.md"},
+      "inputs": [
+        {"path": "docs/specs/0029-bench-triage-workbench-spec.md", "kind": "spec"},
+        {"path": "src/engram/bench_review", "kind": "implementation"},
+        {"path": "tests", "kind": "tests"},
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/IMPLEMENTATION_HANDOFF.md", "kind": "handoff"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0029-bench-triage-workbench-implementation/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "docs/specs/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/REVIEW_gemini.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_usability_adversary",
+      "type": "review",
+      "title": "Adversarial usability review of RFC 0029 implementation",
+      "role_id": "usability_adversary",
+      "lane_id": "codex",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Adversarially review the implementation for residual cognitive overhead and misleading decisions.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-implementation/prompts/usability_adversary.md"},
+      "inputs": [
+        {"path": "docs/specs/0029-bench-triage-workbench-spec.md", "kind": "spec"},
+        {"path": "src/engram/bench_review", "kind": "implementation"},
+        {"path": "tests", "kind": "tests"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0029-bench-triage-workbench-implementation/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "docs/specs/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/REVIEW_usability_adversary.md", "required": true}
+      ]
+    },
+    {
+      "id": "findings_ledger",
+      "type": "ledger",
+      "title": "Record RFC 0029 implementation findings ledger",
+      "role_id": "ledger",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Normalize implementation review findings into one ledger.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-implementation/prompts/findings_ledger.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/REVIEW_claude.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/REVIEW_codex.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/REVIEW_gemini.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/REVIEW_usability_adversary.md", "kind": "review"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0029-bench-triage-workbench-implementation/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "docs/specs/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "ledger", "kind": "findings_ledger", "path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/FINDINGS_LEDGER.md", "required": true}
+      ]
+    },
+    {
+      "id": "revision_synthesis",
+      "type": "synthesis",
+      "title": "Synthesize RFC 0029 implementation findings",
+      "role_id": "synthesizer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Classify findings and produce concrete implementation revision instructions.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-implementation/prompts/synthesis.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/FINDINGS_LEDGER.md", "kind": "findings_ledger"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0029-bench-triage-workbench-implementation/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "docs/specs/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "revision_synthesis", "kind": "synthesis", "path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/REVISION_SYNTHESIS.md", "required": true}
+      ]
+    },
+    {
+      "id": "apply_findings",
+      "type": "build",
+      "title": "Apply RFC 0029 implementation findings",
+      "role_id": "implementer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Apply accepted implementation findings and publish revision handoff.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-implementation/prompts/apply_findings.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/FINDINGS_LEDGER.md", "kind": "findings_ledger"},
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/REVISION_SYNTHESIS.md", "kind": "synthesis"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/bench_review/",
+          "src/engram/cli.py",
+          "tests/",
+          "pyproject.toml",
+          "CHANGELOG.md",
+          "docs/rfcs/0029-bench-triage-workbench.md",
+          "docs/rfcs/README.md",
+          "docs/reviews/rfc0029-bench-triage-workbench-implementation/"
+        ],
+        "forbidden_paths": [".striatum/", "migrations/", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "revision_handoff", "kind": "handoff", "path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/REVISION_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "final_review",
+      "type": "review",
+      "title": "Final review of RFC 0029 implementation",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Audit the revised implementation against Spec 0029 and accepted findings.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-implementation/prompts/final_review.md"},
+      "inputs": [
+        {"path": "docs/specs/0029-bench-triage-workbench-spec.md", "kind": "spec"},
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/FINDINGS_LEDGER.md", "kind": "findings_ledger"},
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/REVISION_SYNTHESIS.md", "kind": "synthesis"},
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/REVISION_HANDOFF.md", "kind": "handoff"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0029-bench-triage-workbench-implementation/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "docs/specs/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "final_review", "kind": "finding", "path": "docs/reviews/rfc0029-bench-triage-workbench-implementation/FINAL_REVIEW.md", "required": true}
+      ]
+    }
+  ]
+}

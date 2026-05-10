@@ -5,8 +5,8 @@
 |-------|-------|
 | RFC | 0028 |
 | Title | Predicate-Intent Surfacing Across Extraction and Interview |
-| Status | proposal |
-| Implementation | none |
+| Status | accepted |
+| Implementation | partial |
 | Date | 2026-05-09 |
 | Context | RFC 0011 § Schema (`predicate_vocabulary`); RFC 0017 (extraction prompt versioning); RFC 0021 / D079 (gold-set interview); RFC 0027 / D080 (interview web UI); D016 (eval gate sequencing); `src/engram/extractor.py:1961` (`build_extraction_prompt`); `src/engram/interview/render.py` (operator UI rendering); `predicate_vocabulary.description` column |
 
@@ -16,9 +16,10 @@ Decision refs:
   - D069
   - D079
   - D080
+  - D082
 
 Review refs:
-  - none (proposed for review)
+  - striatum/rfc-0028-predicate-intent-implementation
 
 Phase refs:
   - PHASE-0003 (extraction)
@@ -32,11 +33,12 @@ empirical: every operator-rule `false` verdict recorded so far reduces
 to a predicate-intent mismatch the extractor never had a chance to
 recognize because the description never reaches the prompt.
 
-This is a small, surgical RFC. It does not change schema, does not add
-new predicates, and does not alter the gold-label or claim contracts.
-It bumps the extraction prompt version per RFC 0017 (a routine
-operation), modifies one render helper, and broadens one rationale
-prompt label.
+This is a small, surgical RFC. It does not change the claims, beliefs,
+or gold-label schemas, does not add new predicates, and does not alter
+the gold-label or claim contracts. It adds one nullable metadata column
+to `predicate_vocabulary`, bumps the extraction prompt version per RFC
+0017 (a routine operation), modifies the shared render helper, and
+broadens one rationale prompt label.
 
 ## Current state
 
@@ -362,7 +364,7 @@ continues to be append-only (RFC 0021 § Storage; D079's
    b. `src/engram/extractor.py::build_extraction_prompt` includes the
       description and the new hint in the vocab block. Bump
       `EXTRACTION_PROMPT_VERSION` to
-      `extractor.v6.d082.predicate-intent`. Add a unit test pinning
+      `extractor.v9.d082.predicate-intent`. Add a unit test pinning
       the rendered prompt shape.
    c. `src/engram/interview/render.py::format_summary_line` renders
       intent on its own line; `fetch_target_display` includes the
@@ -375,10 +377,10 @@ continues to be append-only (RFC 0021 § Storage; D079's
    `has_name`-on-non-person and `uses_tool`-on-non-tool patterns.
 4. If the bench shows the targeted patterns drop, run
    `engram phase3 re-extract --version
-   extractor.v6.d082.predicate-intent` against the consolidated
+   extractor.v9.d082.predicate-intent` against the consolidated
    corpus per RFC 0017. Old claim rows stay attached to their prior
-   version; new rows land under v6 alongside.
-5. Re-run interview against the v6 rows. Measure: do `false` verdicts
+   version; new rows land under v9 alongside.
+5. Re-run interview against the v9 rows. Measure: do `false` verdicts
    drop in the predicate-intent bucket? If yes, the loop closed; the
    D016 convergence story has its first measured cycle. If no, the
    intent hint metadata or the heuristic needs revision.
