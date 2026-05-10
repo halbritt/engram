@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- RFC 0030 suspect autonomous work audit proposal: marks the recent
+- RFC 0031 suspect autonomous work audit proposal: marks the recent
   autonomous RFC 0028 / RFC 0029 / Striatum-driven checkpoint as suspect
   pending provenance, byline, code, benchmark, and artifact-disposition
   review before further promotion.

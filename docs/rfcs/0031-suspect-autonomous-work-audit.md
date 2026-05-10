@@ -1,4 +1,4 @@
-# RFC 0030: Suspect Autonomous Work Audit
+# RFC 0031: Suspect Autonomous Work Audit
 
 Status: proposal
 Implementation: none
@@ -138,7 +138,7 @@ The audit may use multiple review lanes, but lane labels must be conservative:
 The main risk is that a committed suspect checkpoint may be mistaken for an
 accepted implementation. The mitigation is explicit labeling in this RFC,
 follow-up review artifacts, and refusal to promote or rely on the suspect
-work until the RFC 0030 audit completes.
+work until the RFC 0031 audit completes.
 
 The privacy risk is that audit artifacts could accidentally include raw local
 evidence. Audit outputs must preserve Engram's local-first constraint and avoid
