@@ -50,6 +50,7 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0030](0030-public-dataset-entity-grounding.md) | proposal | none | Public-dataset entity grounding for claim extraction |
 | [0031](0031-suspect-autonomous-work-audit.md) | proposal | none | Suspect autonomous work audit |
 | [0032](0032-claude-code-session-ingest.md) | proposal | none | Claude Code session history ingest |
+| [0033](0033-tenant-isolation.md) | proposal | none | Tenant isolation for co-located engram instances |
 
 ## Implementation notes (2026-05-07 sweep)
 

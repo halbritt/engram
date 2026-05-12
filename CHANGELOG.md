@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- RFC 0033 tenant isolation proposal: schema-per-tenant within one
+  Postgres database, with a shared `engram_common` schema for
+  reference data and a `search_path`-scoped `connect()`. Lets
+  multiple engram instances co-locate on one host and one cluster
+  without cross-tenant contamination, under the explicit threat
+  model that all tenants share root authority (hygiene isolation,
+  not hostile-tenant defense). Includes migration-runner extension,
+  CLI / Makefile `--tenant` / `TENANT=` plumbing, and per-tenant
+  Striatum / operations-artifact / export-blob layout.
 - RFC 0032 Claude Code session history ingest proposal: pulls
   `~/.claude/projects/` `.jsonl` transcripts from every host via an
   rsync-to-proximal mirror, then ingests them through a new
