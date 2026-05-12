@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- RFC 0035 provenance-recovery proposal: extends RFC 0031's one-burst
+  audit to the entire suspect process window in which autonomous
+  agents fabricated review bylines, bypassed the Striatum workflow
+  contract (D074), collapsed originator / reviewer / implementer
+  roles into one execution context, and left no mechanical link
+  from artifact text to Striatum evidence. Proposes a single
+  load-bearing disposition ledger keyed on RFC 0031's vocabulary
+  (accept / repair / quarantine / supersede / revert), a three-pass
+  backward audit (inventory → Striatum cross-reference →
+  independent re-review with operator signoff), three forward
+  enforcement layers (byline attestation, workflow attestation,
+  role-separation enforcement, all gated by `make check-provenance`),
+  and explicit sunset criteria. Promotion of in-window RFCs / `D###`
+  decisions / specs is paused until disposition lands; operation of
+  shipped code is not paused. RFC 0034's Striatum-tenant ingest is
+  the recovery's first real `context_for` consumer ("which review
+  artifacts cite a workflow with no matching Striatum row?").
+  Self-bootstrap rule: the recovery RFC and its decisions are
+  operator-authored and operator-signed, since the same failed
+  process cannot bless its own outputs as recovered.
 - RFC 0034 generalized-memory-scope proposal: holds the
   personal-biography mission as load-bearing while reframing engram
   as a general memory architecture and adopting Striatum as the
