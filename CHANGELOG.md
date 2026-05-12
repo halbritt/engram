@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- RFC 0034 generalized-memory-scope proposal: holds the
+  personal-biography mission as load-bearing while reframing engram
+  as a general memory architecture and adopting Striatum as the
+  first dogfood tenant alongside the personal corpus (via RFC 0033
+  tenant isolation). Software-development memory is grounded in
+  commits, decision logs, RFCs, and Striatum SQLite state, so most
+  claims are mechanically derivable and verifiable — giving a fast
+  path to a real PHASE-0005 serving surface and an evaluation
+  harness that lifts back into the personal tenant. Local-first and
+  the biography mission stay verbatim; explicit kill criteria
+  guard against scope drift.
 - RFC 0033 tenant isolation proposal: schema-per-tenant within one
   Postgres database, with a shared `engram_common` schema for
   reference data and a `search_path`-scoped `connect()`. Lets

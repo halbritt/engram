@@ -51,6 +51,7 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0031](0031-suspect-autonomous-work-audit.md) | proposal | none | Suspect autonomous work audit |
 | [0032](0032-claude-code-session-ingest.md) | proposal | none | Claude Code session history ingest |
 | [0033](0033-tenant-isolation.md) | proposal | none | Tenant isolation for co-located engram instances |
+| [0034](0034-generalized-memory-striatum-tenant.md) | proposal | none | Generalized memory scope — Striatum as first dogfood tenant |
 
 ## Implementation notes (2026-05-07 sweep)
 
