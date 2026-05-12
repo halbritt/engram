@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- RFC 0032 Claude Code session history ingest proposal: pulls
+  `~/.claude/projects/` `.jsonl` transcripts from every host via an
+  rsync-to-proximal mirror, then ingests them through a new
+  `claude_code_sessions` ingester onto the existing
+  `sources`/`conversations`/`messages` tables (new `source_kind =
+  'claude_code'` via a follow-on migration), so Claude Code becomes
+  a first-class memory source alongside the Claude desktop export,
+  ChatGPT export, and Gemini export, and so engram retains sessions
+  past Claude Code's silent pruning.
 - RFC 0031 suspect autonomous work audit proposal: marks the recent
   autonomous RFC 0028 / RFC 0029 / Striatum-driven checkpoint as suspect
   pending provenance, byline, code, benchmark, and artifact-disposition

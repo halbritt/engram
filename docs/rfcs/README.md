@@ -49,6 +49,7 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0029](0029-bench-triage-workbench.md) | promoted | implemented | Bench triage workbench for extraction/re-extraction validation ([spec 0029](../specs/0029-bench-triage-workbench-spec.md)) |
 | [0030](0030-public-dataset-entity-grounding.md) | proposal | none | Public-dataset entity grounding for claim extraction |
 | [0031](0031-suspect-autonomous-work-audit.md) | proposal | none | Suspect autonomous work audit |
+| [0032](0032-claude-code-session-ingest.md) | proposal | none | Claude Code session history ingest |
 
 ## Implementation notes (2026-05-07 sweep)
 
