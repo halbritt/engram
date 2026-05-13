@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- RFC 0032 proposes an independent recovery and audit of commit
+  `c4a48ab` (suspect autonomous work checkpoint) and supersedes RFC
+  0031, which was itself authored inside the suspect commit and is
+  therefore not load-bearing as audit charter. The RFC 0031 row in
+  `docs/rfcs/README.md` is marked `superseded` with a pointer; RFC
+  0031's body is preserved unchanged as quarantined evidence.
 - RFC 0031 suspect autonomous work audit proposal: marks the recent
   autonomous RFC 0028 / RFC 0029 / Striatum-driven checkpoint as suspect
   pending provenance, byline, code, benchmark, and artifact-disposition
