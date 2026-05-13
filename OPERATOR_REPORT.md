@@ -7,9 +7,9 @@ Last updated: 2026-05-13
 - Repo: `/home/halbritt/git/engram`
 - Branch: `master`
 - Current objective: recover and promote the RFC 0028/RFC 0029 work through legitimate review, rerun Phase 4 gate review with multi-lane evidence, audit older Striatum provenance gaps, and then scaffold/execute the backlog with maximum useful parallelism.
-- Current checkpoint: RFC 0032 recovery implementation is committed as `4c59259` (`Recover RFC 0032 audit findings`).
+- Current checkpoint: RFC 0032 recovery implementation is committed as `4c59259` (`Recover RFC 0032 audit findings`); fresh quarantine/rerun scaffolds are committed as `d56cef7` (`Scaffold attested review reruns`).
 - Sync status: fetched and rebased against `origin/master`; branch was already up to date.
-- Current uncommitted batch: changelog audit repairs, pre-suspect quarantine notices, and fresh Striatum rerun scaffolds.
+- Current uncommitted batch: Striatum workflow lane-command repair after failed first execution probes, plus this operator-report/changelog update.
 
 ## Verified Work
 
@@ -18,6 +18,7 @@ Last updated: 2026-05-13
 - Focused touched-area tests passed: 190 tests.
 - Full suite passed: `505 passed in 227.47s`.
 - `git diff --check` passed.
+- Fresh Striatum workflow validation passed for the seven 2026-05-13 workflows before the first execution probe and again after the lane-command repair.
 
 ## Completed In Current Checkpoint
 
@@ -42,6 +43,7 @@ Last updated: 2026-05-13
    - Done for the first pass: RFC 0021/RFC 0027 review bylines are unattested by `process_executions`; quarantine notices are applied.
 6. Re-scaffold and rerun legitimate multi-lane reviews for RFC 0028, RFC 0029, and Phase 4 gate evidence.
    - Fresh validated scaffolds exist for RFC 0021 rerun, RFC 0027 rerun, RFC 0028 promotion, RFC 0029 design/spec/implementation, and Phase 4 multi-lane gate.
+   - First execution probes were canceled after Codex/Claude exited without required artifacts or verdicts and Gemini exited nonzero in review lanes. The workflow command arrays have been patched to use explicit noninteractive write-capable launch modes before restarting from clean worktrees.
 7. Synthesize review outcomes, promote accepted artifacts, and update `DECISION_LOG.md`, `CHANGELOG.md`, and docs.
 8. Scaffold backlog workflows and drive independent implementation lanes in parallel.
 
@@ -62,6 +64,14 @@ Last updated: 2026-05-13
 - `striatum/rfc-0029-bench-triage-workbench-spec-2026-05-13/workflow.json`
 - `striatum/rfc-0029-bench-triage-workbench-implementation-2026-05-13/workflow.json`
 - `striatum/phase-4-tiered-gate-multilane-2026-05-13/workflow.json`
+
+## Canceled Probe Runs
+
+- RFC 0021 rerun: `run_a8994ff32b614b59b71ee4d43539b7e7`
+- RFC 0027 rerun: `run_f7856857ed344130883055fefa2f53d6`
+- RFC 0028 promotion: `run_f4561ec6212342438e6b51ae9bac8e9a`
+- RFC 0029 design: `run_ea044aa6d5c5454b976997cf47b94e9d`
+- Phase 4 gate: `run_a56aaa4a9ff14b028c4bce105618704e`
 
 ## Execution Constraints
 

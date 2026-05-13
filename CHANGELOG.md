@@ -19,7 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scaffold. It is not accepted and has no implementation in the current tree.
 - Fresh Striatum rerun scaffolds were added for legitimate RFC 0028 promotion,
   RFC 0029 design/spec/implementation review, Phase 4 multi-lane gate review,
-  and pre-suspect RFC 0021/RFC 0027 provenance reruns.
+  and pre-suspect RFC 0021/RFC 0027 provenance reruns. A first execution probe
+  exposed noninteractive lane commands that could exit without artifacts; those
+  probe runs were canceled and the fresh scaffolds now launch Codex, Claude, and
+  Gemini in explicit noninteractive write-capable modes.
 - RFC 0027 implementation: FastAPI + htmx web UI for the gold-set
   interview surface, served by `engram phase3 interview serve` (RFC
   0027 / spec 0027 / D080). Loopback-only with no escape clause;

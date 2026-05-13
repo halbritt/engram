@@ -20,21 +20,21 @@
     "codex": {
       "adapter": "process",
       "display_model": "Codex GPT-5.5",
-      "command": ["codex", "exec", "--model", "gpt-5.5", "-"],
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--dangerously-bypass-approvals-and-sandbox", "-"],
       "capabilities": ["review", "write", "synthesis"],
       "constraints": {"network": "forbidden", "transcripts": "off", "repo_scope": "local_only"}
     },
     "gemini": {
       "adapter": "process",
       "display_model": "Gemini 3.1 Pro Preview",
-      "command": ["gemini", "--model", "gemini-3.1-pro-preview"],
+      "command": ["gemini", "--model", "gemini-3.1-pro-preview", "--yolo", "--prompt", "Execute the Striatum work packet from stdin. Follow the packet exactly, edit only allowed paths, publish required artifacts, and record required Striatum completions or verdicts."],
       "capabilities": ["review"],
       "constraints": {"network": "forbidden", "transcripts": "off", "repo_scope": "local_only"}
     },
     "claude": {
       "adapter": "process",
       "display_model": "Claude Opus",
-      "command": ["claude", "--model", "opus", "-p"],
+      "command": ["claude", "--model", "opus", "--dangerously-skip-permissions", "-p"],
       "capabilities": ["review", "synthesis"],
       "constraints": {"network": "forbidden", "transcripts": "off", "repo_scope": "local_only"}
     }
