@@ -1,0 +1,400 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "rfc-0030-grounding-claim-extraction-design",
+  "workflow_version": "2026-05-09+initial",
+  "name": "Engram RFC 0030 Public-Dataset Entity Grounding Design",
+  "branch": {
+    "mode": "confirm",
+    "suggested_name": "engram/rfc0030-grounding-claim-extraction-design",
+    "allow_dirty": true
+  },
+  "coordinator": {
+    "role_id": "coordinator",
+    "lane_id": "codex"
+  },
+  "review_revision_policy": {
+    "root_review_needs_revision": "human_checkpoint",
+    "description": "Root-review needs_revision verdicts surface as human checkpoints; downstream ledger, synthesis, apply, and final-review remain blocked until the owner decides how to revise."
+  },
+  "lanes": {
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "-"],
+      "capabilities": ["write", "review", "synthesis"],
+      "constraints": {"network": "forbidden", "transcripts": "off", "repo_scope": "local_only"}
+    },
+    "claude": {
+      "adapter": "process",
+      "display_model": "Claude Opus",
+      "command": ["claude", "--model", "opus", "-p"],
+      "capabilities": ["review", "synthesis"],
+      "constraints": {"network": "forbidden", "transcripts": "off", "repo_scope": "local_only"}
+    },
+    "gemini": {
+      "adapter": "process",
+      "display_model": "Gemini 3.1 Pro Preview",
+      "command": ["gemini", "--model", "gemini-3.1-pro-preview"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "transcripts": "off", "repo_scope": "local_only"}
+    }
+  },
+  "roles": {
+    "coordinator": {"definition_path": "striatum/rfc-0030-grounding-claim-extraction-design/roles/coordinator.md"},
+    "author": {"definition_path": "striatum/rfc-0030-grounding-claim-extraction-design/roles/author.md"},
+    "reviewer": {"definition_path": "striatum/rfc-0030-grounding-claim-extraction-design/roles/reviewer.md"},
+    "usability_adversary": {"definition_path": "striatum/rfc-0030-grounding-claim-extraction-design/roles/usability_adversary.md"},
+    "privacy_adversary": {"definition_path": "striatum/rfc-0030-grounding-claim-extraction-design/roles/privacy_adversary.md"},
+    "schema_adversary": {"definition_path": "striatum/rfc-0030-grounding-claim-extraction-design/roles/schema_adversary.md"},
+    "eval_adversary": {"definition_path": "striatum/rfc-0030-grounding-claim-extraction-design/roles/eval_adversary.md"},
+    "cost_adversary": {"definition_path": "striatum/rfc-0030-grounding-claim-extraction-design/roles/cost_adversary.md"},
+    "ledger": {"definition_path": "striatum/rfc-0030-grounding-claim-extraction-design/roles/ledger.md"},
+    "synthesizer": {"definition_path": "striatum/rfc-0030-grounding-claim-extraction-design/roles/synthesizer.md"}
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "HUMAN_REQUIREMENTS.md", "required": true},
+    {"path": "DECISION_LOG.md", "required": true},
+    {"path": "BUILD_PHASES.md", "required": true},
+    {"path": "ROADMAP.md", "required": true},
+    {"path": "SPEC.md", "required": true},
+    {"path": "docs/schema/README.md", "required": true},
+    {"path": "docs/rfcs/README.md", "required": true},
+    {"path": "docs/rfcs/0011-phase-3-claims-beliefs.md", "required": true},
+    {"path": "docs/rfcs/0017-extraction-prompt-versioning.md", "required": true},
+    {"path": "docs/rfcs/0018-evidence-to-claim-audit-cascade.md", "required": true},
+    {"path": "docs/rfcs/0028-predicate-intent-surfacing.md", "required": true},
+    {"path": "docs/rfcs/0030-public-dataset-entity-grounding.md", "required": true},
+    {"path": "docs/process/multi-agent-review-loop.md", "required": true},
+    {"path": "docs/process/project-judgment.md", "required": true},
+    {"path": "src/engram/extractor.py", "required": true}
+  ],
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 4,
+    "require_disjoint_write_scopes": true
+  },
+  "cycles": [
+    {"from": "final_review", "on_verdict": "needs_revision", "to": "apply_findings", "max_iterations": 1}
+  ],
+  "edges": [
+    {"from": "review_claude", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_codex", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_gemini", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_usability_adversary", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_privacy_adversary", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_schema_adversary", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_eval_adversary", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_cost_adversary", "on": "completed", "to": "findings_ledger"},
+    {"from": "findings_ledger", "on": "completed", "to": "revision_synthesis"},
+    {"from": "revision_synthesis", "on": "completed", "to": "apply_findings"},
+    {"from": "apply_findings", "on": "completed", "to": "final_review"}
+  ],
+  "jobs": [
+    {
+      "id": "review_claude",
+      "type": "review",
+      "title": "Review RFC 0030 with Claude (privacy and local-first lens)",
+      "role_id": "reviewer",
+      "lane_id": "claude",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Review RFC 0030 against Engram's local-first and privacy posture, decision-log compatibility, and the non-negotiable constraints stated in the RFC.",
+      "task_prompt": {"path": "striatum/rfc-0030-grounding-claim-extraction-design/prompts/review.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0030-public-dataset-entity-grounding.md", "kind": "rfc"},
+        {"path": "HUMAN_REQUIREMENTS.md", "kind": "principles"},
+        {"path": "DECISION_LOG.md", "kind": "decision_log"},
+        {"path": "docs/rfcs/0011-phase-3-claims-beliefs.md", "kind": "upstream_rfc"},
+        {"path": "docs/rfcs/0028-predicate-intent-surfacing.md", "kind": "upstream_rfc"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0030-grounding-claim-extraction/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0030-grounding-claim-extraction/REVIEW_claude.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_codex",
+      "type": "review",
+      "title": "Review RFC 0030 with Codex (implementation feasibility lens)",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Review RFC 0030 for implementation feasibility, integration with existing extractor and consolidator code, prompt-budget impact, and resolver placement (D-B).",
+      "task_prompt": {"path": "striatum/rfc-0030-grounding-claim-extraction-design/prompts/review.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0030-public-dataset-entity-grounding.md", "kind": "rfc"},
+        {"path": "docs/rfcs/0017-extraction-prompt-versioning.md", "kind": "upstream_rfc"},
+        {"path": "docs/rfcs/0018-evidence-to-claim-audit-cascade.md", "kind": "upstream_rfc"},
+        {"path": "src/engram/extractor.py", "kind": "code_reference"},
+        {"path": "docs/schema/README.md", "kind": "schema"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0030-grounding-claim-extraction/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0030-grounding-claim-extraction/REVIEW_codex.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_gemini",
+      "type": "review",
+      "title": "Review RFC 0030 with Gemini (operator workflow lens)",
+      "role_id": "reviewer",
+      "lane_id": "gemini",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Review RFC 0030 for operator workflow, grant-management UX, snapshot lifecycle, and alignment with the RFC 0027 interview surface and RFC 0028 entity-mismatch failure taxonomy.",
+      "task_prompt": {"path": "striatum/rfc-0030-grounding-claim-extraction-design/prompts/review.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0030-public-dataset-entity-grounding.md", "kind": "rfc"},
+        {"path": "docs/rfcs/0028-predicate-intent-surfacing.md", "kind": "upstream_rfc"},
+        {"path": "docs/process/multi-agent-review-loop.md", "kind": "process"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0030-grounding-claim-extraction/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0030-grounding-claim-extraction/REVIEW_gemini.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_usability_adversary",
+      "type": "review",
+      "title": "Adversarial usability review of RFC 0030",
+      "role_id": "usability_adversary",
+      "lane_id": "codex",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Adversarially review the operator-facing surfaces (engram grants, engram grounding snapshot/index, the resolver's silent-downgrade default) for residual cognitive overhead, ambiguous defaults, and footgun shapes.",
+      "task_prompt": {"path": "striatum/rfc-0030-grounding-claim-extraction-design/prompts/usability_adversary.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0030-public-dataset-entity-grounding.md", "kind": "rfc"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0030-grounding-claim-extraction/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0030-grounding-claim-extraction/REVIEW_usability_adversary.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_privacy_adversary",
+      "type": "review",
+      "title": "Adversarial privacy and network-boundary review of RFC 0030",
+      "role_id": "privacy_adversary",
+      "lane_id": "claude",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Adversarially probe the network boundary, dataset-acquisition path, grant model audit trail, and any path by which corpus content could exfiltrate during dataset fetch, snapshot indexing, or extraction-time resolution.",
+      "task_prompt": {"path": "striatum/rfc-0030-grounding-claim-extraction-design/prompts/privacy_adversary.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0030-public-dataset-entity-grounding.md", "kind": "rfc"},
+        {"path": "HUMAN_REQUIREMENTS.md", "kind": "principles"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0030-grounding-claim-extraction/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0030-grounding-claim-extraction/REVIEW_privacy_adversary.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_schema_adversary",
+      "type": "review",
+      "title": "Adversarial schema and migration review of RFC 0030",
+      "role_id": "schema_adversary",
+      "lane_id": "codex",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Adversarially probe the proposed schema choices (D-D), append-only invariants, snapshot-versioning discipline (D-E), compatibility with RFC 0017 (prompt versioning) and RFC 0018 (audit cascade), and downgrade reversibility.",
+      "task_prompt": {"path": "striatum/rfc-0030-grounding-claim-extraction-design/prompts/schema_adversary.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0030-public-dataset-entity-grounding.md", "kind": "rfc"},
+        {"path": "docs/rfcs/0017-extraction-prompt-versioning.md", "kind": "upstream_rfc"},
+        {"path": "docs/rfcs/0018-evidence-to-claim-audit-cascade.md", "kind": "upstream_rfc"},
+        {"path": "docs/schema/README.md", "kind": "schema"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0030-grounding-claim-extraction/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0030-grounding-claim-extraction/REVIEW_schema_adversary.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_eval_adversary",
+      "type": "review",
+      "title": "Adversarial eval-as-oracle review of RFC 0030",
+      "role_id": "eval_adversary",
+      "lane_id": "gemini",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Adversarially probe D-H: is operator-false-rate on entity-mismatch a sufficient oracle? Identify confounders, gaming risks, false-positive paths, and what a no-improvement outcome should look like.",
+      "task_prompt": {"path": "striatum/rfc-0030-grounding-claim-extraction-design/prompts/eval_adversary.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0030-public-dataset-entity-grounding.md", "kind": "rfc"},
+        {"path": "docs/rfcs/0028-predicate-intent-surfacing.md", "kind": "upstream_rfc"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0030-grounding-claim-extraction/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0030-grounding-claim-extraction/REVIEW_eval_adversary.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_cost_adversary",
+      "type": "review",
+      "title": "Adversarial cost and operational review of RFC 0030",
+      "role_id": "cost_adversary",
+      "lane_id": "codex",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Adversarially probe storage/disk budgets, snapshot lifecycle costs, resolution-latency claims vs extraction throughput, ops burden of grants/snapshots, and the social process around dataset updates.",
+      "task_prompt": {"path": "striatum/rfc-0030-grounding-claim-extraction-design/prompts/cost_adversary.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0030-public-dataset-entity-grounding.md", "kind": "rfc"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0030-grounding-claim-extraction/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0030-grounding-claim-extraction/REVIEW_cost_adversary.md", "required": true}
+      ]
+    },
+    {
+      "id": "findings_ledger",
+      "type": "ledger",
+      "title": "Record RFC 0030 findings ledger",
+      "role_id": "ledger",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Normalize the eight independent reviews (3 generic + 5 adversarial) into one stable findings ledger with severity and disposition.",
+      "task_prompt": {"path": "striatum/rfc-0030-grounding-claim-extraction-design/prompts/findings_ledger.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0030-grounding-claim-extraction/REVIEW_claude.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0030-grounding-claim-extraction/REVIEW_codex.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0030-grounding-claim-extraction/REVIEW_gemini.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0030-grounding-claim-extraction/REVIEW_usability_adversary.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0030-grounding-claim-extraction/REVIEW_privacy_adversary.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0030-grounding-claim-extraction/REVIEW_schema_adversary.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0030-grounding-claim-extraction/REVIEW_eval_adversary.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0030-grounding-claim-extraction/REVIEW_cost_adversary.md", "kind": "review"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0030-grounding-claim-extraction/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "ledger", "kind": "findings_ledger", "path": "docs/reviews/rfc0030-grounding-claim-extraction/FINDINGS_LEDGER.md", "required": true}
+      ]
+    },
+    {
+      "id": "revision_synthesis",
+      "type": "synthesis",
+      "title": "Synthesize RFC 0030 findings into revision instructions",
+      "role_id": "synthesizer",
+      "lane_id": "claude",
+      "fresh_session_required": true,
+      "objective": "Classify the findings ledger and produce concrete RFC revision instructions, with explicit decisions on D-A through D-H and the seven open questions.",
+      "task_prompt": {"path": "striatum/rfc-0030-grounding-claim-extraction-design/prompts/synthesis.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0030-grounding-claim-extraction/FINDINGS_LEDGER.md", "kind": "findings_ledger"},
+        {"path": "docs/rfcs/0030-public-dataset-entity-grounding.md", "kind": "rfc"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0030-grounding-claim-extraction/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "revision_synthesis", "kind": "synthesis", "path": "docs/reviews/rfc0030-grounding-claim-extraction/REVISION_SYNTHESIS.md", "required": true}
+      ]
+    },
+    {
+      "id": "apply_findings",
+      "type": "draft",
+      "title": "Apply RFC 0030 accepted findings",
+      "role_id": "author",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Apply accepted findings to RFC 0030 and to docs/rfcs/README.md as needed; publish a revision handoff.",
+      "task_prompt": {"path": "striatum/rfc-0030-grounding-claim-extraction-design/prompts/apply_findings.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0030-grounding-claim-extraction/FINDINGS_LEDGER.md", "kind": "findings_ledger"},
+        {"path": "docs/reviews/rfc0030-grounding-claim-extraction/REVISION_SYNTHESIS.md", "kind": "synthesis"},
+        {"path": "docs/rfcs/0030-public-dataset-entity-grounding.md", "kind": "rfc"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/rfcs/0030-public-dataset-entity-grounding.md",
+          "docs/rfcs/README.md",
+          "docs/reviews/rfc0030-grounding-claim-extraction/"
+        ],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "revision_handoff", "kind": "handoff", "path": "docs/reviews/rfc0030-grounding-claim-extraction/REVISION_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "final_review",
+      "type": "review",
+      "title": "Final review of RFC 0030 design",
+      "role_id": "reviewer",
+      "lane_id": "claude",
+      "fresh_session_required": true,
+      "objective": "Audit the revised RFC 0030 against the findings ledger, revision synthesis, and revision handoff. Decide whether the RFC is ready for promotion to a spec.",
+      "task_prompt": {"path": "striatum/rfc-0030-grounding-claim-extraction-design/prompts/final_review.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0030-public-dataset-entity-grounding.md", "kind": "rfc"},
+        {"path": "docs/reviews/rfc0030-grounding-claim-extraction/FINDINGS_LEDGER.md", "kind": "findings_ledger"},
+        {"path": "docs/reviews/rfc0030-grounding-claim-extraction/REVISION_SYNTHESIS.md", "kind": "synthesis"},
+        {"path": "docs/reviews/rfc0030-grounding-claim-extraction/REVISION_HANDOFF.md", "kind": "handoff"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0030-grounding-claim-extraction/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "final_review", "kind": "finding", "path": "docs/reviews/rfc0030-grounding-claim-extraction/FINAL_REVIEW.md", "required": true}
+      ]
+    }
+  ]
+}
