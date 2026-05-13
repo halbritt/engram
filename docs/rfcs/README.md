@@ -54,6 +54,7 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0034](0034-photo-library-ingestion.md) | proposal | none | Photo library ingestion and local vision derivations |
 | [0035](0035-location-timeline-place-model.md) | proposal | none | Location timeline and place model |
 | [0036](0036-daily-biography-compiler.md) | proposal | none | Daily biography compiler |
+| [0037](0037-outputguard-segmentation-structured-output.md) | proposal | none | OutputGuard for segmentation structured output |
 
 ## Implementation notes (2026-05-07 sweep)
 
