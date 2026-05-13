@@ -12,7 +12,7 @@ the implementation contract.
 The **Status** column tracks document state (proposal / specified / accepted /
 promoted / superseded). The **Implementation** column tracks whether the
 proposal's deliverables exist in the codebase as of the last index sweep
-(2026-05-08): `implemented`, `partial`, `none`, or `n/a` for idea-capture docs
+(2026-05-13): `implemented`, `partial`, `none`, or `n/a` for idea-capture docs
 without a concrete code deliverable. Implementation status is descriptive, not
 prescriptive — a `none` here is not a TODO unless promoted via
 `BUILD_PHASES.md` or `DECISION_LOG.md`.
@@ -45,7 +45,7 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0024](0024-phase-4-pre-full-corpus-benchmark-gate.md) | accepted | partial | Phase 4 pre-full-corpus benchmark gate |
 | [0025](0025-phase-scoped-command-names.md) | accepted | partial | Phase-scoped command names |
 | [0027](0027-interview-web-ui.md) | promoted | scaffolded | Interview web UI (promoted to [spec 0027](../specs/0027-interview-web-ui-spec.md) via D080) |
-| [0028](0028-predicate-intent-surfacing.md) | proposal | partial | Predicate-intent surfacing across extraction and interview |
+| [0028](0028-predicate-intent-surfacing.md) | proposal | implemented | Predicate-intent surfacing across extraction and interview |
 | [0029](0029-bench-triage-workbench.md) | proposal | implemented | Bench triage workbench for extraction/re-extraction validation (draft [spec 0029](../specs/0029-bench-triage-workbench-spec.md); review chain quarantined by [RFC 0032](0032-suspect-autonomous-work-recovery.md)) |
 | [0030](0030-public-dataset-entity-grounding.md) | proposal | none | Public-dataset entity grounding for claim extraction |
 | [0031](0031-suspect-autonomous-work-audit.md) | superseded | none | Suspect autonomous work audit (authored inside the suspect commit; superseded by [RFC 0032](0032-suspect-autonomous-work-recovery.md)) |
@@ -139,3 +139,13 @@ prescriptive — a `none` here is not a TODO unless promoted via
   requests, and compare control/candidate artifacts. Production extraction
   remains on the current request profile until benchmark evidence is promoted
   through `DECISION_LOG.md` and RFC 0017 re-extraction handling.
+- **0028** — owner-directed implementation landed in a fresh 2026-05-13 pass:
+  migration 012 adds nullable `predicate_vocabulary.subject_kind_hint`; the
+  extractor runtime vocabulary and Phase 3 schema preflight compare
+  `description` plus `subject_kind_hint`; `EXTRACTION_PROMPT_VERSION` is
+  `extractor.v9.d082.predicate-intent`; extraction prompts render an
+  `intent:` line per predicate; shared CLI/web interview rendering shows
+  predicate intent on its own line, adds advisory subject-kind mismatch
+  warnings, and broadens the `false` rationale prompt. Status remains
+  `proposal` until fresh review accepts or revises promotion; no decision row
+  is recorded by the implementation pass.

@@ -6,7 +6,7 @@
 | RFC | 0028 |
 | Title | Predicate-Intent Surfacing Across Extraction and Interview |
 | Status | proposal |
-| Implementation | partial |
+| Implementation | implemented |
 | Date | 2026-05-09 |
 | Context | RFC 0011 § Schema (`predicate_vocabulary`); RFC 0017 (extraction prompt versioning); RFC 0021 / D079 (gold-set interview); RFC 0027 / D080 (interview web UI); D016 (eval gate sequencing); `src/engram/extractor.py:1961` (`build_extraction_prompt`); `src/engram/interview/render.py` (operator UI rendering); `predicate_vocabulary.description` column |
 
@@ -23,6 +23,10 @@ Audit refs:
 Phase refs:
   - PHASE-0003 (extraction)
   - PHASE-0003-FOLLOWON (gold-set interview)
+
+Implementation note: the owner-directed implementation slice landed in the
+fresh 2026-05-13 author pass. Acceptance / promotion remains pending fresh
+review; no new `DECISION_LOG.md` row is recorded by the implementation pass.
 
 This RFC proposes that the **predicate vocabulary's `description` column
 become first-class** at three points where it is currently invisible:

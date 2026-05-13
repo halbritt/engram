@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- RFC 0028 predicate-intent surfacing implementation is now present in the
+  fresh 2026-05-13 author pass: migration 012 adds nullable
+  `predicate_vocabulary.subject_kind_hint`, the extractor prompt version is
+  `extractor.v9.d082.predicate-intent`, `build_extraction_prompt` renders
+  predicate descriptions and subject-kind hints, and the shared CLI/web
+  interview renderer now shows predicate intent, advisory subject-mismatch
+  warnings, and the broadened `false` rationale prompt. RFC status remains
+  proposal pending fresh review; no new decision row was added in this pass.
 - RFC 0032 completed the independent recovery audit for commit `c4a48ab`
   (suspect autonomous work checkpoint): inventory, provenance audit,
   independent code/design reviews, artifact disposition, final decision, and
@@ -123,9 +131,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decision row. It also removes the stale root-level Striatum 1.14 guide
   files. Existing code remains reviewable implementation work, not decision
   authority.
-- RFC 0028 predicate-intent surfacing remains `proposal` / `partial`: the
-  implementation survived technical audit, but the status promotion and
-  unauthorized decision row were removed pending fresh legitimate review.
+- RFC 0028 predicate-intent surfacing is now `proposal` / `implemented`: the
+  implementation is present and focused tests pass, while acceptance and any
+  decision-log promotion remain pending fresh legitimate review.
 - RFC 0029 bench triage workbench remains `proposal` / `implemented` with a
   draft, unpromoted spec and quarantined review chain. The workbench is
   local-only scratch tooling until fresh review promotes or revises it.
