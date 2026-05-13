@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   predicate descriptions and subject-kind hints, and the shared CLI/web
   interview renderer now shows predicate intent, advisory subject-mismatch
   warnings, and the broadened `false` rationale prompt. RFC status remains
-  proposal pending fresh review; no new decision row was added in this pass.
+  proposal pending fresh review; `D082` is only a proposed prompt-version slot
+  reservation, not an accepted promotion decision.
 - RFC 0032 completed the independent recovery audit for commit `c4a48ab`
   (suspect autonomous work checkpoint): inventory, provenance audit,
   independent code/design reviews, artifact disposition, final decision, and
@@ -33,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Gemini in explicit noninteractive write-capable modes. A second probe found
   Gemini's headless trust gate, so the scaffolds now pass `--skip-trust` for
   clean automation worktrees.
+- Fresh rerun artifacts now exist for RFC 0021, RFC 0027, RFC 0028, RFC 0029
+  design, and the Phase 4 multi-lane gate. The reruns are evidence, not
+  promotion authority: RFC 0021, RFC 0027, RFC 0028, and RFC 0029 design all
+  surfaced `needs_revision` findings, RFC 0028's Gemini lane was blocked by
+  Gemini model-capacity errors, and the Phase 4 multi-lane gate completed as a
+  bounded evidence package rather than authorization for full-corpus execution.
 - RFC 0027 implementation: FastAPI + htmx web UI for the gold-set
   interview surface, served by `engram phase3 interview serve` (RFC
   0027 / spec 0027 / D080). Loopback-only with no escape clause;
@@ -127,10 +134,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - RFC 0032 cleanup quarantines the suspect RFC 0028/RFC 0029 review
   directories and RFC 0029 Striatum scaffolds, demotes RFC 0028/RFC 0029
   status claims back to proposal/draft, and removes the unauthorized
-  RFC 0028/RFC 0029 decision row
-  decision row. It also removes the stale root-level Striatum 1.14 guide
-  files. Existing code remains reviewable implementation work, not decision
-  authority.
+  RFC 0028/RFC 0029 decision row. It also removes the stale root-level
+  Striatum 1.14 guide files. Existing code remains reviewable implementation
+  work, not decision authority.
 - RFC 0028 predicate-intent surfacing is now `proposal` / `implemented`: the
   implementation is present and focused tests pass, while acceptance and any
   decision-log promotion remain pending fresh legitimate review.
