@@ -46,7 +46,7 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0025](0025-phase-scoped-command-names.md) | accepted | partial | Phase-scoped command names |
 | [0027](0027-interview-web-ui.md) | promoted | scaffolded | Interview web UI (promoted to [spec 0027](../specs/0027-interview-web-ui-spec.md) via D080) |
 | [0028](0028-predicate-intent-surfacing.md) | proposal | implemented | Predicate-intent surfacing across extraction and interview |
-| [0029](0029-bench-triage-workbench.md) | proposal | implemented | Bench triage workbench for extraction/re-extraction validation (draft [spec 0029](../specs/0029-bench-triage-workbench-spec.md); review chain quarantined by [RFC 0032](0032-suspect-autonomous-work-recovery.md)) |
+| [0029](0029-bench-triage-workbench.md) | proposal | none | Bench triage workbench for extraction/re-extraction validation (fresh design review pass; prior review chain quarantined by [RFC 0032](0032-suspect-autonomous-work-recovery.md)) |
 | [0030](0030-public-dataset-entity-grounding.md) | proposal | none | Public-dataset entity grounding for claim extraction |
 | [0031](0031-suspect-autonomous-work-audit.md) | superseded | none | Suspect autonomous work audit (authored inside the suspect commit; superseded by [RFC 0032](0032-suspect-autonomous-work-recovery.md)) |
 | [0032](0032-suspect-autonomous-work-recovery.md) | proposal | none | Recovery and audit of the suspect autonomous work checkpoint |
