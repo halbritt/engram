@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- RFC 0038 operator UI rework proposal and Striatum implementation workflow
+  scaffold, derived from `ENGRAM_UI_REWORK_HANDOFF.md`, covering a three-lane
+  UI implementation split plus the normal review cycle augmented with an
+  ergonomics design review.
 - RFC 0028 predicate-intent surfacing implementation is now present in the
   fresh 2026-05-13 author pass: migration 012 adds nullable
   `predicate_vocabulary.subject_kind_hint`, the extractor prompt version is
