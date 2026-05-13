@@ -267,13 +267,17 @@ def subject_kind_warning(
     if not subject:
         return None
 
+    entity_kinds = _active_entity_kinds_for_subject(conn, subject)
+    normalized_entity_kinds = {entity_kind.casefold() for entity_kind in entity_kinds}
+    if "person" in normalized_entity_kinds:
+        return None
+
     known_label = _known_non_person_subject_label(subject)
     if known_label is not None:
         return _format_subject_kind_warning(subject, known_label)
 
-    entity_kinds = _active_entity_kinds_for_subject(conn, subject)
     for entity_kind in entity_kinds:
-        label = _NON_PERSON_ENTITY_KIND_LABELS.get(entity_kind)
+        label = _NON_PERSON_ENTITY_KIND_LABELS.get(entity_kind.casefold())
         if label is not None:
             return _format_subject_kind_warning(subject, label)
     return None

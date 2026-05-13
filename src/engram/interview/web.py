@@ -18,10 +18,13 @@ guard is mechanically enforced by
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from contextlib import suppress
+from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
+from urllib.parse import urlsplit
 
 import psycopg
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
@@ -52,9 +55,10 @@ from engram.interview.render import (
 from engram.interview.storage import (
     get_active_learning_signal_version,
     insert_session,
+    insert_session_targets,
     mark_session_completed,
+    unanswered_session_targets,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -95,9 +99,8 @@ ALLOWED_ORIGIN_HOSTS: tuple[str, ...] = _resolve_allowed_origin_hosts()
 
 Defaults to the loopback set ``("127.0.0.1", "localhost")``; extended at
 module load by the comma-separated ``ENGRAM_INTERVIEW_ALLOWED_ORIGINS``
-env var. We accept any port on these hosts since the operator picks the
-bind port at ``engram phase3 interview serve --port``. Origin checks
-compare scheme=http plus host membership; no upgrade to https in v1.
+env var. Origin checks compare scheme=http, host membership, and the bound
+request port from the Host header; no upgrade to https in v1.
 """
 
 CONTEXT_BEFORE_AFTER_CAP: int = 20
@@ -173,6 +176,10 @@ def _get_origin_check(request: Request) -> None:
     _origin_check(request)
 
 
+_CONN_DEPENDENCY = Depends(_get_conn)
+_ORIGIN_CHECK_DEPENDENCY = Depends(_get_origin_check)
+
+
 # ---------------------------------------------------------------------------
 # Origin / tier guard helpers
 # ---------------------------------------------------------------------------
@@ -182,31 +189,42 @@ def _origin_check(request: Request) -> None:
     """Enforce the Origin / Sec-Fetch-Site allowlist on POST routes.
 
     Raises ``HTTPException(403)`` with structured body
-    ``{"error": "origin_mismatch", "expected": [...]}`` on mismatch. The
-    check accepts requests with no ``Origin`` header so curl / TestClient
-    flows are not gratuitously broken — an attacker page would always carry
-    an Origin (cross-origin requests cannot strip it). When the header is
-    present, the host portion must match the loopback allowlist.
-
-    ``Sec-Fetch-Site`` is enforced when present: must be ``same-origin``.
+    ``{"error": "origin_mismatch", "expected": [...]}`` on mismatch. Mutating
+    web routes require browser-origin metadata: ``Origin`` must be an exact
+    ``http://<allowed-host>:<bound-port>`` match and ``Sec-Fetch-Site`` must
+    be ``same-origin``.
     """
+    expected = [f"http://{h}:<bound-port>" for h in ALLOWED_ORIGIN_HOSTS]
     origin = request.headers.get("origin")
-    if origin:
-        host_ok = False
-        for host in ALLOWED_ORIGIN_HOSTS:
-            if origin.startswith(f"http://{host}:") or origin == f"http://{host}":
-                host_ok = True
-                break
-        if not host_ok:
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "error": "origin_mismatch",
-                    "expected": [f"http://{h}:<port>" for h in ALLOWED_ORIGIN_HOSTS],
-                },
-            )
+    if origin is None:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "origin_mismatch", "expected": expected},
+        )
+
+    try:
+        parsed_origin = urlsplit(origin)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "origin_mismatch", "expected": expected},
+        ) from exc
+
+    host_port = _request_host_port(request)
+    if (
+        parsed_origin.scheme != "http"
+        or parsed_origin.hostname not in ALLOWED_ORIGIN_HOSTS
+        or host_port is None
+        or parsed_origin.port != host_port
+        or parsed_origin.path not in ("", "/")
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "origin_mismatch", "expected": expected},
+        )
+
     sec_fetch_site = request.headers.get("sec-fetch-site")
-    if sec_fetch_site is not None and sec_fetch_site != "same-origin":
+    if sec_fetch_site != "same-origin":
         raise HTTPException(
             status_code=403,
             detail={
@@ -214,6 +232,17 @@ def _origin_check(request: Request) -> None:
                 "expected": ["sec-fetch-site=same-origin"],
             },
         )
+
+
+def _request_host_port(request: Request) -> int | None:
+    """Return the numeric port from the request Host header."""
+    host_header = request.headers.get("host", "")
+    if not host_header:
+        return None
+    try:
+        return urlsplit(f"//{host_header}").port
+    except ValueError:
+        return None
 
 
 def _check_tier_1(privacy_tier: int, message_id: str | None = None) -> None:
@@ -260,18 +289,35 @@ def _load_open_sessions(conn: psycopg.Connection) -> list[dict[str, Any]]:
                 WHERE t.session_id = s.session_id
             ) AS n_targets,
             (
-                SELECT count(*) FROM gold_labels gl
-                WHERE gl.session_id = s.session_id
+                SELECT count(*)
+                FROM gold_label_session_targets t
+                WHERE t.session_id = s.session_id
+                  AND EXISTS (
+                      SELECT 1
+                      FROM gold_labels gl
+                      WHERE gl.session_id = t.session_id
+                        AND gl.target_kind = t.target_kind
+                        AND gl.target_id = t.target_id
+                        AND gl.request_profile_version = t.request_profile_version
+                        AND COALESCE(gl.extraction_prompt_version, '') =
+                            COALESCE(t.extraction_prompt_version, '')
+                        AND COALESCE(gl.extraction_model_version, '') =
+                            COALESCE(t.extraction_model_version, '')
+                        AND COALESCE(gl.consolidation_prompt_version, '') =
+                            COALESCE(t.consolidation_prompt_version, '')
+                        AND COALESCE(gl.consolidation_model_version, '') =
+                            COALESCE(t.consolidation_model_version, '')
+                  )
             ) AS n_answered
         FROM gold_label_sessions s
         WHERE s.completed_at IS NULL
         ORDER BY s.started_at DESC
         """,
     ).fetchall()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     out: list[dict[str, Any]] = []
     for sid, started_at, n_targets, n_answered in rows:
-        delta = now - (started_at if started_at.tzinfo else started_at.replace(tzinfo=timezone.utc))
+        delta = now - (started_at if started_at.tzinfo else started_at.replace(tzinfo=UTC))
         hours = int(delta.total_seconds() // 3600)
         if hours < 1:
             age = "just now"
@@ -355,12 +401,27 @@ def _session_n_targets(conn: psycopg.Connection, session_id: str) -> int | None:
     return int(row[0])
 
 
-def _session_exists(conn: psycopg.Connection, session_id: str) -> bool:
+def _session_completed_at(conn: psycopg.Connection, session_id: str) -> datetime | None:
     row = conn.execute(
-        "SELECT 1 FROM gold_label_sessions WHERE session_id = %s",
+        "SELECT completed_at FROM gold_label_sessions WHERE session_id = %s",
         (session_id,),
     ).fetchone()
-    return row is not None
+    if row is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return row[0]
+
+
+def _require_open_session(conn: psycopg.Connection, session_id: str) -> None:
+    """Reject missing or terminal sessions before rendering or mutating."""
+    completed_at = _session_completed_at(conn, session_id)
+    if completed_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "session_closed",
+                "session_id": session_id,
+            },
+        )
 
 
 def _session_target_to_sampled(target_row: dict[str, Any]) -> SampledTarget:
@@ -375,7 +436,7 @@ def _session_target_to_sampled(target_row: dict[str, Any]) -> SampledTarget:
         target_id=target_row["target_id"],
         stability_class=target_row["stability_class"],
         confidence=target_row["confidence"] if target_row["confidence"] is not None else 0.0,
-        observed_at=target_row["observed_at"] or datetime.now(timezone.utc),
+        observed_at=target_row["observed_at"] or datetime.now(UTC),
         conf_band=target_row["conf_band"],
         recency_band=target_row["recency_band"],
         belief_status=target_row["belief_status"],
@@ -407,10 +468,38 @@ def _strata_rows(
 
 def _n_answered(conn: psycopg.Connection, session_id: str) -> int:
     row = conn.execute(
-        "SELECT count(*) FROM gold_labels WHERE session_id = %s",
+        """
+        SELECT count(*)
+        FROM gold_label_session_targets t
+        WHERE t.session_id = %s
+          AND EXISTS (
+              SELECT 1
+              FROM gold_labels gl
+              WHERE gl.session_id = t.session_id
+                AND gl.target_kind = t.target_kind
+                AND gl.target_id = t.target_id
+                AND gl.request_profile_version = t.request_profile_version
+                AND COALESCE(gl.extraction_prompt_version, '') =
+                    COALESCE(t.extraction_prompt_version, '')
+                AND COALESCE(gl.extraction_model_version, '') =
+                    COALESCE(t.extraction_model_version, '')
+                AND COALESCE(gl.consolidation_prompt_version, '') =
+                    COALESCE(t.consolidation_prompt_version, '')
+                AND COALESCE(gl.consolidation_model_version, '') =
+                    COALESCE(t.consolidation_model_version, '')
+          )
+        """,
         (session_id,),
     ).fetchone()
     return int(row[0]) if row is not None else 0
+
+
+def _unanswered_table_indices(conn: psycopg.Connection, session_id: str) -> list[int]:
+    """Return unanswered materialized target indices using the storage predicate."""
+    return [
+        target.idx
+        for target in unanswered_session_targets(conn, session_id=session_id)
+    ]
 
 
 def _insert_session_targets(
@@ -423,49 +512,7 @@ def _insert_session_targets(
     Idempotent within one transaction: caller is expected to have committed
     the session row and is now extending it with target rows. Errors propagate.
     """
-    for idx, target in enumerate(sampled):
-        triple = target.version_triple()
-        conn.execute(
-            """
-            INSERT INTO gold_label_session_targets (
-                session_id, idx, target_kind, target_id,
-                candidate_pool_snapshot_id,
-                extraction_prompt_version, extraction_model_version,
-                consolidation_prompt_version, consolidation_model_version,
-                request_profile_version,
-                stability_class, conf_band, recency_band, belief_status,
-                active_learning_signal_version, confidence, observed_at
-            )
-            VALUES (
-                %s, %s, %s, %s,
-                %s,
-                %s, %s,
-                %s, %s,
-                %s,
-                %s, %s, %s, %s,
-                %s, %s, %s
-            )
-            """,
-            (
-                session_id,
-                idx,
-                target.target_kind,
-                target.target_id,
-                target.candidate_pool_snapshot_id,
-                triple.get("extraction_prompt_version"),
-                triple.get("extraction_model_version"),
-                triple.get("consolidation_prompt_version"),
-                triple.get("consolidation_model_version"),
-                triple.get("request_profile_version"),
-                target.stability_class,
-                target.conf_band,
-                target.recency_band,
-                target.belief_status,
-                target.active_learning_signal_version,
-                target.confidence,
-                target.observed_at,
-            ),
-        )
+    insert_session_targets(conn, session_id=session_id, sampled=sampled)
 
 
 def _abandon_session(
@@ -512,19 +559,15 @@ def _render_question_template(
     render every cited message rather than the first ``EVIDENCE_ROWS_SHOWN``.
     """
     sampled = _session_target_to_sampled(target_row)
+    target_tier = _target_tier(conn, sampled)
+    if target_tier is not None:
+        _check_tier_1(target_tier)
     display = fetch_target_display(
         conn,
         sampled,
         evidence_limit=None if full_evidence else EVIDENCE_ROWS_SHOWN,
     )
-
-    # Tier 1 ceiling on the "show all" path: any cited message at tier > 1
-    # forces a 403, mirroring /messages/{id}'s behaviour.
-    if full_evidence:
-        for excerpt in display.get("excerpts") or []:
-            tier = _message_tier(conn, excerpt["id"])
-            if tier is not None:
-                _check_tier_1(tier, message_id=excerpt["id"])
+    _check_display_tier_1(conn, display)
 
     glosses = _load_verdict_glosses(conn)
     header_line = format_header(sampled, url_idx, n_targets)
@@ -583,11 +626,36 @@ def _message_tier(conn: psycopg.Connection, message_id: str) -> int | None:
     return int(row[0])
 
 
-def _session_can_reach_conversation(
+def _target_tier(conn: psycopg.Connection, target: SampledTarget) -> int | None:
+    """Return the target parent privacy tier, or None for a missing target."""
+    if target.target_kind == "claim":
+        row = conn.execute(
+            "SELECT privacy_tier FROM claims WHERE id = %s",
+            (target.target_id,),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT privacy_tier FROM beliefs WHERE id = %s",
+            (target.target_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return int(row[0])
+
+
+def _check_display_tier_1(conn: psycopg.Connection, display: dict[str, Any]) -> None:
+    """Enforce the Tier 1 ceiling for rendered evidence excerpts."""
+    for excerpt in display.get("excerpts") or []:
+        tier = _message_tier(conn, excerpt["id"])
+        if tier is not None:
+            _check_tier_1(tier, message_id=excerpt["id"])
+
+
+def _session_can_reach_evidence_message(
     conn: psycopg.Connection,
     *,
     session_id: str,
-    conversation_id: str,
+    message_id: str,
 ) -> bool:
     row = conn.execute(
         """
@@ -601,7 +669,7 @@ def _session_can_reach_conversation(
                 JOIN messages m
                   ON m.id = ANY(c.evidence_message_ids)
                 WHERE t.session_id = %s
-                  AND m.conversation_id = %s
+                  AND m.id = %s
             )
             OR EXISTS (
                 SELECT 1
@@ -612,10 +680,10 @@ def _session_can_reach_conversation(
                 JOIN messages m
                   ON m.id = ANY(b.evidence_ids)
                 WHERE t.session_id = %s
-                  AND m.conversation_id = %s
+                  AND m.id = %s
             )
         """,
-        (session_id, conversation_id, session_id, conversation_id),
+        (session_id, message_id, session_id, message_id),
     ).fetchone()
     return bool(row and row[0])
 
@@ -624,12 +692,12 @@ def _check_message_reachable(
     conn: psycopg.Connection,
     *,
     session_id: str,
-    conversation_id: str,
+    message_id: str,
 ) -> None:
-    if not _session_can_reach_conversation(
+    if not _session_can_reach_evidence_message(
         conn,
         session_id=session_id,
-        conversation_id=conversation_id,
+        message_id=message_id,
     ):
         raise HTTPException(status_code=404, detail="message not reachable from session")
 
@@ -659,7 +727,7 @@ def create_app() -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def index(
         request: Request,
-        conn: psycopg.Connection = Depends(_get_conn),
+        conn: psycopg.Connection = _CONN_DEPENDENCY,
     ) -> Response:
         sessions = _load_open_sessions(conn)
         return templates.TemplateResponse(
@@ -678,8 +746,8 @@ def create_app() -> FastAPI:
         request: Request,
         n: int = Form(...),
         seed: int | None = Form(default=None),
-        conn: psycopg.Connection = Depends(_get_conn),
-        _origin: None = Depends(_get_origin_check),
+        conn: psycopg.Connection = _CONN_DEPENDENCY,
+        _origin: None = _ORIGIN_CHECK_DEPENDENCY,
     ) -> Response:
         if n < 1:
             raise HTTPException(status_code=422, detail={"error": "n must be >= 1"})
@@ -730,27 +798,24 @@ def create_app() -> FastAPI:
     @app.get("/sessions/{session_id}")
     def get_session(
         session_id: str,
-        conn: psycopg.Connection = Depends(_get_conn),
+        conn: psycopg.Connection = _CONN_DEPENDENCY,
     ) -> Response:
-        if not _session_exists(conn, session_id):
-            raise HTTPException(status_code=404, detail="session not found")
-        row = conn.execute(
-            """
-            SELECT MIN(t.idx)
-            FROM gold_label_session_targets t
-            LEFT JOIN gold_labels gl
-              ON gl.session_id = t.session_id
-             AND gl.target_id::text = t.target_id::text
-            WHERE t.session_id = %s
-              AND gl.id IS NULL
-            """,
-            (session_id,),
-        ).fetchone()
-        next_table_idx = row[0] if row is not None else None
-        if next_table_idx is None:
+        _require_open_session(conn, session_id)
+        try:
+            unanswered = _unanswered_table_indices(conn, session_id)
+        except GoldLabelStorageError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "session_has_no_materialized_targets",
+                    "session_id": session_id,
+                    "action": "abandon_required",
+                },
+            ) from exc
+        if not unanswered:
             return RedirectResponse(url="/", status_code=303)
         return RedirectResponse(
-            url=f"/sessions/{session_id}/q/{int(next_table_idx) + 1}",
+            url=f"/sessions/{session_id}/q/{unanswered[0] + 1}",
             status_code=303,
         )
 
@@ -760,10 +825,11 @@ def create_app() -> FastAPI:
         request: Request,
         session_id: str,
         idx: int,
-        conn: psycopg.Connection = Depends(_get_conn),
+        conn: psycopg.Connection = _CONN_DEPENDENCY,
     ) -> Response:
         if idx < 1:
             raise HTTPException(status_code=404, detail="idx out of range")
+        _require_open_session(conn, session_id)
         n_targets = _session_n_targets(conn, session_id)
         if n_targets is None or n_targets == 0:
             raise HTTPException(status_code=404, detail="session has no targets")
@@ -790,13 +856,14 @@ def create_app() -> FastAPI:
         idx: int,
         verdict: str = Form(...),
         rationale: str | None = Form(default=None),
-        conn: psycopg.Connection = Depends(_get_conn),
-        _origin: None = Depends(_get_origin_check),
+        conn: psycopg.Connection = _CONN_DEPENDENCY,
+        _origin: None = _ORIGIN_CHECK_DEPENDENCY,
     ) -> Response:
         if verdict not in VERDICT_VALID:
             raise HTTPException(
                 status_code=422, detail={"error": "unknown verdict"}
             )
+        _require_open_session(conn, session_id)
         n_targets = _session_n_targets(conn, session_id)
         if n_targets is None or n_targets == 0:
             raise HTTPException(status_code=404, detail="session not found")
@@ -827,12 +894,16 @@ def create_app() -> FastAPI:
             agent.record_verdict(
                 session_id, sampled, verdict, rationale=rationale_value
             )
+            unanswered = _unanswered_table_indices(conn, session_id)
+            if not unanswered:
+                mark_session_completed(conn, session_id)
+                redirect_url = "/"
+            else:
+                redirect_url = f"/sessions/{session_id}/q/{unanswered[0] + 1}"
             conn.commit()
         except (GoldLabelStorageError, GoldLabelVerdictError) as exc:
-            try:
+            with suppress(psycopg.Error):
                 conn.rollback()
-            except psycopg.Error:
-                pass
             return _render_question_template(
                 request,
                 templates,
@@ -844,10 +915,6 @@ def create_app() -> FastAPI:
                 error_banner=str(exc),
             )
 
-        if idx >= n_targets:
-            redirect_url = f"/sessions/{session_id}/complete"
-        else:
-            redirect_url = f"/sessions/{session_id}/q/{idx + 1}"
         # Empty body + HX-Redirect tells htmx to follow. We also set Location
         # so direct (non-htmx) form posts work.
         resp = Response(status_code=200)
@@ -863,7 +930,7 @@ def create_app() -> FastAPI:
         request: Request,
         session_id: str,
         message_id: str,
-        conn: psycopg.Connection = Depends(_get_conn),
+        conn: psycopg.Connection = _CONN_DEPENDENCY,
     ) -> Response:
         row = conn.execute(
             """
@@ -884,6 +951,7 @@ def create_app() -> FastAPI:
         ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="message not found")
+        _require_open_session(conn, session_id)
         (
             msg_id,
             role,
@@ -891,10 +959,10 @@ def create_app() -> FastAPI:
             content,
             source_kind,
             privacy_tier,
-            conv_id,
+            _conv_id,
             conv_title,
         ) = row
-        _check_message_reachable(conn, session_id=session_id, conversation_id=conv_id)
+        _check_message_reachable(conn, session_id=session_id, message_id=msg_id)
         _check_tier_1(int(privacy_tier), message_id=msg_id)
         excerpt = {
             "id": msg_id,
@@ -925,7 +993,7 @@ def create_app() -> FastAPI:
         message_id: str,
         before: int = 2,
         after: int = 2,
-        conn: psycopg.Connection = Depends(_get_conn),
+        conn: psycopg.Connection = _CONN_DEPENDENCY,
     ) -> Response:
         if before < 0 or after < 0:
             raise HTTPException(status_code=422, detail={"error": "negative window"})
@@ -946,8 +1014,9 @@ def create_app() -> FastAPI:
         ).fetchone()
         if anchor is None:
             raise HTTPException(status_code=404, detail="message not found")
+        _require_open_session(conn, session_id)
         conv_id, anchor_seq, anchor_tier = anchor
-        _check_message_reachable(conn, session_id=session_id, conversation_id=str(conv_id))
+        _check_message_reachable(conn, session_id=session_id, message_id=message_id)
         if int(anchor_tier) > TIER_CEILING:
             _check_tier_1(int(anchor_tier), message_id=message_id)
 
@@ -1006,8 +1075,9 @@ def create_app() -> FastAPI:
         request: Request,
         session_id: str,
         idx: int,
-        conn: psycopg.Connection = Depends(_get_conn),
+        conn: psycopg.Connection = _CONN_DEPENDENCY,
     ) -> Response:
+        _require_open_session(conn, session_id)
         n_targets = _session_n_targets(conn, session_id)
         if n_targets is None or n_targets == 0:
             raise HTTPException(status_code=404, detail="session not found")
@@ -1017,6 +1087,9 @@ def create_app() -> FastAPI:
         if target_row is None:
             raise HTTPException(status_code=404, detail="target row missing")
         sampled = _session_target_to_sampled(target_row)
+        target_tier = _target_tier(conn, sampled)
+        if target_tier is not None:
+            _check_tier_1(target_tier)
         display = fetch_target_display(conn, sampled, evidence_limit=None)
         # Enforce Tier-1 carry across all rows we are about to render.
         for excerpt in display.get("excerpts") or []:
@@ -1040,11 +1113,10 @@ def create_app() -> FastAPI:
     @app.post("/sessions/{session_id}/save-and-quit")
     def post_save_and_quit(
         session_id: str,
-        conn: psycopg.Connection = Depends(_get_conn),
-        _origin: None = Depends(_get_origin_check),
+        conn: psycopg.Connection = _CONN_DEPENDENCY,
+        _origin: None = _ORIGIN_CHECK_DEPENDENCY,
     ) -> Response:
-        if not _session_exists(conn, session_id):
-            raise HTTPException(status_code=404, detail="session not found")
+        _require_open_session(conn, session_id)
         # No verdict commit. Discard any in-progress rationale text.
         banner = (
             f"Saved and quit. Resume with: engram phase3 interview resume "
@@ -1057,38 +1129,22 @@ def create_app() -> FastAPI:
     @app.post("/sessions/{session_id}/complete")
     def post_complete(
         session_id: str,
-        conn: psycopg.Connection = Depends(_get_conn),
-        _origin: None = Depends(_get_origin_check),
+        conn: psycopg.Connection = _CONN_DEPENDENCY,
+        _origin: None = _ORIGIN_CHECK_DEPENDENCY,
     ) -> Response:
-        if not _session_exists(conn, session_id):
-            raise HTTPException(status_code=404, detail="session not found")
+        _require_open_session(conn, session_id)
         mark_session_completed(conn, session_id)
         conn.commit()
-        return RedirectResponse(url="/", status_code=303)
-
-    # GET /sessions/{id}/complete is also wired so an HX-Redirect from the
-    # verdict POST can land on this URL via a normal browser navigation; it
-    # simply renders index after marking the session completed.
-    @app.get("/sessions/{session_id}/complete")
-    def get_complete(
-        request: Request,
-        session_id: str,
-        conn: psycopg.Connection = Depends(_get_conn),
-    ) -> Response:
-        if _session_exists(conn, session_id):
-            mark_session_completed(conn, session_id)
-            conn.commit()
         return RedirectResponse(url="/", status_code=303)
 
     # ----- POST /sessions/{id}/abandon -----
     @app.post("/sessions/{session_id}/abandon")
     def post_abandon(
         session_id: str,
-        conn: psycopg.Connection = Depends(_get_conn),
-        _origin: None = Depends(_get_origin_check),
+        conn: psycopg.Connection = _CONN_DEPENDENCY,
+        _origin: None = _ORIGIN_CHECK_DEPENDENCY,
     ) -> Response:
-        if not _session_exists(conn, session_id):
-            raise HTTPException(status_code=404, detail="session not found")
+        _require_open_session(conn, session_id)
         _abandon_session(conn, session_id, operator_note="abandoned via web")
         conn.commit()
         return RedirectResponse(url="/", status_code=303)

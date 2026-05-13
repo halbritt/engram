@@ -29,7 +29,7 @@ The following are explicitly out of v1 scope:
 
 - Hosted service, authentication layer, multi-user / multi-tenant support, or
   any mode where the UI accepts requests from a non-loopback origin.
-- Any change to the gold-label schema beyond migration 011 below.
+- Any change to the gold-label schema beyond migrations 011 and 013 below.
 - A build pipeline (npm, webpack, esbuild) or a JS framework (React, Vue,
   Svelte). htmx is the only client-side library; templates render
   server-side.
@@ -43,8 +43,8 @@ The following are explicitly out of v1 scope:
   loopback-only with no escape clause; non-loopback bind is a follow-on RFC
   paired with token auth (RFC 0022 Open Question 7's roadmap).
 - The `ENGRAM_GOLD_INTERVIEW_RENDER_TIER_MAX` environment variable. v1
-  hard-codes a Tier 1 ceiling on the message-rendering routes; the env var
-  is reserved but unimplemented.
+  hard-codes a Tier 1 ceiling on the question and message-rendering routes;
+  the env var is reserved but unimplemented.
 - `--include-superseded` and `--ignore-cooldown` checkboxes on the
   new-session form. Adversarial-sweep mode requires dropping to the CLI.
 - Per-form CSRF tokens. v1 enforces an Origin / Sec-Fetch-Site allowlist
@@ -78,6 +78,10 @@ The following are explicitly out of v1 scope:
   CLI-started sessions are web-resumable.
 - `migrations/011_gold_label_session_targets.sql` — materialized
   session-targets table with append-only trigger (NEW).
+- `migrations/013_interview_active_learning_state.sql` — active-learning
+  opt-in events plus `gold_label_session_targets` carry columns
+  (`active_learning_signal_version`, `confidence`, `observed_at`) are part
+  of the RFC 0027 baseline.
 - `pyproject.toml` — adds the `serve` optional extra and a
   `[tool.setuptools.package-data]` block.
 
@@ -286,7 +290,7 @@ and route handlers translate `url_idx - 1` on entry.
 | POST | `/sessions` | Create session, materialize sampled order, redirect to q1. | redirect |
 | GET | `/sessions/{session_id}` | Session summary; redirect to current target or `/`. | redirect |
 | GET | `/sessions/{session_id}/q/{idx}` | Render one question. | full on direct GET; `outerHTML` swap of `<main>` on htmx swap |
-| POST | `/sessions/{session_id}/q/{idx}/verdict` | Commit a verdict. | `HX-Redirect` |
+| POST | `/sessions/{session_id}/q/{idx}/verdict` | Commit a verdict; final commit marks the session complete. | `HX-Redirect` |
 | GET | `/sessions/{session_id}/messages/{message_id}` | Full message body. | `outerHTML` swap of evidence row |
 | GET | `/sessions/{session_id}/messages/{message_id}/context` | Cited message + neighbors. | `innerHTML` swap of context panel |
 | GET | `/sessions/{session_id}/q/{idx}/evidence/all` | All evidence rows for current target. | `innerHTML` swap of evidence section |
@@ -318,8 +322,9 @@ and route handlers translate `url_idx - 1` on entry.
 
 - Request body (form-encoded): `n=<int>`, optionally `seed=<int>`.
 - Origin allowlist enforced: `Origin` header must be exactly
-  `http://127.0.0.1:<port>` or `http://localhost:<port>`, and
-  `Sec-Fetch-Site` (when present) must be `same-origin`. 403 on mismatch.
+  `http://127.0.0.1:<bound-port>` or
+  `http://localhost:<bound-port>` (plus any D081 operator-named hosts),
+  and `Sec-Fetch-Site` must be `same-origin`. 403 on mismatch.
 - Behavior:
   1. Allocate a `seed` if not provided.
   2. Call `insert_session(conn, seed=..., sampler_id=...,
@@ -351,9 +356,21 @@ and route handlers translate `url_idx - 1` on entry.
 - Status: 303 (redirect) on the happy path, 404 if `session_id` is unknown.
 - Behavior: query
   `SELECT MIN(idx) FROM gold_label_session_targets t
-   LEFT JOIN gold_labels gl
-     ON gl.session_id = t.session_id AND gl.target_id = t.target_id
-   WHERE t.session_id = ? AND gl.id IS NULL`
+   WHERE t.session_id = ? AND NOT EXISTS (
+     SELECT 1 FROM gold_labels gl
+     WHERE gl.session_id = t.session_id
+       AND gl.target_kind = t.target_kind
+       AND gl.target_id = t.target_id
+       AND gl.request_profile_version = t.request_profile_version
+       AND COALESCE(gl.extraction_prompt_version, '') =
+           COALESCE(t.extraction_prompt_version, '')
+       AND COALESCE(gl.extraction_model_version, '') =
+           COALESCE(t.extraction_model_version, '')
+       AND COALESCE(gl.consolidation_prompt_version, '') =
+           COALESCE(t.consolidation_prompt_version, '')
+       AND COALESCE(gl.consolidation_model_version, '') =
+           COALESCE(t.consolidation_model_version, '')
+   )`
   to find the next unanswered idx; if found, redirect to
   `/sessions/{session_id}/q/{idx + 1}` (URL is 1-indexed). If no
   unanswered rows remain, redirect to `/`. (This is the resume path:
@@ -377,6 +394,8 @@ and route handlers translate `url_idx - 1` on entry.
 - The page header line carries the version triple the session was created
   against (per § Risks: this lets the operator see the freeze under
   re-extraction).
+- The target parent tier and all evidence excerpts rendered on the question
+  page must satisfy the Tier 1 ceiling before the template is rendered.
 - Returns the page wrapped in `base.html`. On htmx swap from a verdict
   commit, only the `<main>` block is swapped.
 
@@ -387,7 +406,7 @@ and route handlers translate `url_idx - 1` on entry.
 - Origin allowlist enforced. 403 on mismatch.
 - Status codes:
   - 200 with `HX-Redirect: /sessions/{session_id}/q/{idx + 1}` (or
-    `HX-Redirect: /sessions/{session_id}/complete` if `idx == n`) on
+    `HX-Redirect: /` after marking complete if `idx == n`) on
     success.
   - 200 with re-render of the same question + error banner if
     `record_verdict` raises `GoldLabelStorageError` or
@@ -403,7 +422,9 @@ and route handlers translate `url_idx - 1` on entry.
   4. Call `agent.record_verdict(session_id, target, verdict,
      rationale=rationale or None)`. `evidence_excerpt` is **not** passed —
      the column stays NULL on every web-committed verdict (F017).
-  5. `conn.commit()`. On exception, `conn.rollback()` and re-render with
+  5. If `idx == n`, call `mark_session_completed(conn, session_id)` before
+     committing so finalization stays inside the guarded verdict POST.
+  6. `conn.commit()`. On exception, `conn.rollback()` and re-render with
      the error banner.
 - Single-click commit: `verdict in {'true', 'skip'}` posts immediately
   with `rationale=''`. Two-click commit: `verdict in {'false', 'stale',
@@ -413,8 +434,8 @@ and route handlers translate `url_idx - 1` on entry.
 ### GET `/sessions/{session_id}/messages/{message_id}`
 
 - Status: 200 on success, 403 if parent message tier > 1, 404 if the
-  message is not in the conversation graph reachable from this session's
-  evidence.
+  message is not one of the evidence message ids cited by this session's
+  materialized targets.
 - Tier 1 ceiling enforced by route logic: query
   `SELECT privacy_tier, content_text, role, created_at, source_kind, ...
    FROM messages WHERE id = ?`; if `privacy_tier > 1`, return a 403 with a
@@ -430,6 +451,9 @@ and route handlers translate `url_idx - 1` on entry.
 - Query parameters: `before=<int>` (default 2), `after=<int>` (default 2).
 - Hard cap: `before + after <= 20`. Exceeding caps return 422.
 - Status: 200, 403, 404, 422.
+- The anchor `message_id` must be one of the evidence message ids cited by
+  this session's materialized targets. A different UUID from the same
+  conversation returns 404.
 - Tier ceiling: max-tier carry across all returned rows. Query
   `SELECT id, role, created_at, content_text, source_kind, privacy_tier,
    sequence_index FROM messages WHERE conversation_id = (
@@ -465,9 +489,9 @@ and route handlers translate `url_idx - 1` on entry.
 
 - Origin allowlist enforced.
 - Behavior: calls `mark_session_completed(conn, session_id)`, commits,
-  redirects to `/`. Auto-fired by the verdict-commit handler when
-  `idx == n` (F019). There is no explicit "Complete" button on the
-  question page.
+  redirects to `/`. This route is guarded for any future form-driven
+  completion path; the final verdict handler no longer redirects to a
+  mutating GET or auto-fires this route.
 - Status: 303 on success, 404 on unknown session.
 
 ### POST `/sessions/{session_id}/abandon`
@@ -483,10 +507,12 @@ All POST routes (`/sessions`, `/sessions/{id}/q/{idx}/verdict`,
 `/sessions/{id}/save-and-quit`, `/sessions/{id}/complete`,
 `/sessions/{id}/abandon`) enforce:
 
-1. The `Origin` header equals exactly `http://127.0.0.1:<port>` or
-   `http://localhost:<port>` where `<port>` is the port the server was
-   bound to.
-2. If `Sec-Fetch-Site` is present, its value is `same-origin`.
+1. The `Origin` header is present and equals exactly
+   `http://127.0.0.1:<bound-port>` or
+   `http://localhost:<bound-port>` where `<bound-port>` is the port in the
+   request Host header. D081 operator-named hosts extend the host list but
+   not the scheme or port check.
+2. `Sec-Fetch-Site` is present and its value is `same-origin`.
 
 A request that fails either check returns 403 with body
 `{"error": "origin_mismatch", "expected": [...]}` and no side effects.
@@ -621,11 +647,14 @@ Jinja2's autoescape; raw HTML insertion is forbidden.
    GROUP BY 1`. No row sorting or color is required; alphabetical by
   `stability_class` is sufficient.
 
-## Migration 011
+## Migration 011/013 Baseline
 
 `migrations/011_gold_label_session_targets.sql` materializes the sampled
-order at session creation. The append-only trigger and the version-triple
-CHECK constraint mirror migration 010's pattern.
+order at session creation. `migrations/013_interview_active_learning_state.sql`
+is part of the same RFC 0027 baseline because the current storage layer
+reconstructs `SampledTarget` from the active-learning/confidence carry
+columns it adds. The append-only trigger and the version-triple CHECK
+constraint mirror migration 010's pattern.
 
 ```sql
 -- 011_gold_label_session_targets.sql
@@ -653,6 +682,12 @@ CREATE TABLE gold_label_session_targets (
     recency_band TEXT NOT NULL,
     belief_status TEXT NULL,
     inserted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- Added by migration 013, required for current resume fidelity.
+    active_learning_signal_version TEXT NULL,
+    confidence DOUBLE PRECISION NULL CHECK (
+        confidence IS NULL OR (confidence >= 0.0 AND confidence <= 1.0)
+    ),
+    observed_at TIMESTAMPTZ NULL,
     PRIMARY KEY (session_id, idx),
     CONSTRAINT chk_session_targets_version_triple CHECK (
         (target_kind = 'claim'
@@ -754,6 +789,7 @@ serve = [
     "fastapi>=0.110,<1",
     "uvicorn>=0.30,<1",
     "jinja2>=3.1,<4",
+    "python-multipart>=0.0.9,<1",
 ]
 
 [tool.setuptools.package-data]
@@ -767,8 +803,8 @@ ships templates and `htmx.min.js` inside the wheel; without it,
 fails at runtime.
 
 The CLI subcommand raises an actionable `ImportError` -> `SystemExit(2)`
-with message `pip install engram[serve]` if FastAPI / Uvicorn / Jinja2
-imports fail (see § CLI integration above).
+with message `pip install engram[serve]` if FastAPI / Uvicorn / Jinja2 /
+python-multipart imports fail (see § CLI integration above).
 
 ## Privacy and security
 
@@ -776,17 +812,22 @@ imports fail (see § CLI integration above).
   non-loopback `--host` with `sys.exit(8)`. No `--allow-non-loopback`
   escape clause in v1.
 - **Origin allowlist on POST routes.** Every POST route enforces the
-  Origin / Sec-Fetch-Site allowlist described above. Origin mismatch
-  returns 403 with no side effect.
-- **Sec-Fetch-Site: same-origin.** When the header is present, it must be
-  `same-origin`. (Older browsers may omit it; the Origin check is the
-  primary defense.)
-- **Tier 1 ceiling.** `/messages/{id}`, `/messages/{id}/context`, and
-  `/q/{idx}/evidence/all` enforce a hard Tier 1 ceiling in the route
-  handler. `/messages/{id}/context` carries the max tier across all
-  returned rows: any row with `tier > 1` causes a 403 for the entire
-  response. The ENV var `ENGRAM_GOLD_INTERVIEW_RENDER_TIER_MAX` named in
-  RFC 0027 § Open Question O3 is reserved but unimplemented in v1.
+  required Origin / Sec-Fetch-Site allowlist described above. Missing or
+  mismatched browser-origin metadata returns 403 with no side effect.
+- **Sec-Fetch-Site: same-origin.** The header must be present with value
+  `same-origin`.
+- **Tier 1 ceiling.** `/q/{idx}`, `/messages/{id}`,
+  `/messages/{id}/context`, and `/q/{idx}/evidence/all` enforce a hard
+  Tier 1 ceiling in the route handler before evidence renders.
+  `/messages/{id}/context` carries the max tier across all returned rows:
+  any row with `tier > 1` causes a 403 for the entire response. The ENV var
+  `ENGRAM_GOLD_INTERVIEW_RENDER_TIER_MAX` named in RFC 0027 § Open
+  Question O3 is reserved but unimplemented in v1.
+- **No outbound network.** The web UI is a D020 corpus-reading process and
+  must be run in the same operator-enforced no-egress runtime as other
+  corpus readers (network namespace, sandbox, or deny-by-default firewall
+  rule). Vendored htmx/no-CDN prevents browser asset egress but is not a
+  substitute for the process egress boundary.
 - **Per-form CSRF tokens deferred to v1.1.** The Origin-header check is
   sufficient against the documented attack (any-tab autosubmit). The
   deferral has a documented trigger: any new mutating route added after
@@ -835,7 +876,7 @@ depending on whether the verdict requires a rationale.
    `agent.record_verdict(session_id, target, 'true', rationale=None)`,
    commits, and returns 200 with header
    `HX-Redirect: /sessions/{id}/q/{idx + 1}` (or
-   `/sessions/{id}/complete` if `idx == n`).
+   marks complete and returns `/` if `idx == n`).
 4. htmx follows the redirect, swapping `<main>` with the next question's
    render. The `htmx:afterSwap` handler updates `#live-region` with
    "Question K of N" and moves focus to `<h2 tabindex="-1">`.
@@ -990,8 +1031,11 @@ trigger-rejection banner test depends on real triggers firing).
   `Origin: http://evil.example`; 403 with body containing
   `"origin_mismatch"` (F006).
 - `test_post_verdict_completes_session_at_n` — POST the n-th verdict;
-  verifies HX-Redirect goes to `/sessions/{id}/complete` and that a
-  subsequent GET on `/` shows the session as completed (F019).
+  verifies the same guarded POST marks the session complete and returns
+  `HX-Redirect: /` (F019).
+- `test_get_complete_is_not_a_mutating_route` — GET
+  `/sessions/{id}/complete` is not registered and does not mutate
+  `completed_at`.
 - `test_get_messages_tier_1_enforced` — fixture message at
   `privacy_tier=2`; GET `/sessions/{id}/messages/{message_id}` returns
   403 with structured envelope `{"error": "privacy_tier_ceiling", ...}`
@@ -1107,8 +1151,9 @@ A suggested build order (an implementation agent may re-order if a
 dependency graph allows; the spec only mandates the contract, not the
 order):
 
-1. **Migration 011 + extend `test_migrations.py`.** Land the schema
-   first so subsequent steps can rely on the table existing.
+1. **Migrations 011 and 013 + extend `test_migrations.py`.** Land the
+   schema first so subsequent steps can rely on the table and resume carry
+   columns existing.
 2. **`render.py` extraction with golden-output tests** pinning the
    current CLI behavior. Verifies "no behavior change in the CLI"
    before any web code lands.
@@ -1164,7 +1209,7 @@ phase.
   v1.1 is acceptable for a single-user local UX but should not be
   transferred without scrutiny to any future multi-user surface.
 
-- **The "frozen at session creation" semantics for migration 011
+- **The "frozen at session creation" semantics for migrations 011/013
   conflict with the operator's intuition that `--rebuild` reflows
   everything.** A session created against extraction prompt v1 stays
   bound to v1 even if the operator runs `engram phase3 re-extract`
@@ -1206,11 +1251,12 @@ phase.
   change" is asserted but discovered to require small CLI output
   changes during implementation.
 
-- **Migration 011 ships with the v1 CLI as well, which is an implicit
+- **Migrations 011 and 013 ship with the v1 CLI as well, which is an implicit
   CLI behavior change.** The CLI loop currently materializes the
   sampled order in memory; the synthesis requires the CLI to also
-  write to `gold_label_session_targets` so CLI-started sessions are
-  web-resumable. This is a small but real behavior change that the
+  write to `gold_label_session_targets` with the carry fields required for
+  exact resume so CLI-started sessions are web-resumable. This is a small
+  but real behavior change that the
   RFC originally framed as web-only. The implementer must update
   `tests/test_interview_cli.py` to expect the materialized rows.
 

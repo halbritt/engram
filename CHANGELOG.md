@@ -40,6 +40,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   surfaced `needs_revision` findings, RFC 0028's Gemini lane was blocked by
   Gemini model-capacity errors, and the Phase 4 multi-lane gate completed as a
   bounded evidence package rather than authorization for full-corpus execution.
+- RFC 0044 Engram memory Phase 1 tenant-isolation queue scaffold was added
+  under
+  `striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/`.
+  It validates as a queued Striatum workflow requiring tenant terminology
+  before implementation, then capability-boundary tests, independent reviews,
+  findings ledger, and final synthesis. No implementation or workflow run was
+  started.
+- Fresh backlog execution outputs now exist for the RFC 0028 prompt-provenance
+  and subject-kind-warning fixes, RFC 0027 web/privacy/session-state fixes,
+  RFC 0021 contract revision, RFC 0029 design revision, and Phase 4
+  evidence-fix scaffold. Focused re-review artifacts now exist for RFC 0021,
+  RFC 0027, RFC 0028, RFC 0029, and the Phase 4 evidence-fix follow-up; they
+  are review evidence only and carry no promotion authority.
+- Focused recovery/re-review artifacts were added for RFC 0027, RFC 0028, and
+  the Phase 4 evidence-fix scaffold under
+  `docs/reviews/rerun-backlog-focused-reviews-2026-05-13/` and
+  `docs/operations/phase4-build/evidence-fix-2026-05-13/`. RFC 0028's
+  prompt-literal repair and RFC 0027's web-state repair now have fresh accepted
+  focused re-review evidence, but neither artifact is a promotion decision.
 - RFC 0027 implementation: FastAPI + htmx web UI for the gold-set
   interview surface, served by `engram phase3 interview serve` (RFC
   0027 / spec 0027 / D080). Loopback-only with no escape clause;
@@ -67,8 +86,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   preflight scaffold, final gate review, and run summary under
   `docs/operations/phase4-build/tiered-gate/`. RFC 0032 reframes these as
   single-lane Codex notes and a truthful Striatum export, not a multi-lane
-  RFC 0024 gate verdict. Phase 4 promotion and full-corpus authorization
-  remain blocked pending fresh gate evidence.
+  RFC 0024 gate verdict. Fresh multi-lane gate evidence now exists under
+  `docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/` and was
+  accepted only as a privacy-safe bounded evidence package. Phase 4 promotion
+  and full-corpus authorization remain blocked pending evidence-fix work and
+  explicit gate decisions.
 - Initial creation of `CHANGELOG.md` based on repository commit history and project phases.
 - Mandated `CHANGELOG.md` maintenance in `AGENTS.md` and `GEMINI.md`.
 - RFC 0025: Command naming review.
@@ -140,9 +162,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - RFC 0028 predicate-intent surfacing is now `proposal` / `implemented`: the
   implementation is present and focused tests pass, while acceptance and any
   decision-log promotion remain pending fresh legitimate review.
-- RFC 0029 bench triage workbench remains `proposal` / `implemented` with a
-  draft, unpromoted spec and quarantined review chain. The workbench is
-  local-only scratch tooling until fresh review promotes or revises it.
+- RFC 0029 bench triage workbench is reset to `proposal` / `none` and revised
+  as design-only scratch tooling. Focused re-review accepted the revised
+  design, but no implementation is present or promoted.
 - Pre-suspect RFC 0021/RFC 0027 review artifacts are now marked for
   provenance rerun because their multi-lane bylines are not backed by
   Striatum process execution evidence in `.striatum/state.sqlite3`.
@@ -160,6 +182,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   materialized target confidence in resumed headers, and prevents message
   routes from rendering conversations that are not reachable from the session's
   cited evidence.
+- The RFC 0027 interview web/storage surface now rejects closed-session resume
+  and mutation paths, enforces the parent-target Tier 1 ceiling for
+  `evidence/all`, bases completion on remaining frozen version-matching targets
+  rather than URL position, reports progress from the same frozen predicate, and
+  returns a diagnostic for targetless open sessions that require explicit
+  abandon.
+- RFC 0028's governed `extractor.v9.d082.predicate-intent` prompt artifact now
+  stores the rendered runtime zero-claim JSON literal (`{"claims":[]}`) instead
+  of f-string escaped braces; focused tests pin both the file artifact and
+  runtime prompt behavior.
+- Project Striatum workflow skill bundles for Codex and Claude were refreshed
+  from Striatum `1.14.0` templates to the Engram venv's `striatum 1.37.0`
+  templates, including the new MCP helper skill.
 - Added phase-scoped `engram phase3 re-extract` / `make phase3-re-extract`
   surfaces and marked the top-level `engram re-extract` command as legacy,
   aligning RFC 0017 re-extraction with the RFC 0025/D078 command naming
@@ -181,10 +216,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Implemented the first RFC 0025 command-surface slice: phase-scoped CLI
   commands, phase-scoped Make targets, and fail-closed generic `pipeline`
   commands.
-- Accepted RFC 0021 (gold-set interview curation) after Striatum-orchestrated
-  multi-agent review (claude/codex/gemini reviewers + ledger + synthesis +
-  final review; root-review needs_revision verdicts resolved through a
-  recorded coordinator continue-decision). The synthesis recommended
+- Historical RFC 0021 (gold-set interview curation) review artifacts are
+  preserved as provenance, but they are not authoritative independent
+  multi-lane evidence until superseded by fresh reruns because their lane
+  bylines are unattested. The historical synthesis recommended
   revise-rfc with 24 ledger findings (3 blocking, 15 major, 5 minor, 1
   nit); 23 accepted deltas were applied to the RFC text (typed claim and
   belief version triples, append-only and parent-validation triggers,
@@ -200,10 +235,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trigger and the (since-fixed) missing
   `phase3-interview-enable-active-learning` Make target are documented
   as the only residual gaps.
-- Promoted RFC 0027 (interview web UI) to spec 0027 after a second
-  Striatum-orchestrated multi-agent review. Synthesis recommended
-  `revise-rfc`; 29 accepted deltas applied to the RFC text and
-  consolidated into the buildable spec at
+- Historical RFC 0027 (interview web UI) review artifacts are preserved as
+  provenance, but they are not authoritative independent multi-lane evidence
+  until superseded by fresh reruns because their lane bylines are unattested.
+  The historical synthesis recommended `revise-rfc`; 29 accepted deltas
+  applied to the RFC text and consolidated into the buildable spec at
   `docs/specs/0027-interview-web-ui-spec.md`. Recorded as **D080**;
   BUILD_PHASES Phase 3 follow-on gains a web-UI subsection. Blocking
   findings resolved: fictional `striatum serve` precedent replaced

@@ -180,12 +180,12 @@ behaviors):
 | POST | `/sessions` | `insert_session` + `sampler.sample(n)`; if sampler returns `[]`, do NOT create the session — re-render `index.html` with the empty-corpus diagnostic banner. Otherwise materialize the sampled order into `gold_label_session_targets` and redirect to `/sessions/{id}/q/1`. |
 | GET | `/sessions/{session_id}` | Session-level summary; redirect to current target's `q/{idx}` if any unanswered remain, else to `/`. |
 | GET | `/sessions/{session_id}/q/{idx}` | Render the `idx`-th sampled target: header, predicate gloss, evidence excerpts (3-row cap with "show all N" disclosure), question, six verdict buttons, rationale textarea (auto-shown only on `false` / `stale` / `unsupported` / `unsure`), inline strata strip footer, Save-and-quit button. Uses `hx-push-url="true"` so back/forward and bookmarks work. |
-| POST | `/sessions/{session_id}/q/{idx}/verdict` | `agent.record_verdict(session_id, target, verdict, rationale)`. `true` and `skip` POST verdict + empty rationale in a single htmx round-trip; `false` / `stale` / `unsupported` / `unsure` swap in the rationale textarea and require Submit. On commit, the handler issues `HX-Redirect` to the next idx, or to `/sessions/{id}/complete` when `idx == n` (no explicit Complete button). |
-| GET | `/sessions/{session_id}/messages/{message_id}` | Full message body for one evidence row. **Tier 1 enforced at the route layer**: parent message tier > 1 returns 403 with a structured envelope. Higher-tier env var deferred to v1.1. |
-| GET | `/sessions/{session_id}/messages/{message_id}/context?before=N&after=M` | Cited message + N predecessors + M successors from the same `conversation_id`. Hard cap `N + M <= 20`. Tier 1 max-carry: if any returned row has tier > 1, the entire response is 403 (matches RFC 0021's multi-source carry rule). |
+| POST | `/sessions/{session_id}/q/{idx}/verdict` | `agent.record_verdict(session_id, target, verdict, rationale)`. `true` and `skip` POST verdict + empty rationale in a single htmx round-trip; `false` / `stale` / `unsupported` / `unsure` swap in the rationale textarea and require Submit. On the final commit, the handler marks the session complete inside the same guarded POST transaction and issues `HX-Redirect: /` (no mutating GET, no explicit Complete button). |
+| GET | `/sessions/{session_id}/messages/{message_id}` | Full message body for one cited evidence row in this session. **Tier 1 enforced at the route layer**: parent message tier > 1 returns 403 with a structured envelope. Higher-tier env var deferred to v1.1. |
+| GET | `/sessions/{session_id}/messages/{message_id}/context?before=N&after=M` | Cited message + N predecessors + M successors from the same `conversation_id`. The anchor `message_id` must itself be cited by a materialized session target. Hard cap `N + M <= 20`. Tier 1 max-carry: if any returned row has tier > 1, the entire response is 403 (matches RFC 0021's multi-source carry rule). |
 | GET | `/sessions/{session_id}/q/{idx}/evidence/all` | Show-all-rows disclosure (the 3-row cap on the question page becomes "show all N"). Tier 1 enforced. |
 | POST | `/sessions/{session_id}/save-and-quit` | No verdict commit; in-progress rationale is **discarded for CLI parity**. Response banner contains the resume command string `engram phase3 interview resume --session-id <uuid>`. Status line on the question page reads "K/N answered — closing this tab is safe; verdicts are saved as you commit them." Redirects to `/`. |
-| POST | `/sessions/{session_id}/complete` | `mark_session_completed`; redirects to `/`. Auto-fired by the verdict-commit handler when `idx == n` (no explicit Complete button on the question page). |
+| POST | `/sessions/{session_id}/complete` | `mark_session_completed`; redirects to `/`. Reserved for guarded form-driven completion only; final-question auto-completion happens inside the verdict POST. |
 | POST | `/sessions/{session_id}/abandon` | Calls `mark_session_completed` with `operator_note='abandoned via web'`; redirects to `/`. Surfaced from the index page's per-open-session row. |
 
 The new-session form on `index.html` exposes only `n` and `seed`;
@@ -256,8 +256,11 @@ re-sampling between renders within a single session drifts the index
 map. Materializing the sampled order at session creation is therefore
 **forced, not chosen** — it is the only correctness-preserving option.
 
-Migration `011_gold_label_session_targets.sql` ships in **v1** (not as a
-follow-up). The table:
+Migration `011_gold_label_session_targets.sql` plus
+`013_interview_active_learning_state.sql` ship as the **RFC 0027 schema
+baseline**. Migration 011 creates the materialized-order table; migration
+013 adds the active-learning/confidence carry fields that the current
+storage layer needs to reconstruct a frozen `SampledTarget`. The table:
 
 - PK is `(session_id, idx)` with `idx INT NOT NULL CHECK (idx >= 0)`.
   The table is 0-indexed; the URL exposes 1-indexed `q/{idx}` for parity
@@ -270,6 +273,9 @@ follow-up). The table:
   resumed three days later replays against the pool that existed at
   session creation, regardless of corpus drift; if the operator wants a
   fresh pool, they start a new session.
+- Carries `active_learning_signal_version`, `confidence`, and
+  `observed_at` (added by migration 013) so resume does not substitute
+  defaults or lose the active-learning provenance stamped at sampling time.
 - Append-only at the schema layer via
   `fn_gold_label_session_targets_append_only` (BEFORE UPDATE OR DELETE),
   matching the trigger naming convention from migration 010.
@@ -290,9 +296,10 @@ text and constraints live in the spec.
   transport surface to protect.
 - **Origin-header allowlist on POST routes.** "Localhost is single-user"
   is the wrong threat model for browsers — any tab on the local machine
-  can drive forms at `127.0.0.1:<port>`. v1 enforces an `Origin`
-  allowlist (`http://127.0.0.1:<port>` and `http://localhost:<port>`)
-  plus `Sec-Fetch-Site: same-origin` on every mutating route
+  can drive forms at `127.0.0.1:<port>`. v1 enforces a required
+  `Origin` allowlist (`http://127.0.0.1:<bound-port>` and
+  `http://localhost:<bound-port>`, plus D081 operator-named hosts)
+  plus a required `Sec-Fetch-Site: same-origin` header on every mutating route
   (`POST /sessions`, `POST /sessions/{id}/q/{idx}/verdict`,
   `POST /sessions/{id}/save-and-quit`, `POST /sessions/{id}/complete`,
   `POST /sessions/{id}/abandon`). Mismatch returns 403. Per-form CSRF
@@ -300,17 +307,23 @@ text and constraints live in the spec.
   enforcement test landing in v1; rationale at
   `docs/reviews/rfc0027/RFC_0027_INTERVIEW_WEB_UI_FINDINGS_LEDGER.md`
   F006).
-- **Tier 1 hard-coded on full-message and context routes.**
+- **Tier 1 hard-coded on question, full-message, and context routes.**
+  `GET /sessions/{id}/q/{idx}`,
   `GET /sessions/{id}/messages/{message_id}`,
   `GET /sessions/{id}/messages/{message_id}/context`, and
   `GET /sessions/{id}/q/{idx}/evidence/all` enforce a Tier 1 ceiling at
-  the route layer. Parent message tier > 1 (or any row tier > 1 in the
-  context window) returns 403. The
+  the route layer before rendering any evidence excerpt. Parent target or
+  message tier > 1 (or any row tier > 1 in the context window) returns
+  403. The
   `ENGRAM_GOLD_INTERVIEW_RENDER_TIER_MAX` env var is reserved but not
   implemented in v1; higher-tier rendering is deferred to v1.1.
-- **No outbound network.** htmx is vendored at
+- **No outbound network.** The web UI is a corpus-reading process under
+  D020 and must be run inside the same operator-enforced no-egress
+  boundary as other corpus readers (for example a network namespace,
+  sandbox, or deny-by-default firewall rule). htmx is vendored at
   `src/engram/interview/static/htmx.min.js` and served from the wheel;
-  no CDN reference is reachable from any rendered page (D020).
+  no CDN reference is reachable from any rendered page, but vendoring is
+  not itself the egress control.
 
 #### Invariants (D044 / D069 on the web surface)
 
@@ -359,6 +372,7 @@ serve = [
     "fastapi>=0.110,<1",
     "uvicorn>=0.30,<1",
     "jinja2>=3.1,<4",
+    "python-multipart>=0.0.9,<1",
 ]
 ```
 
@@ -366,9 +380,9 @@ The `dev` extra grows `"engram[serve]"` so `make typecheck` resolves
 `engram.interview.web` imports without a pyright exclusion.
 `[tool.setuptools.package-data]` ships templates and `htmx.min.js`
 inside the wheel. The CLI subcommand `engram phase3 interview serve`
-catches the FastAPI / Uvicorn / Jinja2 `ImportError` and re-raises as
-`SystemExit(2)` with an actionable `pip install engram[serve]`
-message.
+catches the FastAPI / Uvicorn / Jinja2 / python-multipart `ImportError`
+and re-raises as `SystemExit(2)` with an actionable
+`pip install engram[serve]` message.
 
 ### Test surface
 
@@ -380,7 +394,8 @@ names the new files:
 
 - `tests/test_interview_web.py` (new) — every route, including
   `Origin` allowlist enforcement, single-click and two-click verdict
-  commit, Tier 1 ceiling on `/messages/{id}` and `/messages/{id}/context`,
+  commit, final POST completion, Tier 1 ceiling on `/q/{idx}`,
+  `/messages/{id}` and `/messages/{id}/context`,
   htmx-served-from-static (not CDN), import-graph isolation from
   `engram.consolidator.transitions`, and the `aria-live` region.
 - `tests/test_interview_render.py` (new) — golden-output tests for
@@ -389,7 +404,7 @@ names the new files:
   determinism for `evidence_max`).
 - `tests/test_migrations.py` (extended) — append-only trigger,
   version-triple CHECK constraint, and PK uniqueness for
-  `gold_label_session_targets` (migration 011).
+  `gold_label_session_targets`, plus the migration 013 carry columns.
 
 ## Worked example
 
@@ -461,8 +476,8 @@ correct value: [ I felt disbelief specifically about the year's pace, not as a g
 
 Click Submit. The verdict commits; the handler issues `HX-Redirect` to
 `/sessions/<uuid>/q/2`. Repeat. When `idx == n`, the verdict-commit
-handler issues `HX-Redirect` to `/sessions/<uuid>/complete`, which
-calls `mark_session_completed` and redirects to `/`.
+handler calls `mark_session_completed` inside the same POST transaction
+and issues `HX-Redirect: /`.
 
 **Keyboard.** `accesskey` plus a bare-key dispatcher in `base.html`
 binds `t` / `f` / `s` / `n` (unsupported) / `u` / `k` / `q` (save and
@@ -512,12 +527,13 @@ synthesis (see
    `src/engram/interview/static/htmx.min.js`. No CDN reference
    reachable from any rendered page. (F004.)
 3. **Higher-tier rendering env var** — deferred to v1.1. v1 hard-codes
-   Tier 1 ceiling at the route layer for `/messages/{id}`,
-   `/messages/{id}/context`, and `/q/{idx}/evidence/all`. The
+   Tier 1 ceiling at the route layer for `/q/{idx}`,
+   `/messages/{id}`, `/messages/{id}/context`, and
+   `/q/{idx}/evidence/all`. The
    `ENGRAM_GOLD_INTERVIEW_RENDER_TIER_MAX` name is reserved.
 4. **Persistent target order** — resolved: option B is forced (option
    A drifts the index map; see § Persistent target order). Migration
-   011 ships in v1.
+   011 plus migration 013 carry fields ship in v1.
 5. **CSRF tokens** — resolved: deferred to v1.1 conditional on the v1
    `Origin` allowlist + `Sec-Fetch-Site: same-origin` enforcement test
    landing.

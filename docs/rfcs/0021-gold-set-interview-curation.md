@@ -6,9 +6,9 @@
 | RFC | 0021 |
 | Title | Gold-Set Interview Curation |
 | Status | accepted |
-| Implementation | scaffolded |
+| Implementation | partial |
 | Date | 2026-05-07 |
-| Context | ROADMAP Step 5 (gold-set authoring); HUMAN_REQUIREMENTS § "the eval gold set is the actual specification"; BUILD_PHASES Phase 3 acceptance row; D016, D040, D044, D052, D057, D069, D073, D077, D078, F010, O008; RFC 0011 §§ Stage A / Stage B; RFC 0017 prompt-template versioning; RFC 0018 § Promotion Path step 4 (cascade reviewer scheduled post-Step-5); RFC 0025 phase-scoped command surface; `migrations/006_claims_beliefs.sql:131` (`claims`); `migrations/006_claims_beliefs.sql:178` (`beliefs`) |
+| Context | ROADMAP Step 5 (gold-set authoring); HUMAN_REQUIREMENTS § "the eval gold set is the actual specification"; BUILD_PHASES Phase 3 follow-on row; D016, D040, D044, D052, D057, D069, D073, D077, D078, D079, F010, O008; RFC 0011 §§ Stage A / Stage B; RFC 0017 prompt-template versioning; RFC 0018 § Promotion Path step 4 (cascade reviewer scheduled post-Step-5); RFC 0025 phase-scoped command surface; RFC 0027 web UI handoff; `migrations/006_claims_beliefs.sql:131` (`claims`); `migrations/006_claims_beliefs.sql:178` (`beliefs`) |
 | Synthesis | docs/reviews/rfc0021/RFC_0021_GOLD_SET_SYNTHESIS.md |
 
 Decision refs:
@@ -21,29 +21,33 @@ Decision refs:
   - D073
   - D077
   - D078
+  - D079
   - F010
   - O008
 
 Review refs:
-  - none
+  - docs/reviews/rfc0021-rerun-2026-05-13/RFC_0021_GOLD_SET_REVIEW_codex.md
+  - docs/reviews/rfc0021-rerun-2026-05-13/RFC_0021_GOLD_SET_REVIEW_claude.md
+  - docs/reviews/rfc0021-rerun-2026-05-13/RFC_0021_GOLD_SET_REVIEW_gemini.md
 
 Phase refs:
-  - PHASE-0003
+  - PHASE-0003-FOLLOWON
 
-This RFC proposes an **agent-driven interview loop** that samples claims and
+This accepted RFC defines an **agent-driven interview loop** that samples claims and
 beliefs from the local corpus, asks the user one structured question at a time,
 and stores the user's verdicts in an append-only local table. The accumulated
 verdicts function as a continuously-curated gold set that never leaves the
-machine. A CLI surface is in scope as v1 for smoke-testing the backend; a web
-UI is the intended long-term surface but is out of scope here.
+machine. D079 is the binding project decision; this document is the
+implementation contract and provenance for that decision.
 
-This is an idea-capture RFC, not an accepted architecture decision. It does
-not promote the gold set into a hard gate, does not change the existing claim
-or belief schemas, and does not authorize any model or pipeline change. It
-overlaps with — and may eventually subsume parts of — open question O008
-("eval gold-set authorship model"). It does not replace the
-`GOLD_SET_TEMPLATE` Step 5 deliverable; it complements it as a continuous
-extension surface.
+The current implementation is partial but real: migrations 010, 011, and 013
+create the local storage used by the CLI and the RFC 0027 web UI, and
+`engram phase3 interview` exposes the v1 operator surface. This RFC still does
+not promote gold labels into a hard gate, does not change the existing claim or
+belief schemas, and does not authorize any remote model or pipeline dependency.
+It overlaps with open question O008 ("eval gold-set authorship model") and does
+not replace the `GOLD_SET_TEMPLATE` Step 5 deliverable; it complements that
+template as a continuous extension surface.
 
 ## Background
 
@@ -110,18 +114,22 @@ $ engram phase3 interview start --n 10
        Optional rationale [Enter to skip rationale]: _
 ```
 
-Each interview turn is a single `(claim_id | belief_id, typed version triple,
+Each interview turn is a single `(claim_id | belief_id, target-version stamp,
 prompt, verdict, rationale, asked_at, answered_at)` tuple committed to a new
 append-only local table. The agent never modifies the underlying claim or
 belief; verdicts are derived data that joins onto existing IDs.
 
 ### Storage
 
-A new migration `010_gold_labels.sql` adds the parent session table, the
-labels table, the strata and verdict vocabularies, and four schema-level
-triggers. Both the session and label tables land in a single transaction so
-the NOT NULL FK on `gold_labels.session_id` is well-defined from the start
-(matches the `006_claims_beliefs.sql` precedent).
+Migration `010_gold_labels.sql` adds the parent session table, the labels
+table, the strata and verdict vocabularies, and three `gold_labels` triggers:
+append-only, parent-target validation, and privacy-tier carry. Migration
+`011_gold_label_session_targets.sql` then materializes the selected target
+order for resume/web rendering, and migration
+`013_interview_active_learning_state.sql` adds local active-learning opt-in
+events plus selected-target metadata. The session and label tables land in a
+single transaction so the NOT NULL FK on `gold_labels.session_id` is
+well-defined from the start (matches the `006_claims_beliefs.sql` precedent).
 
 ```
 gold_label_sessions
@@ -136,8 +144,10 @@ gold_label_sessions
 ```
 
 The session table is load-bearing: without it, `engram phase3 interview
-resume` and the worked example below are unimplementable, and the candidate
-pool snapshot id (see § Sampler) has nowhere to anchor.
+resume`, `list-sessions`, and the worked example below are unimplementable.
+The selected target order is anchored by `gold_label_session_targets`; the
+`candidate_pool_snapshot_id` is only an opaque session-instance tag in the
+current schema, not a replayable candidate-pool snapshot.
 
 ```
 gold_labels
@@ -146,10 +156,11 @@ gold_labels
   target_kind                     TEXT NOT NULL CHECK (target_kind IN ('claim','belief'))
   target_id                       UUID NOT NULL
 
-  -- Typed version triple. Exactly one of the two triples is populated,
-  -- selected by target_kind, mirroring the columns on `claims` (RFC 0011)
-  -- and `belief_audit` (RFC 0011 Stage B / RFC 0018) so equality joins
-  -- against the canonical version stamps stay indexed.
+  -- Typed target-version stamp. Exactly one prompt/model pair is populated,
+  -- selected by target_kind. For claims, request_profile_version mirrors the
+  -- claims column. For beliefs, request_profile_version is interview-side
+  -- metadata because beliefs/belief_audit have no canonical request-profile
+  -- column in the current schema.
   extraction_prompt_version       TEXT NULL
   extraction_model_version        TEXT NULL
   consolidation_prompt_version    TEXT NULL
@@ -159,21 +170,21 @@ gold_labels
   prompt_text                     TEXT NOT NULL
   prompt_template_version         TEXT NOT NULL  -- {area}.v{N}.{date_or_decision}.{descriptor} (RFC 0017)
   prompt_template_path            TEXT NOT NULL  -- prompts/interview/<id>_v{N}.md
-  evidence_excerpt                TEXT NULL      -- redacted at export when privacy_tier > ceiling
+  evidence_excerpt                TEXT NULL      -- exported only for rows inside the privacy ceiling
 
   verdict                         TEXT NOT NULL REFERENCES gold_label_verdict_vocabulary(verdict)
   rationale                       TEXT NULL      -- capped at 2000 chars at the application layer
 
-  -- Typed strata (replaces sampler_strata_key JSONB; mirrors predicate_vocabulary, D057).
+  -- Typed strata (replaces sampler_strata_key JSONB; vocabulary-backed by convention).
   stability_class                 TEXT NOT NULL
   conf_band                       TEXT NOT NULL
   recency_band                    TEXT NOT NULL
   belief_status                   TEXT NULL
   strata_extra                    JSONB NOT NULL DEFAULT '{}'::jsonb
 
-  -- Reproducibility / replay stamps.
+  -- Session/sampler stamps. candidate_pool_snapshot_id is not a replayable pool.
   candidate_pool_snapshot_id      UUID NOT NULL
-  active_learning_signal_version  TEXT NULL      -- NULL when bias is off (F018)
+  active_learning_signal_version  TEXT NULL      -- NULL when no active signal is set
 
   sampler_id                      TEXT NOT NULL
   sampler_version                 TEXT NOT NULL
@@ -185,21 +196,24 @@ gold_labels
 Constraints worth naming explicitly:
 
 - `chk_gold_labels_version_triple` — `target_kind = 'claim'` requires the
-  extraction triple populated and the consolidation columns NULL;
-  `target_kind = 'belief'` requires the consolidation triple populated and
-  the extraction columns NULL. `request_profile_version` is required in
-  both shapes.
+  extraction prompt/model pair populated and the consolidation columns NULL;
+  `target_kind = 'belief'` requires the consolidation prompt/model pair
+  populated and the extraction columns NULL. `request_profile_version` is
+  required in both shapes; for belief rows it versions the interview/sampler
+  contract, not a belief-side request profile.
 - `chk_gold_labels_template_path_matches_version` — best-effort CHECK that
   the version embedded in `prompt_template_path` matches
-  `prompt_template_version`; kept lightweight (substring match) so the
-  cost is negligible.
+  `prompt_template_version`; kept lightweight (substring sanity check) so the
+  cost is negligible. It is not a hash or a proof that the prompt file content
+  matches the version.
 - `idx_gold_labels_claim_triple` — btree on `(target_id, extraction_prompt_version,
   extraction_model_version, request_profile_version)` `WHERE target_kind = 'claim'`.
 - `idx_gold_labels_belief_triple` — btree on `(target_id, consolidation_prompt_version,
   consolidation_model_version, request_profile_version)` `WHERE target_kind = 'belief'`.
+  The third column groups label rows by the interview request profile; it does
+  not join to a canonical `belief_audit.request_profile_version` column.
 
-Triggers (named explicitly, parallel to `claims` / `belief_audit` /
-`claim_audits`):
+Migration 010 triggers:
 
 - `fn_gold_labels_append_only` — `BEFORE UPDATE OR DELETE` raising `P0001`.
   Append-only is enforced at the schema layer, not by policy; later verdicts
@@ -216,10 +230,47 @@ Triggers (named explicitly, parallel to `claims` / `belief_audit` /
   `claims`, `belief` → `beliefs`), refusing dangling references. This
   mirrors the polymorphic mutation guard on `contradictions` and is what
   makes the `(target_kind, target_id)` shape safe.
-- `fn_gold_labels_block_synthetic_audit_input` — CHECK or trigger ensuring
-  no `belief_audit.input_claim_ids` row references a claim derived from a
-  gold-label promotion path. Keeps D044's "no auto-promotion of beliefs
-  from gold labels" intact: see also § Relationship to other artifacts.
+
+There is intentionally no `fn_gold_labels_block_synthetic_audit_input` trigger
+in the current schema. SQL cannot detect "gold-label-derived synthetic claim"
+without a source/origin discriminator on `claims` or a separate synthetic-claim
+table. D044 is therefore enforced in v1 by the gold-label code path: it records
+labels only, does not synthesize claims, and must not call
+`engram.consolidator.transitions`. If a future RFC adds label-derived claims,
+it must first add a source/origin shape that a SQL guard can inspect.
+
+Migration 011 adds the selected-order table used by CLI resume and RFC 0027
+web rendering:
+
+```
+gold_label_session_targets
+  session_id                      UUID NOT NULL REFERENCES gold_label_sessions(session_id)
+  idx                             INT NOT NULL
+  target_kind                     TEXT NOT NULL CHECK (target_kind IN ('claim','belief'))
+  target_id                       UUID NOT NULL
+  candidate_pool_snapshot_id      UUID NOT NULL
+  extraction_prompt_version       TEXT NULL
+  extraction_model_version        TEXT NULL
+  consolidation_prompt_version    TEXT NULL
+  consolidation_model_version     TEXT NULL
+  request_profile_version         TEXT NOT NULL
+  stability_class                 TEXT NOT NULL
+  conf_band                       TEXT NOT NULL
+  recency_band                    TEXT NOT NULL
+  belief_status                   TEXT NULL
+  inserted_at                     TIMESTAMPTZ NOT NULL
+  active_learning_signal_version  TEXT NULL
+  confidence                      FLOAT NULL
+  observed_at                     TIMESTAMPTZ NULL
+  PRIMARY KEY (session_id, idx)
+```
+
+This table materializes the sampled order only. It makes an opened session
+resumable and renderable without re-sampling, but it does not record the full
+candidate pool, the pre-shuffle ordinal, cooldown eligibility for rejected
+members, or reviewer scores. Full pool replay would require a separate
+candidate-pool snapshot table and a stable `ORDER BY` before seeded
+randomization.
 
 Lookup tables seeded by the migration:
 
@@ -235,17 +286,28 @@ Lookup tables seeded by the migration:
   | `unsure` | user cannot rule |
   | `skip` | user advances without ruling (cooldown-free; see § Cooldowns) |
 
+  These six states are the v1 vocabulary. There is no current eight-verdict
+  contract; adding states requires a follow-up RFC and migration. `false` and
+  `unsupported` are deliberately separate glosses even though world-truth and
+  evidence-grounding can overlap in real life. In v1 the operator chooses the
+  primary failure mode; a mechanical cross-walk to audit reasons remains
+  deferred.
+
   Cross-walk to `audit_reason_vocabulary` is deferred to v1.5 (synthesis-
   carried risk: Step 9 consumers may need a mechanical mapping between
   `false` and the cascade reviewer's "fact-correction" reason; gloss-now,
   mapping-later is the trade we accept).
 
-- `gold_label_strata_vocabulary (key_name TEXT, key_value TEXT, gloss TEXT,
-  PRIMARY KEY (key_name, key_value))` — seeded with v1 strata keys for
+- `gold_label_strata_vocabulary (stratum_kind TEXT, key TEXT, display TEXT,
+  PRIMARY KEY (stratum_kind, key))` — seeded with v1 strata keys for
   `stability_class`, `conf_band`, `recency_band`, `belief_status`. Pattern
-  matches `predicate_vocabulary` (D057). `strata_extra JSONB` on the label
-  row holds non-canonical extension keys that have not yet been promoted
-  into the vocabulary.
+  matches `predicate_vocabulary` (D057), but migration 010 does not attach
+  FK constraints or a validation trigger from `gold_labels` to this vocabulary.
+  Current enforcement is application-side and by operator convention. If Step 9
+  needs hard schema validation, a follow-up migration should add
+  `fn_gold_labels_validate_strata` or separate per-dimension vocabulary FKs.
+  `strata_extra JSONB` on the label row holds non-canonical extension keys that
+  have not yet been promoted into the vocabulary.
 
 The table is not a `gold_entries` table — it does not author the
 `expected_facts` shape consumed by Step 9 evals. Promotion of label clusters
@@ -254,61 +316,64 @@ into formal gold-set entries is a downstream step (see § Open questions).
 ### Sampler
 
 Random sampling burns interviews on easy cases and clusters them by whatever
-the corpus happens to over-produce. The proposal is **stratified sampling
-with opt-in active-learning bias**, version-stamped:
+the corpus happens to over-produce. The implemented v1 sampler is
+**strata-aware, cooldown-aware, and version-stamped**:
 
 - **Source view.** The sampler reads `current_beliefs` (D077) by default
   so status filtering excludes `superseded` and `rejected` rows. Operator
   override is `engram phase3 interview start --include-superseded` for
   adversarial sweeps.
 - **Strata.** Cross product of `stability_class` × confidence band ×
-  recency band, reweighted to over-sample under-labeled strata. For
-  beliefs, also stratify on `belief_status` and on whether a
-  `belief_audit` or `claim_audits` row already exists. Strata are stored
-  as the typed columns described in § Storage and validated against
-  `gold_label_strata_vocabulary` (D057 pattern).
-- **Active-learning bias (opt-in).** Within a stratum, prefer (a) targets
-  near the decision boundary of any existing local reviewer (RFC 0018)
-  and (b) targets with no prior `gold_labels` row at the current version
-  triple. The bias is **off by default** and must not run silently. The
-  operator-visible "at scale" trigger is "RFC 0018 reviewer has produced
-  ≥ 500 audit rows" — that 500 is empirically-tunable and expected to be
-  revisited once any usage data exists. Operators enable the bias with
-  `engram phase3 interview enable-active-learning --signal-version <v>`;
-  the active value is stamped onto every emitted row as
-  `active_learning_signal_version`. Enabling the bias is a project-level
-  decision (see Open Questions); the flag is the mechanism, the
-  activation is the decision.
+  recency band. For beliefs, also record `belief_status`. Strata are stored as
+  the typed columns described in § Storage. The current v1 sampler supports
+  operator filters over these fields and stamps them on labels/session targets;
+  it does not yet reweight draws to over-sample under-labeled strata, and it
+  does not schema-validate the label columns against
+  `gold_label_strata_vocabulary`.
+- **Active-learning signal (opt-in; selection bias deferred).** Operators can
+  enable a local signal with
+  `engram phase3 interview enable-active-learning --signal-version <v>`. The
+  latest signal value is stamped onto later session targets and labels as
+  `active_learning_signal_version`. The current v1 sampler does not yet use
+  RFC 0018 reviewer scores or prior-label gaps to change sample ordering. Any
+  future selection bias must remain off by default, version-stamped, and backed
+  by an explicit project decision once reviewer/audit data exists at useful
+  volume.
 - **Cooldowns.** A target answered in the last N days is suppressed for
-  that window. Defaults per `(target, any verdict)` are tunable via
+  that window. Defaults per `(target, any non-skip verdict)` are tunable via
   `ENGRAM_GOLD_COOLDOWN_<STABILITY_CLASS>_DAYS` env vars (per the Python
   coding standard, RFC 0012):
 
-  | Stability class | `(target, any verdict)` | `(target, verdict)` |
-  |---|---|---|
-  | `mood` | 3d | 1.5d |
-  | `task` | 7d | 3.5d |
-  | `goal` | 14d | 7d |
-  | `preference` | 30d | 15d |
-  | `project_status` | 30d | 15d |
-  | `relationship` | 60d | 30d |
-  | `identity` | 90d | 45d |
+  | Stability class | V1 `(target, any non-skip verdict)` cooldown |
+  |---|---|
+  | `mood` | 3d |
+  | `task` | 7d |
+  | `goal` | 14d |
+  | `preference` | 30d |
+  | `project_status` | 30d |
+  | `relationship` | 60d |
+  | `identity` | 90d |
 
-  Per `(target, verdict)` cooldown defaults to half the `(target, any
-  verdict)` value. `skip` is **cooldown-free** (see § Skip semantics);
-  the cooldown rule applies only to `true | false | stale | unsupported |
-  unsure`. Empirical tuning is expected post-v1.
-- **Determinism / reproducibility.** Each emitted question is stamped
-  with `(seed, sampler_id, sampler_version, strata_weights)` plus a
-  `candidate_pool_snapshot_id` (UUID identifying the pool the question
-  was drawn from) and `active_learning_signal_version` (NULL when bias
-  is off). The full set is what makes a session re-derivable; without
-  the snapshot id, replay drifts as the corpus grows.
+  `skip` is **cooldown-free** (see § Skip semantics); the cooldown rule applies
+  only to `true | false | stale | unsupported | unsure`. The "half-window per
+  `(target, verdict)`" policy from the earlier design is not implemented in v1;
+  current code uses the latest non-skip label for `(target_kind, target_id)`.
+  Empirical tuning is expected post-v1.
+- **Determinism / reproducibility.** Each emitted question is stamped with
+  `(seed, sampler_id, sampler_version, strata_weights)`, a
+  `candidate_pool_snapshot_id`, and `active_learning_signal_version` when set.
+  In the current implementation the snapshot id is a UUID generated per
+  sampler call; it groups the rows emitted from that call but is not a
+  content-addressed or replayable pool snapshot. Re-rendering/resume stability
+  comes from `gold_label_session_targets`, which stores the selected target
+  order at session creation. Reconstructing the full candidate pool later is
+  not supported by the current schema.
 
-V1 sampler is the simplest version that respects strata + cooldowns + the
-opt-in bias gate; deeper introspection (`inspect-strata-balance`,
-`dry-run`) is deferred to a v1.1 CLI expansion if Phase 3 follow-on
-operators hit a debugging wall.
+V1 sampler is the simplest version that respects strata filters, target
+cooldowns, re-ask caps, active-learning stamps, and selected-order
+materialization. Deeper introspection (`inspect-strata-balance`, `dry-run`),
+true under-labeled-stratum reweighting, and replayable candidate-pool capture
+are deferred until operators have evidence that they are needed.
 
 #### Skip semantics
 
@@ -320,24 +385,23 @@ to v1.5; for v1, repeated skip simply re-surfaces.
 
 ### Interview agent
 
-A locally-run agent (small local model is sufficient — this is reading
-structured rows, not generating freeform claims) renders each sampled target
-into a question using a versioned prompt template:
+A local renderer/agent reads structured rows and renders each sampled target
+into a question using a versioned prompt template. It does not need a remote
+service or a live LLM call:
 
 - For a claim: "Is this an accurate paraphrase of your situation at the
   time of the cited evidence?" + the canonical paraphrase. If a 1-line
   evidence excerpt is rendered, it is stored on the row in
-  `evidence_excerpt` (a separate column from `prompt_text`) so the
-  export path can redact it cleanly when the row's `privacy_tier`
-  exceeds the requested ceiling.
+  `evidence_excerpt` (a separate column from `prompt_text`) so the v1 export
+  can include it only for rows inside the requested privacy ceiling.
 - For a belief: "Is this currently true?" / "Was this true between
   `valid_from` and `valid_to`?" + the canonical paraphrase + an evidence
   count and date span (no raw quotes by default).
 - For a contradiction (RFC 0011 § contradictions): "Which of these is
   closer to the truth, or are both wrong?" Pilot deferred to v1.5
-  (Open Question 3); the polymorphic `(target_kind, target_id)` shape
-  with the parent-validation trigger accommodates it without further
-  schema change.
+  (Open Question 3). The current `target_kind` CHECK accepts only `claim`
+  and `belief`; contradiction-mode questions require a follow-up schema shape
+  for paired targets rather than relying on the existing polymorphic target.
 
 Templates live under `prompts/interview/<id>_v{N}.md`. Each row stores a
 single composite `prompt_template_version` matching RFC 0017's
@@ -357,11 +421,10 @@ auto-vote.
   sessions.
 - `skip` inserts a `skip` verdict row immediately and advances; see
   § Skip semantics above.
-- `rationale` is capped at 2000 chars at the application layer with an
-  80%-warning prompt as the user types past 1600 chars. The prompt
-  shows `[Enter to skip rationale]` so the empty-rationale path is
-  obvious. Richer mid-session break / resume UX is deferred to web v2;
-  CLI v1 leans on `save-and-quit` (which is sufficient).
+- `rationale` is capped at 2000 chars by the schema and storage path. The
+  prompt shows `[Enter to skip rationale]` so the empty-rationale path is
+  obvious. Richer mid-session break / resume UX is handled by the separate RFC
+  0027 web surface; CLI v1 leans on `save-and-quit`.
 
 ### CLI v1 (smoke-test surface)
 
@@ -380,27 +443,27 @@ incompatible with the just-landed command contract:
 
 Export is local-only for offline analysis. The default for
 `--privacy-tier-max` is **`1`** (fail-closed Tier 1 ceiling): higher
-tiers require an explicit `--privacy-tier-max <N>` opt-in. Combined with
-the separate `evidence_excerpt` column, the export path redacts the
-excerpt whenever the row's `privacy_tier` exceeds the requested ceiling.
+tiers require an explicit `--privacy-tier-max <N>` opt-in. The current export
+filters out rows whose `privacy_tier` exceeds that ceiling; it does not emit a
+redacted placeholder row for higher-tier labels.
 
 `--ignore-cooldown` relaxes the cooldown filter only; **no flag
 combination relaxes the privacy tier ceiling below the default**, and
-`--ignore-cooldown` does not relax strata-weight floors either. The
-ceiling is the only one-way ratchet in the CLI surface.
+`--ignore-cooldown` does not relax the separate re-ask cap unless
+`--ignore-reask-cap` is also set. The ceiling is the only one-way ratchet in
+the CLI surface.
 
 CLI v1 is a thin loop over the sampler + storage. Its job is to prove the
 schema, the sampler, the version stamping, and the idempotent commit
 behavior. `list-sessions` and `coverage` exist specifically to debug
-append-only failures and discover session ids; richer dashboards belong
-to the v2 web surface.
+append-only failures and discover session ids; `coverage` is currently a simple
+count-by-`stability_class` view, not a full strata dashboard.
 
-### Web UI (v2 — out of scope here)
+### Web UI (separate RFC 0027 surface)
 
-Captured here only to clarify v1 boundaries. The web surface is the only
-plausible interview UX for a non-developer user; CLI v1 exists to keep the
-backend contract honest before that work starts. Web surface design is a
-separate RFC.
+Captured here only to clarify ownership. RFC 0027 / Spec 0027 defines the
+local web UI and adds `engram phase3 interview serve`; RFC 0021 owns the
+gold-label storage, sampler, verdict, and CLI contract that the web UI reuses.
 
 ## Worked example
 
@@ -410,13 +473,14 @@ Single CLI session; numbers are illustrative.
 $ engram phase3 interview start --n 5 --seed 4
 session: gl-sess-2026-05-07-00 (gold_label_sessions row, started_at=2026-05-07T10:14Z)
 sampler: stratified.v1, seed=4, strata={stability x conf-band x recency}
-candidate_pool_snapshot: cps-2026-05-07-00     active_learning: off
+candidate_pool_tag: 0f0c... (opaque UUID)     active_learning: off
+selected_order: materialized in gold_label_session_targets
 
 [1/5] belief b-7f3a... "user works at Acme Corp"  status=accepted, conf=0.87
       stability=project_status, ev=3 msgs over 9mo (2024-11 .. 2025-08)
       version: consolidation_prompt=cons.v3.2026-04.tighten,
                consolidation_model=qwen2.5-7b.20260315,
-               request_profile=interview.v1.2026-05.smoke
+               interview_request_profile=interview.v1.d079.initial
       Q: Is this currently true?
       [t]rue / [f]alse / [s]tale / [u]nsupported / unsure / [skip - ask later]
       > t
@@ -426,7 +490,7 @@ candidate_pool_snapshot: cps-2026-05-07-00     active_learning: off
       stability=identity, conf=0.62
       version: extraction_prompt=extract.v5.2026-03.predicates,
                extraction_model=qwen2.5-7b.20260301,
-               request_profile=interview.v1.2026-05.smoke
+               request_profile=extractor.v5.2026-03.local
       Q: Is this an accurate paraphrase at the time of the cited evidence?
       [t]rue / [f]alse / [s]tale / [u]nsupported / unsure / [skip - ask later]
       > t
@@ -436,7 +500,7 @@ candidate_pool_snapshot: cps-2026-05-07-00     active_learning: off
       stability=preference, ev=4 msgs over 18mo
       version: consolidation_prompt=cons.v3.2026-04.tighten,
                consolidation_model=qwen2.5-7b.20260315,
-               request_profile=interview.v1.2026-05.smoke
+               interview_request_profile=interview.v1.d079.initial
       Q: Is this currently true?
       [t]rue / [f]alse / [s]tale / [u]nsupported / unsure / [skip - ask later]
       > stale
@@ -446,7 +510,7 @@ candidate_pool_snapshot: cps-2026-05-07-00     active_learning: off
       stability=goal, conf=0.55
       version: extraction_prompt=extract.v5.2026-03.predicates,
                extraction_model=qwen2.5-7b.20260301,
-               request_profile=interview.v1.2026-05.smoke
+               request_profile=extractor.v5.2026-03.local
       Q: Is this an accurate paraphrase at the time of the cited evidence?
       [t]rue / [f]alse / [s]tale / [u]nsupported / unsure / [skip - ask later]
       > unsure
@@ -456,7 +520,7 @@ candidate_pool_snapshot: cps-2026-05-07-00     active_learning: off
       stability=relationship, ev=1 msg
       version: consolidation_prompt=cons.v3.2026-04.tighten,
                consolidation_model=qwen2.5-7b.20260315,
-               request_profile=interview.v1.2026-05.smoke
+               interview_request_profile=interview.v1.d079.initial
       Q: Is this currently true?
       [t]rue / [f]alse / [s]tale / [u]nsupported / unsure / [skip - ask later]
       > t
@@ -467,12 +531,14 @@ session summary: 3 true, 0 false, 1 stale, 0 unsupported, 1 unsure, 0 skip.
 session marked completed_at=2026-05-07T10:23Z.
 ```
 
-After session: a `current_gold_label` view returns the most recent verdict
-per `(target_kind, target_id, version_triple)` — tiebreaker is the latest
-`answered_at`, with a verdict-rank fallback (`true` / `false` / `stale` /
-`unsupported` outrank `unsure` / `skip`). Re-asks under the same version
-triple are capped at 3 by default, with operator override. The
-`belief_audit`, `claim_audits`, and `contradictions` tables are unchanged.
+After session: a `current_gold_label` view returns the most recent verdict per
+`(target_kind, target_id, populated prompt/model pair, request_profile_version)`.
+For beliefs, that request profile is the interview contract stamp. The
+tiebreaker is the latest `answered_at`, with a verdict-rank fallback (`true` /
+`false` / `stale` / `unsupported` outrank `unsure` / `skip`). Re-asks under the
+same stored version shape are capped by the sampler at 3 by default, with
+operator override. The `belief_audit`, `claim_audits`, and `contradictions`
+tables are unchanged.
 
 ## Privacy and provenance
 
@@ -491,20 +557,23 @@ triple are capped at 3 by default, with operator override. The
   flag combination relaxes the ceiling below the default — there is no
   "user's working tier" concept in Engram, and the RFC does not
   introduce one.
-- **Excerpt redaction.** Where a 1-line evidence excerpt is rendered, it
-  is stored in the dedicated `evidence_excerpt` column rather than
-  embedded in `prompt_text`. The export path drops `evidence_excerpt`
-  on any row whose `privacy_tier` exceeds the requested ceiling. The
-  `prompt_text` column contains the rendered question, which the user
-  has by definition seen.
+- **Excerpt handling.** Where a 1-line evidence excerpt is rendered, it is
+  stored in the dedicated `evidence_excerpt` column rather than embedded in
+  `prompt_text`. The v1 export path filters out rows above the requested
+  privacy ceiling, so there is no separate "keep row but strip excerpt" branch
+  for high-tier rows. Future contradiction-mode or mixed-tier exports need
+  their own redaction rule.
 - **Provenance preserved.** Each label cites the target ID, the typed
-  version triple (claim columns or belief columns, not both), the
-  sampler ID + version + seed + strata weights, the candidate-pool
-  snapshot id, the active-learning signal version (if non-NULL), the
-  session id, and the prompt template version + path. A future
-  re-extraction that produces a new claim version does not invalidate
-  prior labels; they remain attached to the version they were authored
-  against (RFC 0017 versioning discipline).
+  prompt/model stamp (claim columns or belief columns, not both), the
+  `request_profile_version`, the sampler ID + version + seed + strata weights,
+  the opaque candidate-pool tag, the active-learning signal version (if
+  non-NULL), the session id, and the prompt template version + path. When
+  `gold_label_session_targets` is present, the selected order is also preserved
+  for resume/rendering. A future re-extraction that produces a new claim
+  version does not invalidate prior labels; they remain attached to the version
+  they were authored against (RFC 0017 versioning discipline). Belief labels
+  are attached to the belief row and its prompt/model stamp; the request
+  profile on those rows is interview-side metadata.
 - **Append-only, schema-enforced.** `fn_gold_labels_append_only`
   (`BEFORE UPDATE OR DELETE`, raises `P0001`) matches the raw-evidence
   rule (D002 / P4). Re-asking produces a new row.
@@ -514,8 +583,11 @@ triple are capped at 3 by default, with operator override. The
 - **RFC 0011** — labels join onto `claims.id` and `beliefs.id`; no schema
   changes inside Phase 3 are required. The existing
   `(extraction_prompt_version, extraction_model_version,
-  request_profile_version)` triple on `claims` is the version stamp; for
-  beliefs, the `belief_audit` version columns are the analogue.
+  request_profile_version)` triple on `claims` is the claim-side version stamp.
+  Beliefs expose `prompt_version` and `model_version`; neither `beliefs` nor
+  `belief_audit` currently exposes a canonical request-profile column. RFC 0021
+  therefore treats `gold_labels.request_profile_version` on belief labels as
+  interview-side metadata, not as a belief derivation join key.
 - **RFC 0017** — interview prompt templates follow the same
   `*_template_version` versioning as extraction prompts.
 - **RFC 0018** — labels are an **input** to the audit cascade reviewer
@@ -527,16 +599,16 @@ triple are capped at 3 by default, with operator override. The
   signal for Step 9 re-extraction cycles and for the post-Phase-3
   adversarial round (Step 6). To keep the rule from leaking through a
   side door: **the gold-label loader must not call
-  `engram.consolidator.transitions` (D052)**, and a CHECK / trigger
-  prevents `belief_audit.input_claim_ids` from referencing any
-  gold-label-derived synthetic claim. This is a code-review invariant
-  on the loader plus a schema-level guard on the audit table; a
-  stronger separate-DB-role enforcement is deliberately not chosen
-  (would cross-cut D052 without need).
+  `engram.consolidator.transitions` (D052)** and must not synthesize claims
+  from labels. There is no current schema-level trigger that can detect
+  "gold-label-derived synthetic claim" because `claims` has no origin
+  discriminator. If future work adds label-derived claims, it must first add an
+  inspectable origin/source shape and then define the SQL guard.
 - **D057 / predicate_vocabulary** — `gold_label_strata_vocabulary`
-  follows the same `(key_name, key_value, gloss)` pattern, with
-  `strata_extra JSONB` carrying any non-canonical extension keys until
-  they are promoted into the vocabulary.
+  follows the same local-vocabulary pattern using `(stratum_kind, key,
+  display)`. Migration 010 seeds canonical strata values but does not enforce
+  them with FKs/triggers on `gold_labels`; `strata_extra JSONB` carries any
+  non-canonical extension keys until they are promoted into the vocabulary.
 - **D073 / audit_reason_vocabulary** — `gold_label_verdict_vocabulary`
   is parallel to it. v1 ships gloss-now; the cross-walk to
   `audit_reason_vocabulary` is deferred to v1.5 (synthesis-carried
@@ -546,7 +618,8 @@ triple are capped at 3 by default, with operator override. The
   `--include-superseded` opts back in for adversarial sweeps.
 - **D078 / RFC 0025** — all CLI commands live under `engram phase3
   interview {start, resume, history, export, list-sessions, coverage,
-  enable-active-learning}`.
+  enable-active-learning}`. RFC 0027 adds `serve` under the same phase-scoped
+  namespace for the local web UI.
 - **F010** — gold authorship has been deferred to "after hand-written
   hits coverage limits." This RFC proposes a continuous authoring surface
   rather than a cross-model judge; the two are complementary, not
@@ -568,6 +641,12 @@ triple are capped at 3 by default, with operator override. The
   intentionally only labels existing rows.
 - **Does not** introduce a remote service, a hosted UI, or any
   third-party API. Local agent, local DB, local model.
+- **Does not** provide full candidate-pool replay. Current storage preserves
+  label provenance and selected-order resume, not all candidates considered by
+  the sampler.
+- **Does not** schema-validate strata values against
+  `gold_label_strata_vocabulary` in migration 010. That remains a small SQL
+  follow-up if Step 9 needs hard guarantees.
 - **Does not** redefine `expected_facts` or the GOLD_SET_TEMPLATE Step 5
   deliverable. The template still owns the cross-system eval contract;
   this RFC produces label data the template can later draw from.
@@ -576,49 +655,58 @@ triple are capped at 3 by default, with operator override. The
 
 ## Open questions
 
-1. **Promotion path from labels to gold-set entries.** *Partially
-   answered.* Per-stability-class cooldowns (F020) plus the 3-reask cap
-   under the same version triple (F012) define how labels accumulate
-   per target; what set of label rows then constitutes evidence for a
-   `GOLD_SET_TEMPLATE` entry remains to be specified. A "k labels
-   agreeing across N days" rule is likely fine for v1.
-2. **Web UI handoff.** When the web surface arrives, does the CLI go away
-   or stay as an admin/back-channel tool? Lean toward keep, since
-   smoke-testing the backend remains useful indefinitely.
+1. **Promotion path from labels to gold-set entries.** *Partially answered.*
+   Per-stability-class target cooldowns plus the sampler-side 3-reask cap under
+   the same stored version shape define how labels accumulate per target; what
+   set of label rows then constitutes evidence for a `GOLD_SET_TEMPLATE` entry
+   remains to be specified. A "k labels agreeing across N days" rule is likely
+   fine for v1.
+2. **Web UI handoff.** *Answered separately by RFC 0027 / D080.* The CLI stays
+   as the backend smoke/admin surface. The local web UI reuses the same storage
+   and materialized session targets.
 3. **Contradiction-mode questions.** Worth piloting? They produce richer
-   signal than per-row verdicts but are harder to render. Defer to v1.5;
-   the polymorphic shape (with the parent-validation trigger) already
-   accommodates the schema.
-4. **Active-learning bias signal source.** *Answered.* RFC 0018 reviewer
-   scores are the feed; the operator-visible "at scale" trigger is "RFC
-   0018 reviewer has produced ≥ 500 audit rows", with that 500
-   empirically-tunable. Activation is gated behind `engram phase3
-   interview enable-active-learning --signal-version <v>` and stamped
-   onto every emitted row as `active_learning_signal_version`. Whether
-   the activation itself warrants a DECISION_LOG entry is its own open
-   project question.
+   signal than per-row verdicts but are harder to render. Defer to v1.5. The
+   current schema only accepts `target_kind IN ('claim','belief')`, so
+   contradiction mode needs a follow-up paired-target shape.
+4. **Active-learning bias signal source.** *Mechanism implemented; selection
+   bias deferred.* `engram phase3 interview enable-active-learning
+   --signal-version <v>` persists a local signal and stamps it onto subsequent
+   rows. The current sampler does not yet consume RFC 0018 reviewer scores or
+   reorder candidates. Turning that stamp into an actual bias should be a
+   separate decision once enough reviewer/audit data exists.
 5. **New-claim capture during interview.** Out of scope here, but a real
    open product question. Likely its own RFC, since it touches raw
    immutability framing.
-6. **Cooldown defaults.** *Answered.* v1 ships per-stability-class
-   defaults (mood 3d, task 7d, goal 14d, preference 30d, project_status
-   30d, relationship 60d, identity 90d) per `(target, any verdict)` and
-   half those values per `(target, verdict)`, tunable via
-   `ENGRAM_GOLD_COOLDOWN_<STABILITY_CLASS>_DAYS` env vars. Empirical
-   re-tuning is expected post-v1.
-7. **Export shape.** JSONL with `(target, verdict, version_triple)` is
-   the minimum; whether additional pivots are useful enough to bake in
-   depends on Step 9 needs.
+6. **Cooldown defaults.** *Answered for v1 target cooldowns.* v1 ships
+   per-stability-class defaults (mood 3d, task 7d, goal 14d, preference 30d,
+   project_status 30d, relationship 60d, identity 90d) per `(target, any
+   non-skip verdict)`, tunable via `ENGRAM_GOLD_COOLDOWN_<STABILITY_CLASS>_DAYS`
+   env vars. Per-verdict half-window cooldowns remain deferred.
+7. **Export shape.** The current JSONL export is a local operator export with
+   fail-closed row filtering. Step 9 likely needs version-rich JSONL with the
+   target prompt/model stamp and request profile; that ingest/export contract is
+   still a follow-up, not something the current CLI output fully satisfies.
+8. **Replayable candidate pools.** Selected-order materialization is enough for
+   resume and web rendering. Full candidate-pool replay requires a new snapshot
+   table, member rows, and a stable pool ordering contract before seeded
+   randomization.
 
 ## Promotion path
 
-1. Reviewed and revised; see `docs/reviews/rfc0021/`.
+1. Reviewed and revised; see `docs/reviews/rfc0021/` and the fresh rerun under
+   `docs/reviews/rfc0021-rerun-2026-05-13/`.
 2. ~~If accepted, add a BUILD_PHASES entry under Phase 3 follow-on or
    Step 5 substrate work; mark this RFC `accepted`.~~ **Done.**
-3. Land migration `010_gold_labels.sql` (gold_label_sessions +
-   gold_labels + the strata and verdict vocabularies + the four named
-   triggers, single transaction) and the sampler/agent/CLI skeleton on
-   a separate branch.
-4. Wire the export path with the fail-closed Tier 1 default and the
-   excerpt-redaction rule; confirm Step 9 eval runners can ingest it.
-5. Defer web UI to its own RFC after CLI v1 produces real label data.
+3. ~~Land migration `010_gold_labels.sql` (gold_label_sessions +
+   gold_labels + the strata and verdict vocabularies + the three
+   `gold_labels` triggers, single transaction) and the sampler/agent/CLI
+   skeleton.~~ **Done.**
+4. ~~Land selected-order materialization for resume/web rendering.~~ **Done via
+   migration `011_gold_label_session_targets.sql` / RFC 0027.**
+5. ~~Wire the export path with the fail-closed Tier 1 default.~~ **Done.** Step
+   9 ingest still needs a version-rich export contract.
+6. ~~Defer web UI to its own RFC.~~ **Done via RFC 0027 / Spec 0027.**
+7. Remaining follow-ups: version-rich Step 9 export/ingest, replayable
+   candidate-pool snapshots if replay becomes necessary, schema-level strata
+   validation if Step 9 needs hard guarantees, and any future synthetic-claim
+   origin shape before a D044 SQL trigger can exist.

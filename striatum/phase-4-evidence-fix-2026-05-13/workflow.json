@@ -1,0 +1,492 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "phase-4-evidence-fix-2026-05-13",
+  "workflow_version": "2026-05-13+scaffold",
+  "name": "Engram Phase 4 Bounded Evidence Fix",
+  "branch": {
+    "mode": "confirm",
+    "suggested_name": "engram/phase4-evidence-fix-2026-05-13",
+    "allow_dirty": true
+  },
+  "coordinator": {
+    "role_id": "operator",
+    "lane_id": "codex"
+  },
+  "lanes": {
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--dangerously-bypass-approvals-and-sandbox", "-"],
+      "capabilities": ["write", "review", "synthesis"],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    },
+    "claude": {
+      "adapter": "process",
+      "display_model": "Claude Opus",
+      "command": ["claude", "--model", "opus", "--dangerously-skip-permissions", "-p"],
+      "capabilities": ["review"],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    },
+    "gemini": {
+      "adapter": "process",
+      "display_model": "Gemini 3.1 Pro Preview",
+      "command": ["gemini", "--model", "gemini-3.1-pro-preview", "--skip-trust", "--yolo", "--prompt", "Execute the Striatum work packet from stdin. Follow the packet exactly, edit only allowed paths, publish required artifacts, and record required Striatum completions or verdicts."],
+      "capabilities": ["review"],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    }
+  },
+  "roles": {
+    "operator": {
+      "definition_path": "striatum/phase-4-tiered-gate-multilane-2026-05-13/roles/operator.md"
+    },
+    "reviewer": {
+      "definition_path": "striatum/phase-4-tiered-gate-multilane-2026-05-13/roles/reviewer.md"
+    },
+    "ledger": {
+      "definition_path": "striatum/phase-4-tiered-gate-multilane-2026-05-13/roles/ledger.md"
+    },
+    "synthesizer": {
+      "definition_path": "striatum/phase-4-tiered-gate-multilane-2026-05-13/roles/synthesizer.md"
+    }
+  },
+  "context_docs": [
+    {"path": "README.md", "required": true},
+    {"path": "HUMAN_REQUIREMENTS.md", "required": true},
+    {"path": "DECISION_LOG.md", "required": true},
+    {"path": "BUILD_PHASES.md", "required": true},
+    {"path": "ROADMAP.md", "required": true},
+    {"path": "SPEC.md", "required": true},
+    {"path": "docs/schema/README.md", "required": true},
+    {"path": "docs/rfcs/0024-phase-4-pre-full-corpus-benchmark-gate.md", "required": true},
+    {"path": "docs/rfcs/0021-gold-set-interview-curation.md", "required": true},
+    {"path": "docs/rfcs/0025-phase-scoped-command-names.md", "required": true},
+    {"path": "docs/process/project-judgment.md", "required": true},
+    {"path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/FINAL_GATE_REVIEW.md", "required": true},
+    {"path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/PROMOTION_SYNTHESIS.md", "required": true},
+    {"path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/FINDINGS_LEDGER.md", "required": true},
+    {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/EVIDENCE_FIX_REPORT.md", "required": true}
+  ],
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 3,
+    "require_disjoint_write_scopes": true
+  },
+  "jobs": [
+    {
+      "id": "env_pytest_evidence",
+      "type": "test",
+      "title": "Initialize environment and run Phase 4 pytest surface",
+      "role_id": "operator",
+      "lane_id": "codex",
+      "objective": "Verify or initialize the local Python environment, run the Phase 4 pytest surface, and publish aggregate-only test evidence without running any corpus job.",
+      "task_prompt": {
+        "inline": "Read the scaffold report. Run only the environment and pytest commands it names. Do not run Phase 4 smoke or any corpus command from this job. Publish aggregate-only results."
+      },
+      "inputs": [
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/EVIDENCE_FIX_REPORT.md", "kind": "scaffold"},
+        {"path": "tests/test_phase4_entities_review.py", "kind": "phase4_test_surface"},
+        {"path": "tests/test_cli.py", "kind": "phase4_cli_test_surface"},
+        {"path": "tests/test_interview_cli.py", "kind": "rfc0021_test_surface"},
+        {"path": "tests/test_interview_sampler.py", "kind": "rfc0021_test_surface"},
+        {"path": "tests/test_interview_storage.py", "kind": "rfc0021_test_surface"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/operations/phase4-build/evidence-fix-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "Makefile", "CHANGELOG.md", "OPERATOR_REPORT.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "env_pytest_evidence",
+          "kind": "test_report",
+          "path": "docs/operations/phase4-build/evidence-fix-2026-05-13/ENV_PYTEST_EVIDENCE.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "tier0_live_smoke_plan",
+      "type": "draft",
+      "title": "Plan bounded live Tier 0 smoke",
+      "role_id": "operator",
+      "lane_id": "codex",
+      "objective": "Plan and gate the live Tier 0 smoke command, keeping execution bounded to LIMIT=25 and preserving blockers if pytest evidence is not clean.",
+      "task_prompt": {
+        "inline": "Use the pytest evidence to decide whether live Tier 0 smoke is eligible. If eligible, plan only make phase4-smoke LIMIT=25. Do not run full corpus, phase4 run, or unbounded build-entities. Publish aggregate-only plan/evidence."
+      },
+      "inputs": [
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/ENV_PYTEST_EVIDENCE.md", "kind": "test_report"},
+        {"path": "docs/rfcs/0024-phase-4-pre-full-corpus-benchmark-gate.md", "kind": "accepted_rfc"},
+        {"path": "Makefile", "kind": "operator_surface"},
+        {"path": "src/engram/cli.py", "kind": "command_surface"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/operations/phase4-build/evidence-fix-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "Makefile", "CHANGELOG.md", "OPERATOR_REPORT.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "tier0_live_smoke_plan",
+          "kind": "handoff",
+          "path": "docs/operations/phase4-build/evidence-fix-2026-05-13/TIER0_LIVE_SMOKE_PLAN.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "rfc0021_entity_pair_slice",
+      "type": "draft",
+      "title": "Define RFC 0021-aligned entity-pair label slice",
+      "role_id": "operator",
+      "lane_id": "codex",
+      "objective": "Define the human-label/entity-pair slice that bridges RFC 0021 claim/belief labels to RFC 0024 same/different entity-pair evidence.",
+      "task_prompt": {
+        "inline": "Define the local-only RFC 0021-aligned entity-pair slice. Item-level pair files must stay ignored; committed output must only include aggregate coverage, denominators, and redacted command shapes."
+      },
+      "inputs": [
+        {"path": "docs/rfcs/0021-gold-set-interview-curation.md", "kind": "accepted_rfc"},
+        {"path": "docs/rfcs/0024-phase-4-pre-full-corpus-benchmark-gate.md", "kind": "accepted_rfc"},
+        {"path": "src/engram/interview/sampler.py", "kind": "label_substrate"},
+        {"path": "src/engram/interview/storage.py", "kind": "label_substrate"},
+        {"path": "src/engram/phase4.py", "kind": "phase4_implementation"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/operations/phase4-build/evidence-fix-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "Makefile", "CHANGELOG.md", "OPERATOR_REPORT.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "rfc0021_entity_pair_slice",
+          "kind": "handoff",
+          "path": "docs/operations/phase4-build/evidence-fix-2026-05-13/RFC0021_ENTITY_PAIR_SLICE.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_action_evidence",
+      "type": "draft",
+      "title": "Collect bounded review-action evidence",
+      "role_id": "operator",
+      "lane_id": "codex",
+      "objective": "Collect or explicitly block live accept, reject, correct, and promote-to-pinned review-action evidence with D017 and D052 audit checks.",
+      "task_prompt": {
+        "inline": "Collect bounded review-action evidence only if the prior test and smoke gates allow it. Commit only action counts, audit counts, status counts, and timings. Do not commit notes, corrections, belief values, or raw ids."
+      },
+      "inputs": [
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/ENV_PYTEST_EVIDENCE.md", "kind": "test_report"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/TIER0_LIVE_SMOKE_PLAN.md", "kind": "handoff"},
+        {"path": "src/engram/phase4.py", "kind": "phase4_implementation"},
+        {"path": "src/engram/cli.py", "kind": "command_surface"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/operations/phase4-build/evidence-fix-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "Makefile", "CHANGELOG.md", "OPERATOR_REPORT.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "review_action_evidence",
+          "kind": "finding",
+          "path": "docs/operations/phase4-build/evidence-fix-2026-05-13/REVIEW_ACTION_EVIDENCE.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "projection_provenance_gap_ledger",
+      "type": "ledger",
+      "title": "Classify projection and provenance gaps",
+      "role_id": "ledger",
+      "lane_id": "codex",
+      "objective": "Classify P4-GATE-L007 through P4-GATE-L015 as resolved by evidence, code/spec follow-up required, or owner decision required.",
+      "task_prompt": {
+        "inline": "Normalize the projection/provenance gaps into a gap ledger. This job may not edit code or canonical docs. Preserve aggregate-only privacy and keep stale BUILD_PHASES wording as out-of-scope documentation debt."
+      },
+      "inputs": [
+        {"path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/FINDINGS_LEDGER.md", "kind": "prior_findings_ledger"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/REVIEW_ACTION_EVIDENCE.md", "kind": "finding"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/RFC0021_ENTITY_PAIR_SLICE.md", "kind": "handoff"},
+        {"path": "src/engram/phase4.py", "kind": "implementation"},
+        {"path": "migrations/009_phase4_entities_review.sql", "kind": "schema"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/operations/phase4-build/evidence-fix-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "Makefile", "CHANGELOG.md", "OPERATOR_REPORT.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "projection_provenance_gap_ledger",
+          "kind": "findings_ledger",
+          "path": "docs/operations/phase4-build/evidence-fix-2026-05-13/PROJECTION_PROVENANCE_GAP_LEDGER.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "tier2_limit500_guardrail",
+      "type": "draft",
+      "title": "Record Tier 2 limit-500 guardrail",
+      "role_id": "operator",
+      "lane_id": "codex",
+      "objective": "Record whether a future Tier 2 bounded preflight is eligible, and preserve the --limit 500 cap or equivalent deterministic fixed-slice requirement.",
+      "task_prompt": {
+        "inline": "Do not run Tier 2. Record eligibility, blockers, and the exact bounded command shape. Any future Tier 2 command must be --limit 500 or an equivalent deterministic fixed slice."
+      },
+      "inputs": [
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/TIER0_LIVE_SMOKE_PLAN.md", "kind": "handoff"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/RFC0021_ENTITY_PAIR_SLICE.md", "kind": "handoff"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/PROJECTION_PROVENANCE_GAP_LEDGER.md", "kind": "findings_ledger"},
+        {"path": "docs/rfcs/0024-phase-4-pre-full-corpus-benchmark-gate.md", "kind": "accepted_rfc"},
+        {"path": "docs/rfcs/0025-phase-scoped-command-names.md", "kind": "accepted_rfc"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/operations/phase4-build/evidence-fix-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "Makefile", "CHANGELOG.md", "OPERATOR_REPORT.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "tier2_limit500_guardrail",
+          "kind": "handoff",
+          "path": "docs/operations/phase4-build/evidence-fix-2026-05-13/TIER2_LIMIT500_GUARDRAIL.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "evidence_fix_synthesis",
+      "type": "synthesis",
+      "title": "Synthesize evidence-fix gate state",
+      "role_id": "synthesizer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Synthesize environment, smoke, label-slice, review-action, projection/provenance, and Tier 2 guardrail evidence into the next gate state without a promotion claim.",
+      "task_prompt": {
+        "inline": "Synthesize the evidence-fix outputs. Use one of: blocked, findings, ready-for-tier2-bounded-preflight, or human-checkpoint. Do not label the result promotion."
+      },
+      "inputs": [
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/ENV_PYTEST_EVIDENCE.md", "kind": "test_report"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/TIER0_LIVE_SMOKE_PLAN.md", "kind": "handoff"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/RFC0021_ENTITY_PAIR_SLICE.md", "kind": "handoff"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/REVIEW_ACTION_EVIDENCE.md", "kind": "finding"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/PROJECTION_PROVENANCE_GAP_LEDGER.md", "kind": "findings_ledger"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/TIER2_LIMIT500_GUARDRAIL.md", "kind": "handoff"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/operations/phase4-build/evidence-fix-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "Makefile", "CHANGELOG.md", "OPERATOR_REPORT.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "evidence_fix_synthesis",
+          "kind": "synthesis",
+          "path": "docs/operations/phase4-build/evidence-fix-2026-05-13/EVIDENCE_FIX_SYNTHESIS.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_entity_label_slice",
+      "type": "review",
+      "title": "Review RFC 0021/entity-pair slice sufficiency",
+      "role_id": "reviewer",
+      "lane_id": "claude",
+      "parallel_group": "evidence_fix_reviews",
+      "fresh_session_required": true,
+      "objective": "Review whether the RFC 0021-aligned entity-pair slice can support RFC 0024 Tier 1 entity-quality evidence without leaking private content.",
+      "task_prompt": {
+        "inline": "Review the evidence-fix synthesis and entity-pair slice. Focus on false-merge/false-split denominators, required predicate/stability coverage, and whether any committed content violates the redaction boundary."
+      },
+      "inputs": [
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/RFC0021_ENTITY_PAIR_SLICE.md", "kind": "handoff"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/EVIDENCE_FIX_SYNTHESIS.md", "kind": "synthesis"},
+        {"path": "docs/rfcs/0021-gold-set-interview-curation.md", "kind": "accepted_rfc"},
+        {"path": "docs/rfcs/0024-phase-4-pre-full-corpus-benchmark-gate.md", "kind": "accepted_rfc"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/operations/phase4-build/evidence-fix-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "Makefile", "CHANGELOG.md", "OPERATOR_REPORT.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "review_entity_label_slice",
+          "kind": "finding",
+          "path": "docs/operations/phase4-build/evidence-fix-2026-05-13/REVIEW_entity_label_slice.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_invariants_and_provenance",
+      "type": "review",
+      "title": "Review Phase 4 invariants and provenance gaps",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "parallel_group": "evidence_fix_reviews",
+      "fresh_session_required": true,
+      "objective": "Review D017/D052 review-action evidence, current_beliefs lifecycle behavior, entity/edge provenance, append-only trigger checks, and Tier 2 guardrails.",
+      "task_prompt": {
+        "inline": "Review the evidence-fix synthesis and projection/provenance gap ledger. Findings first; do not treat planned evidence as executed evidence."
+      },
+      "inputs": [
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/REVIEW_ACTION_EVIDENCE.md", "kind": "finding"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/PROJECTION_PROVENANCE_GAP_LEDGER.md", "kind": "findings_ledger"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/TIER2_LIMIT500_GUARDRAIL.md", "kind": "handoff"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/EVIDENCE_FIX_SYNTHESIS.md", "kind": "synthesis"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/operations/phase4-build/evidence-fix-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "Makefile", "CHANGELOG.md", "OPERATOR_REPORT.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "review_invariants_and_provenance",
+          "kind": "finding",
+          "path": "docs/operations/phase4-build/evidence-fix-2026-05-13/REVIEW_invariants_and_provenance.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_privacy_and_gate_boundary",
+      "type": "review",
+      "title": "Review privacy and gate boundary",
+      "role_id": "reviewer",
+      "lane_id": "gemini",
+      "parallel_group": "evidence_fix_reviews",
+      "fresh_session_required": true,
+      "objective": "Review privacy, local-first constraints, provenance, and explicit non-authorization of full-corpus Phase 4.",
+      "task_prompt": {
+        "inline": "Review the complete evidence-fix output for redaction, local-only constraints, full-corpus non-authorization, and whether Tier 2 remains bounded to --limit 500 or equivalent."
+      },
+      "inputs": [
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/EVIDENCE_FIX_SYNTHESIS.md", "kind": "synthesis"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/TIER2_LIMIT500_GUARDRAIL.md", "kind": "handoff"},
+        {"path": "HUMAN_REQUIREMENTS.md", "kind": "principles"},
+        {"path": "docs/rfcs/0024-phase-4-pre-full-corpus-benchmark-gate.md", "kind": "accepted_rfc"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/operations/phase4-build/evidence-fix-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "Makefile", "CHANGELOG.md", "OPERATOR_REPORT.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "review_privacy_and_gate_boundary",
+          "kind": "finding",
+          "path": "docs/operations/phase4-build/evidence-fix-2026-05-13/REVIEW_privacy_and_gate_boundary.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "evidence_fix_findings_ledger",
+      "type": "ledger",
+      "title": "Record evidence-fix review findings ledger",
+      "role_id": "ledger",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Normalize the evidence-fix review findings into one promotion-impact ledger without promoting Phase 4.",
+      "task_prompt": {
+        "inline": "Normalize independent evidence-fix reviews. Preserve blockers clearly. Do not authorize full-corpus Phase 4."
+      },
+      "inputs": [
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/REVIEW_entity_label_slice.md", "kind": "review"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/REVIEW_invariants_and_provenance.md", "kind": "review"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/REVIEW_privacy_and_gate_boundary.md", "kind": "review"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/operations/phase4-build/evidence-fix-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "Makefile", "CHANGELOG.md", "OPERATOR_REPORT.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "evidence_fix_findings_ledger",
+          "kind": "findings_ledger",
+          "path": "docs/operations/phase4-build/evidence-fix-2026-05-13/FINDINGS_LEDGER.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "final_evidence_fix_review",
+      "type": "review",
+      "title": "Final review of evidence-fix gate state",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Review the evidence-fix synthesis and findings ledger for gate-state correctness, privacy safety, and bounded Tier 2 eligibility.",
+      "task_prompt": {
+        "inline": "Final review: determine whether the evidence-fix loop is blocked, findings-only, ready for Tier 2 bounded preflight, or human-checkpoint. Do not promote Phase 4."
+      },
+      "inputs": [
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/EVIDENCE_FIX_SYNTHESIS.md", "kind": "synthesis"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/FINDINGS_LEDGER.md", "kind": "findings_ledger"},
+        {"path": "docs/rfcs/0024-phase-4-pre-full-corpus-benchmark-gate.md", "kind": "accepted_rfc"},
+        {"path": "docs/rfcs/0021-gold-set-interview-curation.md", "kind": "accepted_rfc"},
+        {"path": "docs/rfcs/0025-phase-scoped-command-names.md", "kind": "accepted_rfc"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/operations/phase4-build/evidence-fix-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "Makefile", "CHANGELOG.md", "OPERATOR_REPORT.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "final_evidence_fix_review",
+          "kind": "finding",
+          "path": "docs/operations/phase4-build/evidence-fix-2026-05-13/FINAL_EVIDENCE_FIX_REVIEW.md",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {"from": "env_pytest_evidence", "to": "tier0_live_smoke_plan", "on": "completed"},
+    {"from": "tier0_live_smoke_plan", "to": "rfc0021_entity_pair_slice", "on": "completed"},
+    {"from": "rfc0021_entity_pair_slice", "to": "review_action_evidence", "on": "completed"},
+    {"from": "review_action_evidence", "to": "projection_provenance_gap_ledger", "on": "completed"},
+    {"from": "projection_provenance_gap_ledger", "to": "tier2_limit500_guardrail", "on": "completed"},
+    {"from": "tier2_limit500_guardrail", "to": "evidence_fix_synthesis", "on": "completed"},
+    {"from": "evidence_fix_synthesis", "to": "review_entity_label_slice", "on": "completed"},
+    {"from": "evidence_fix_synthesis", "to": "review_invariants_and_provenance", "on": "completed"},
+    {"from": "evidence_fix_synthesis", "to": "review_privacy_and_gate_boundary", "on": "completed"},
+    {"from": "review_entity_label_slice", "to": "evidence_fix_findings_ledger", "on": "completed"},
+    {"from": "review_invariants_and_provenance", "to": "evidence_fix_findings_ledger", "on": "completed"},
+    {"from": "review_privacy_and_gate_boundary", "to": "evidence_fix_findings_ledger", "on": "completed"},
+    {"from": "evidence_fix_findings_ledger", "to": "final_evidence_fix_review", "on": "completed"}
+  ],
+  "cycles": []
+}

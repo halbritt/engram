@@ -481,12 +481,12 @@ def test_evidence_layout_caps() -> None:
 
 def test_subject_kind_warning_uses_curated_non_person_terms() -> None:
     conn = MagicMock()
+    conn.execute.return_value.fetchall.return_value = []
     warning = subject_kind_warning(conn, "Hobnob", "persons only")
     assert warning == (
         'subject "Hobnob" looks like a place/business; predicate intent is '
         "persons. Likely a `false` extraction."
     )
-    conn.execute.assert_not_called()
 
 
 def test_subject_kind_warning_uses_active_entity_kind() -> None:
@@ -497,6 +497,12 @@ def test_subject_kind_warning_uses_active_entity_kind() -> None:
         'subject "The Venue" looks like a place/business; predicate intent is '
         "persons. Likely a `false` extraction."
     )
+
+
+def test_subject_kind_warning_suppresses_ambiguous_person_entity() -> None:
+    conn = MagicMock()
+    conn.execute.return_value.fetchall.return_value = [("person",), ("place",)]
+    assert subject_kind_warning(conn, "Jordan", "persons only") is None
 
 
 def test_subject_kind_warning_skips_non_person_hints() -> None:

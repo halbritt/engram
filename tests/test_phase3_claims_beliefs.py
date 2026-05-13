@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import psycopg
@@ -292,6 +293,24 @@ def test_predicate_vocabulary_and_extractor_schema_parity(conn):
     assert "enum" not in relaxed["evidence_message_ids"]["items"]
 
 
+def test_extraction_prompt_version_has_governed_artifact() -> None:
+    prompt_major = EXTRACTION_PROMPT_VERSION.split(".")[1]
+    artifact_path = (
+        Path(__file__).resolve().parents[1]
+        / "prompts"
+        / "extraction"
+        / f"extractor_{prompt_major}.md"
+    )
+    text = artifact_path.read_text(encoding="utf-8")
+    assert f"Version: `{EXTRACTION_PROMPT_VERSION}`" in text
+    assert "D082 is a proposed reservation, not an accepted decision." in text
+    assert "You are a deterministic claim extractor" in text
+    assert "intent: legal or preferred name (persons only)" in text
+    assert '- If no valid claims remain, return exactly {"claims":[]}.' in text
+    assert '- If no valid claims remain, return exactly {{"claims":[]}}.' not in text
+    assert "{{messages}}" in text
+
+
 def test_build_extraction_prompt_surfaces_predicate_intent() -> None:
     segment = SegmentPayload(
         id="segment-1",
@@ -316,6 +335,7 @@ def test_build_extraction_prompt_surfaces_predicate_intent() -> None:
     assert "intent: legal or preferred name (persons only)" in prompt
     assert "intent: software or hardware tool (persons or projects)" in prompt
     assert 'Return one JSON object with key "claims"' in prompt
+    assert '- If no valid claims remain, return exactly {"claims":[]}.' in prompt
 
 
 def test_claim_schema_guards_and_rationale(conn):

@@ -8,7 +8,7 @@ trigger or constraint in isolation.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from psycopg import errors
@@ -19,10 +19,11 @@ from engram.consolidator import CONSOLIDATOR_MODEL_VERSION, CONSOLIDATOR_PROMPT_
 from engram.consolidator.transitions import BeliefPayload, insert_belief
 from engram.extractor import EXTRACTION_PROMPT_VERSION, EXTRACTION_REQUEST_PROFILE_VERSION
 from engram.interview.errors import GoldLabelStorageError
+from engram.interview.sampler import SampledTarget
 from engram.interview.storage import (
     get_active_learning_signal_version,
-    insert_label,
     insert_active_learning_event,
+    insert_label,
     insert_session,
     insert_session_targets,
     list_session_targets,
@@ -31,7 +32,6 @@ from engram.interview.storage import (
     session_target_to_sampled,
     unanswered_session_targets,
 )
-from engram.interview.sampler import SampledTarget
 
 
 def _exec_translated(conn, sql, params=()):  # type: ignore[no-untyped-def]
@@ -89,10 +89,10 @@ def _seed_belief(conn, *, privacy_tier: int = 1) -> str:
         predicate="prefers",
         object_text="vim",
         object_json=None,
-        valid_from=datetime.now(timezone.utc),
+        valid_from=datetime.now(UTC),
         valid_to=None,
-        observed_at=datetime.now(timezone.utc),
-        extracted_at=datetime.now(timezone.utc),
+        observed_at=datetime.now(UTC),
+        extracted_at=datetime.now(UTC),
         status="candidate",
         confidence=0.7,
         evidence_ids=[msg_ids[0]],
@@ -107,7 +107,7 @@ def _seed_belief(conn, *, privacy_tier: int = 1) -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _sampled_claim_target(claim_id: str, *, active_signal: str | None = None) -> SampledTarget:
@@ -177,6 +177,48 @@ def test_session_and_label_happy_path(conn) -> None:
         (session_id,),
     ).fetchone()
     assert completed[0] is not None
+
+
+def test_insert_label_rejects_closed_session(conn) -> None:
+    claim_id = _seed_claim(conn)
+    session_id = insert_session(
+        conn,
+        seed=12,
+        sampler_id="stratified",
+        sampler_version="stratified.v1.d079.initial",
+        strata_weights={},
+    )
+    mark_session_completed(conn, session_id)
+
+    with pytest.raises(GoldLabelStorageError, match="already closed"):
+        insert_label(
+            conn,
+            session_id=session_id,
+            target_kind="claim",
+            target_id=claim_id,
+            version_triple=CLAIM_VERSION_TRIPLE,
+            prompt_template_version="interview.claim.v1.d079.initial",
+            prompt_template_path="prompts/interview/claim_v1.md",
+            prompt_text="Q: Is this an accurate paraphrase?",
+            verdict="true",
+            rationale=None,
+            sampler_id="stratified",
+            sampler_version="stratified.v1.d079.initial",
+            candidate_pool_snapshot_id=str(uuid.uuid4()),
+            active_learning_signal_version=None,
+            stability_class="preference",
+            conf_band="0.6-0.8",
+            recency_band="<7d",
+            belief_status=None,
+            asked_at=_now(),
+            answered_at=_now(),
+        )
+
+    row = conn.execute(
+        "SELECT count(*) FROM gold_labels WHERE session_id = %s",
+        (session_id,),
+    ).fetchone()
+    assert row[0] == 0
 
 
 def test_label_update_is_blocked_by_append_only_trigger(conn) -> None:
@@ -270,6 +312,44 @@ def test_dangling_target_id_is_rejected(conn) -> None:
             target_kind="claim",
             target_id=bogus_target,
             version_triple=CLAIM_VERSION_TRIPLE,
+            prompt_template_version="interview.claim.v1.d079.initial",
+            prompt_template_path="prompts/interview/claim_v1.md",
+            prompt_text="Q",
+            verdict="true",
+            rationale=None,
+            sampler_id="stratified",
+            sampler_version="stratified.v1.d079.initial",
+            candidate_pool_snapshot_id=str(uuid.uuid4()),
+            active_learning_signal_version=None,
+            stability_class="preference",
+            conf_band="0.6-0.8",
+            recency_band="<7d",
+            belief_status=None,
+            asked_at=_now(),
+            answered_at=_now(),
+        )
+
+
+def test_label_version_mismatch_with_parent_is_rejected(conn) -> None:
+    claim_id = _seed_claim(conn)
+    session_id = insert_session(
+        conn,
+        seed=30,
+        sampler_id="stratified",
+        sampler_version="stratified.v1.d079.initial",
+        strata_weights={},
+    )
+    wrong_triple = {
+        **CLAIM_VERSION_TRIPLE,
+        "extraction_model_version": "model-b",
+    }
+    with pytest.raises(GoldLabelStorageError, match="parent claim"):
+        insert_label(
+            conn,
+            session_id=session_id,
+            target_kind="claim",
+            target_id=claim_id,
+            version_triple=wrong_triple,
             prompt_template_version="interview.claim.v1.d079.initial",
             prompt_template_path="prompts/interview/claim_v1.md",
             prompt_text="Q",
@@ -449,6 +529,37 @@ def test_session_targets_round_trip_preserves_active_signal_and_confidence(conn)
     assert reconstructed.observed_at == sampled.observed_at
 
 
+def test_session_target_version_mismatch_with_parent_is_rejected(conn) -> None:
+    claim_id = _seed_claim(conn)
+    session_id = insert_session(
+        conn,
+        seed=31,
+        sampler_id="stratified",
+        sampler_version="stratified.v1.d079.initial",
+        strata_weights={},
+    )
+    sampled = _sampled_claim_target(claim_id)
+    wrong_target = SampledTarget(
+        target_kind=sampled.target_kind,
+        target_id=sampled.target_id,
+        stability_class=sampled.stability_class,
+        confidence=sampled.confidence,
+        observed_at=sampled.observed_at,
+        conf_band=sampled.conf_band,
+        recency_band=sampled.recency_band,
+        belief_status=sampled.belief_status,
+        candidate_pool_snapshot_id=sampled.candidate_pool_snapshot_id,
+        active_learning_signal_version=sampled.active_learning_signal_version,
+        extraction_prompt_version=sampled.extraction_prompt_version,
+        extraction_model_version="model-b",
+        consolidation_prompt_version=sampled.consolidation_prompt_version,
+        consolidation_model_version=sampled.consolidation_model_version,
+        request_profile_version=sampled.request_profile_version,
+    )
+    with pytest.raises(GoldLabelStorageError, match="parent claim"):
+        insert_session_targets(conn, session_id=session_id, sampled=[wrong_target])
+
+
 def test_unanswered_session_targets_skip_recorded_version(conn) -> None:
     claim_id = _seed_claim(conn)
     session_id = insert_session(
@@ -485,3 +596,15 @@ def test_unanswered_session_targets_skip_recorded_version(conn) -> None:
         answered_at=_now(),
     )
     assert unanswered_session_targets(conn, session_id=session_id) == []
+
+
+def test_unanswered_session_targets_rejects_targetless_open_session(conn) -> None:
+    session_id = insert_session(
+        conn,
+        seed=32,
+        sampler_id="stratified",
+        sampler_version="stratified.v1.d079.initial",
+        strata_weights={},
+    )
+    with pytest.raises(GoldLabelStorageError, match="no materialized targets"):
+        unanswered_session_targets(conn, session_id=session_id)

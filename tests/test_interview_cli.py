@@ -15,8 +15,13 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from test_phase2_segments import insert_conversation, insert_generation, insert_segment_row
+from test_phase3_claims_beliefs import insert_extracted_claim
 
 from engram import cli
+from engram.consolidator import CONSOLIDATOR_MODEL_VERSION, CONSOLIDATOR_PROMPT_VERSION
+from engram.consolidator.transitions import BeliefPayload, insert_belief
+from engram.extractor import EXTRACTION_PROMPT_VERSION, EXTRACTION_REQUEST_PROFILE_VERSION
 from engram.interview.sampler import SampledTarget
 
 
@@ -352,15 +357,17 @@ def _build_sampled_target(
     active_learning_signal_version: str | None = None,
 ) -> SampledTarget:
     if target_kind == "claim":
-        ext_prompt: str | None = "ext-prompt-v1"
-        ext_model: str | None = "ext-model-v1"
+        ext_prompt: str | None = EXTRACTION_PROMPT_VERSION
+        ext_model: str | None = "model-a"
         cons_prompt: str | None = None
         cons_model: str | None = None
+        request_profile_version = EXTRACTION_REQUEST_PROFILE_VERSION
     else:
         ext_prompt = None
         ext_model = None
-        cons_prompt = "cons-prompt-v1"
-        cons_model = "cons-model-v1"
+        cons_prompt = CONSOLIDATOR_PROMPT_VERSION
+        cons_model = CONSOLIDATOR_MODEL_VERSION
+        request_profile_version = "interview.v1.d079.initial"
     return SampledTarget(
         target_kind=target_kind,
         target_id=target_id,
@@ -376,8 +383,63 @@ def _build_sampled_target(
         extraction_model_version=ext_model,
         consolidation_prompt_version=cons_prompt,
         consolidation_model_version=cons_model,
-        request_profile_version="profile-v1",
+        request_profile_version=request_profile_version,
     )
+
+
+def _seed_interview_claim(
+    conn: Any,
+    *,
+    content_text: str,
+    predicate: str,
+    object_text: str,
+    stability_class: str,
+) -> tuple[str, str]:
+    conv_id, msg_ids = insert_conversation(conn, [("user", content_text, 1)])
+    gen_id = insert_generation(conn, conv_id)
+    seg_id = insert_segment_row(conn, gen_id, conv_id, msg_ids, active=True)
+    _, claim_id = insert_extracted_claim(
+        conn,
+        segment_id=seg_id,
+        generation_id=gen_id,
+        conversation_id=conv_id,
+        evidence_ids=msg_ids,
+        predicate=predicate,
+        object_text=object_text,
+        stability_class=stability_class,
+        confidence=0.7,
+    )
+    return claim_id, msg_ids[0]
+
+
+def _seed_interview_belief(conn: Any) -> str:
+    claim_id, evidence_id = _seed_interview_claim(
+        conn,
+        content_text="I prefer local-only tooling",
+        predicate="prefers",
+        object_text="local-only tooling",
+        stability_class="preference",
+    )
+    payload = BeliefPayload(
+        subject_text="user",
+        predicate="prefers",
+        object_text="local-only tooling",
+        object_json=None,
+        valid_from=datetime.now(timezone.utc),
+        valid_to=None,
+        observed_at=datetime.now(timezone.utc),
+        extracted_at=datetime.now(timezone.utc),
+        status="candidate",
+        confidence=0.7,
+        evidence_ids=[evidence_id],
+        claim_ids=[claim_id],
+        prompt_version=CONSOLIDATOR_PROMPT_VERSION,
+        model_version=CONSOLIDATOR_MODEL_VERSION,
+        privacy_tier=1,
+        raw_payload={"source": "interview-cli-test"},
+        score_breakdown={"mean": 0.7, "max": 0.7, "min": 0.7, "count": 1, "stddev": 0},
+    )
+    return insert_belief(conn, payload)
 
 
 def test_phase3_interview_start_writes_session_targets(
@@ -396,10 +458,25 @@ def test_phase3_interview_start_writes_session_targets(
     cli.insert_active_learning_event(conn, signal_version="rfc0018.reviewer.v1")
 
     snapshot_id = str(uuid.uuid4())
+    claim_id_1, _ = _seed_interview_claim(
+        conn,
+        content_text="My name is Alex",
+        predicate="has_name",
+        object_text="Alex",
+        stability_class="identity",
+    )
+    belief_id = _seed_interview_belief(conn)
+    claim_id_2, _ = _seed_interview_claim(
+        conn,
+        content_text="I need to write the migration notes",
+        predicate="must_do",
+        object_text="write the migration notes",
+        stability_class="task",
+    )
     sampled = [
         _build_sampled_target(
             target_kind="claim",
-            target_id=str(uuid.uuid4()),
+            target_id=claim_id_1,
             snapshot_id=snapshot_id,
             stability_class="identity",
             conf_band="0.6-0.8",
@@ -407,7 +484,7 @@ def test_phase3_interview_start_writes_session_targets(
         ),
         _build_sampled_target(
             target_kind="belief",
-            target_id=str(uuid.uuid4()),
+            target_id=belief_id,
             snapshot_id=snapshot_id,
             stability_class="preference",
             conf_band="0.4-0.6",
@@ -416,7 +493,7 @@ def test_phase3_interview_start_writes_session_targets(
         ),
         _build_sampled_target(
             target_kind="claim",
-            target_id=str(uuid.uuid4()),
+            target_id=claim_id_2,
             snapshot_id=snapshot_id,
             stability_class="task",
             conf_band="0.0-0.2",
@@ -489,11 +566,11 @@ def test_phase3_interview_start_writes_session_targets(
     assert first[1] == "claim"
     assert first[2] == sampled[0].target_id
     assert first[3] == snapshot_id
-    assert first[4] == "ext-prompt-v1"
-    assert first[5] == "ext-model-v1"
+    assert first[4] == EXTRACTION_PROMPT_VERSION
+    assert first[5] == "model-a"
     assert first[6] is None
     assert first[7] is None
-    assert first[8] == "profile-v1"
+    assert first[8] == EXTRACTION_REQUEST_PROFILE_VERSION
     assert first[9] == "identity"
     assert first[10] == "0.6-0.8"
     assert first[11] == "<30d"
@@ -507,8 +584,8 @@ def test_phase3_interview_start_writes_session_targets(
     assert belief_row[1] == "belief"
     assert belief_row[4] is None
     assert belief_row[5] is None
-    assert belief_row[6] == "cons-prompt-v1"
-    assert belief_row[7] == "cons-model-v1"
+    assert belief_row[6] == CONSOLIDATOR_PROMPT_VERSION
+    assert belief_row[7] == CONSOLIDATOR_MODEL_VERSION
     assert belief_row[12] == "candidate"
     assert _StubSampler.captured_kwargs["strata_weights"] == {"stability_class": "identity"}
     assert _StubSampler.captured_kwargs["active_learning_signal_version"] == (

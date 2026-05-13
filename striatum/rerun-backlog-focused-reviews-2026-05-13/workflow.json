@@ -1,0 +1,321 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "rerun-backlog-focused-reviews-2026-05-13",
+  "workflow_version": "2026-05-13+review-scaffold",
+  "name": "Engram Rerun Backlog Focused Reviews",
+  "branch": {
+    "mode": "confirm",
+    "suggested_name": "engram/rerun-backlog-focused-reviews-2026-05-13",
+    "allow_dirty": true
+  },
+  "coordinator": {
+    "role_id": "ledger",
+    "lane_id": "codex"
+  },
+  "lanes": {
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--dangerously-bypass-approvals-and-sandbox", "-"],
+      "capabilities": ["review", "synthesis"],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    },
+    "claude": {
+      "adapter": "process",
+      "display_model": "Claude Opus",
+      "command": ["claude", "--model", "opus", "--dangerously-skip-permissions", "-p"],
+      "capabilities": ["review"],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    },
+    "gemini": {
+      "adapter": "process",
+      "display_model": "Gemini 3.1 Pro Preview",
+      "command": ["gemini", "--model", "gemini-3.1-pro-preview", "--skip-trust", "--yolo", "--prompt", "Execute the Striatum work packet from stdin. Follow the packet exactly, edit only allowed paths, publish required artifacts, and record required Striatum completions or verdicts."],
+      "capabilities": ["review"],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    }
+  },
+  "roles": {
+    "reviewer": {
+      "definition_path": "striatum/rerun-backlog-focused-reviews-2026-05-13/roles/reviewer.md"
+    },
+    "ledger": {
+      "definition_path": "striatum/rerun-backlog-focused-reviews-2026-05-13/roles/ledger.md"
+    }
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "HUMAN_REQUIREMENTS.md", "required": true},
+    {"path": "DECISION_LOG.md", "required": true},
+    {"path": "BUILD_PHASES.md", "required": true},
+    {"path": "ROADMAP.md", "required": true},
+    {"path": "SPEC.md", "required": true},
+    {"path": "docs/schema/README.md", "required": true},
+    {"path": "docs/process/multi-agent-review-loop.md", "required": true},
+    {"path": "docs/process/project-judgment.md", "required": true},
+    {"path": "docs/reviews/rerun-backlog-2026-05-13/BACKLOG.md", "required": true},
+    {"path": "OPERATOR_REPORT.md", "required": true}
+  ],
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 5,
+    "require_disjoint_write_scopes": true
+  },
+  "cycles": [],
+  "edges": [
+    {"from": "rfc0028_focused_review", "on": "completed", "to": "focused_review_ledger"},
+    {"from": "rfc0027_focused_review", "on": "completed", "to": "focused_review_ledger"},
+    {"from": "rfc0021_contract_re_review", "on": "completed", "to": "focused_review_ledger"},
+    {"from": "rfc0029_design_re_review", "on": "completed", "to": "focused_review_ledger"},
+    {"from": "phase4_evidence_fix_scaffold_review", "on": "completed", "to": "focused_review_ledger"}
+  ],
+  "jobs": [
+    {
+      "id": "rfc0028_focused_review",
+      "type": "review",
+      "title": "Review RFC 0028 prompt provenance and subject-kind warning fixes",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "parallel_group": "focused_reviews",
+      "fresh_session_required": true,
+      "objective": "Perform a focused implementation review of the RFC 0028 backlog fixes for prompt provenance and ambiguous subject-kind warning behavior only.",
+      "task_prompt": {
+        "inline": "Review only RFC 0028 prompt provenance and subject-kind warning fixes. Inspect the assigned surfaces, cite concrete file/line evidence, and publish findings first. Do not implement, revise docs, promote RFC 0028, or make design judgments outside this scope. You may use maximal useful sub-agents internally for this assigned review."
+      },
+      "inputs": [
+        {"path": "docs/reviews/rerun-backlog-2026-05-13/BACKLOG.md", "kind": "backlog"},
+        {"path": "docs/reviews/rfc0028-predicate-intent-promotion-2026-05-13/REVIEW_codex.md", "kind": "prior_review"},
+        {"path": "docs/rfcs/0017-extraction-prompt-versioning.md", "kind": "rfc"},
+        {"path": "docs/rfcs/0028-predicate-intent-surfacing.md", "kind": "rfc"},
+        {"path": "DECISION_LOG.md", "kind": "decision_log"},
+        {"path": "prompts", "kind": "prompt_artifacts"},
+        {"path": "src/engram/extractor.py", "kind": "implementation"},
+        {"path": "src/engram/interview/render.py", "kind": "implementation"},
+        {"path": "migrations/012_predicate_subject_kind_hint.sql", "kind": "migration"},
+        {"path": "tests/test_phase3_claims_beliefs.py", "kind": "test_surface"},
+        {"path": "tests/test_interview_render.py", "kind": "test_surface"},
+        {"path": "tests/test_migrations.py", "kind": "test_surface"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rerun-backlog-focused-reviews-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "prompts/", "docs/rfcs/", "docs/schema/", "CHANGELOG.md", "OPERATOR_REPORT.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "rfc0028_focused_review",
+          "kind": "finding",
+          "path": "docs/reviews/rerun-backlog-focused-reviews-2026-05-13/RFC0028_FOCUSED_REVIEW.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "rfc0027_focused_review",
+      "type": "review",
+      "title": "Review RFC 0027 web privacy and session-state fixes",
+      "role_id": "reviewer",
+      "lane_id": "claude",
+      "parallel_group": "focused_reviews",
+      "fresh_session_required": true,
+      "objective": "Perform a focused implementation review of RFC 0027 web privacy, mutating route, CSRF contract, evidence reachability, and frozen session-state fixes.",
+      "task_prompt": {
+        "inline": "Review only RFC 0027 web/privacy/session-state backlog fixes. Focus on Tier ceilings, mutating GET removal, actual Origin/Sec-Fetch behavior, evidence-scoped reachability, frozen target resume/completion behavior, and baseline docs. Do not implement or broaden the review. You may use maximal useful sub-agents internally for this assigned review."
+      },
+      "inputs": [
+        {"path": "docs/reviews/rerun-backlog-2026-05-13/BACKLOG.md", "kind": "backlog"},
+        {"path": "docs/reviews/rfc0027-rerun-2026-05-13/RFC_0027_INTERVIEW_WEB_UI_REVIEW_codex.md", "kind": "prior_review"},
+        {"path": "docs/rfcs/0027-interview-web-ui.md", "kind": "rfc"},
+        {"path": "docs/specs/0027-interview-web-ui-spec.md", "kind": "spec"},
+        {"path": "HUMAN_REQUIREMENTS.md", "kind": "principles"},
+        {"path": "src/engram/interview/web.py", "kind": "implementation"},
+        {"path": "src/engram/interview/sampler.py", "kind": "implementation"},
+        {"path": "src/engram/interview/storage.py", "kind": "implementation"},
+        {"path": "src/engram/interview/templates", "kind": "templates"},
+        {"path": "migrations/010_gold_labels.sql", "kind": "migration"},
+        {"path": "migrations/011_gold_label_session_targets.sql", "kind": "migration"},
+        {"path": "migrations/013_interview_active_learning_state.sql", "kind": "migration"},
+        {"path": "tests/test_interview_web.py", "kind": "test_surface"},
+        {"path": "tests/test_interview_storage.py", "kind": "test_surface"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rerun-backlog-focused-reviews-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "docs/rfcs/", "docs/specs/", "docs/schema/", "CHANGELOG.md", "OPERATOR_REPORT.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "rfc0027_focused_review",
+          "kind": "finding",
+          "path": "docs/reviews/rerun-backlog-focused-reviews-2026-05-13/RFC0027_FOCUSED_REVIEW.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "rfc0021_contract_re_review",
+      "type": "review",
+      "title": "Re-review RFC 0021 contract text",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "parallel_group": "focused_reviews",
+      "fresh_session_required": true,
+      "objective": "Re-review RFC 0021 contract text against the just-completed backlog revision for truthfulness and implementability.",
+      "task_prompt": {
+        "inline": "Review only RFC 0021 contract text against the rerun findings and current schema/code. Focus on synthetic-audit wording, candidate-pool/session-target replay claims, belief version stamps, strata validation, stale/status wording, and migration baseline truthfulness. Do not implement or promote RFC 0021. You may use maximal useful sub-agents internally for this assigned review."
+      },
+      "inputs": [
+        {"path": "docs/reviews/rerun-backlog-2026-05-13/BACKLOG.md", "kind": "backlog"},
+        {"path": "docs/reviews/rfc0021-rerun-2026-05-13/", "kind": "prior_reviews"},
+        {"path": "docs/rfcs/0021-gold-set-interview-curation.md", "kind": "rfc"},
+        {"path": "DECISION_LOG.md", "kind": "decision_log"},
+        {"path": "migrations/006_claims_beliefs.sql", "kind": "schema"},
+        {"path": "migrations/010_gold_labels.sql", "kind": "schema"},
+        {"path": "migrations/011_gold_label_session_targets.sql", "kind": "schema"},
+        {"path": "migrations/013_interview_active_learning_state.sql", "kind": "schema"},
+        {"path": "src/engram/cli.py", "kind": "implementation"},
+        {"path": "src/engram/interview/sampler.py", "kind": "implementation"},
+        {"path": "src/engram/interview/storage.py", "kind": "implementation"},
+        {"path": "tests/test_interview_cli.py", "kind": "test_surface"},
+        {"path": "tests/test_interview_sampler.py", "kind": "test_surface"},
+        {"path": "tests/test_interview_storage.py", "kind": "test_surface"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rerun-backlog-focused-reviews-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "docs/rfcs/", "docs/schema/", "CHANGELOG.md", "OPERATOR_REPORT.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "rfc0021_contract_re_review",
+          "kind": "finding",
+          "path": "docs/reviews/rerun-backlog-focused-reviews-2026-05-13/RFC0021_CONTRACT_RE_REVIEW.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "rfc0029_design_re_review",
+      "type": "review",
+      "title": "Re-review RFC 0029 design revision",
+      "role_id": "reviewer",
+      "lane_id": "gemini",
+      "parallel_group": "focused_reviews",
+      "fresh_session_required": true,
+      "objective": "Re-review RFC 0029 design revision before any spec or implementation rerun.",
+      "task_prompt": {
+        "inline": "Review only the RFC 0029 design revision. Focus on persistable prior-run artifacts, queue fingerprints, redacted identifiers, read-only DB enforcement, follow-up queues, readiness language, recommendation-vs-promotion wording, and exclusion semantics. Do not draft a spec or implementation. You may use maximal useful sub-agents internally for this assigned review."
+      },
+      "inputs": [
+        {"path": "docs/reviews/rerun-backlog-2026-05-13/BACKLOG.md", "kind": "backlog"},
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/", "kind": "prior_reviews"},
+        {"path": "docs/rfcs/0029-bench-triage-workbench.md", "kind": "rfc"},
+        {"path": "benchmarks/extraction/run_benchmark.py", "kind": "benchmark_surface"},
+        {"path": "HUMAN_REQUIREMENTS.md", "kind": "principles"},
+        {"path": "DECISION_LOG.md", "kind": "decision_log"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rerun-backlog-focused-reviews-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "benchmarks/", "docs/rfcs/", "docs/schema/", "CHANGELOG.md", "OPERATOR_REPORT.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "rfc0029_design_re_review",
+          "kind": "finding",
+          "path": "docs/reviews/rerun-backlog-focused-reviews-2026-05-13/RFC0029_DESIGN_RE_REVIEW.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "phase4_evidence_fix_scaffold_review",
+      "type": "review",
+      "title": "Review Phase 4 evidence-fix scaffold",
+      "role_id": "reviewer",
+      "lane_id": "claude",
+      "parallel_group": "focused_reviews",
+      "fresh_session_required": true,
+      "objective": "Review the Phase 4 evidence-fix scaffold for boundedness, privacy, evidence sufficiency, and non-promoting gate language.",
+      "task_prompt": {
+        "inline": "Review only the Phase 4 evidence-fix scaffold and related prior gate evidence. Confirm whether it remains non-promoting, privacy-preserving, bounded, and clear about Tier 0/Tier 1/Tier 2 eligibility. Do not run commands or authorize full-corpus Phase 4. You may use maximal useful sub-agents internally for this assigned review."
+      },
+      "inputs": [
+        {"path": "docs/reviews/rerun-backlog-2026-05-13/BACKLOG.md", "kind": "backlog"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/EVIDENCE_FIX_REPORT.md", "kind": "scaffold"},
+        {"path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/FINAL_GATE_REVIEW.md", "kind": "prior_gate_review"},
+        {"path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/PROMOTION_SYNTHESIS.md", "kind": "prior_synthesis"},
+        {"path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/FINDINGS_LEDGER.md", "kind": "prior_ledger"},
+        {"path": "docs/rfcs/0024-phase-4-pre-full-corpus-benchmark-gate.md", "kind": "rfc"},
+        {"path": "docs/rfcs/0021-gold-set-interview-curation.md", "kind": "rfc"},
+        {"path": "src/engram/phase4.py", "kind": "implementation"},
+        {"path": "tests/test_phase4_entities_review.py", "kind": "test_surface"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/operations/phase4-build/evidence-fix-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "docs/rfcs/", "docs/schema/", "CHANGELOG.md", "OPERATOR_REPORT.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "phase4_evidence_fix_scaffold_review",
+          "kind": "finding",
+          "path": "docs/operations/phase4-build/evidence-fix-2026-05-13/FOCUSED_SCAFFOLD_REVIEW.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "focused_review_ledger",
+      "type": "ledger",
+      "title": "Synthesize focused review ledger",
+      "role_id": "ledger",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Normalize the five focused review outputs into a backlog-review ledger without promotion or decision authority.",
+      "task_prompt": {
+        "inline": "Synthesize the focused reviews into a ledger. Record findings, blockers, clean checks, and unresolved questions. Explicitly state that accepting these reviews is not promotion, does not accept any RFC, does not authorize Phase 4 full-corpus execution, and does not resolve findings by itself. Do not implement or edit source artifacts."
+      },
+      "inputs": [
+        {"path": "docs/reviews/rerun-backlog-focused-reviews-2026-05-13/RFC0028_FOCUSED_REVIEW.md", "kind": "review"},
+        {"path": "docs/reviews/rerun-backlog-focused-reviews-2026-05-13/RFC0027_FOCUSED_REVIEW.md", "kind": "review"},
+        {"path": "docs/reviews/rerun-backlog-focused-reviews-2026-05-13/RFC0021_CONTRACT_RE_REVIEW.md", "kind": "review"},
+        {"path": "docs/reviews/rerun-backlog-focused-reviews-2026-05-13/RFC0029_DESIGN_RE_REVIEW.md", "kind": "review"},
+        {"path": "docs/operations/phase4-build/evidence-fix-2026-05-13/FOCUSED_SCAFFOLD_REVIEW.md", "kind": "review"},
+        {"path": "docs/reviews/rerun-backlog-2026-05-13/BACKLOG.md", "kind": "backlog"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rerun-backlog-focused-reviews-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "docs/rfcs/", "docs/schema/", "docs/operations/phase4-build/evidence-fix-2026-05-13/EVIDENCE_FIX_REPORT.md", "CHANGELOG.md", "OPERATOR_REPORT.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "focused_review_ledger",
+          "kind": "findings_ledger",
+          "path": "docs/reviews/rerun-backlog-focused-reviews-2026-05-13/FOCUSED_REVIEW_LEDGER.md",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

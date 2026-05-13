@@ -1,0 +1,84 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "rfc-0027-focused-repair-re-review-2026-05-13",
+  "workflow_version": "2026-05-13+web-state-recheck",
+  "name": "RFC 0027 Focused Repair Re-Review",
+  "branch": {
+    "mode": "confirm",
+    "suggested_name": "engram/rfc0027-focused-repair-re-review-2026-05-13",
+    "allow_dirty": true
+  },
+  "coordinator": {
+    "role_id": "reviewer",
+    "lane_id": "gemini"
+  },
+  "lanes": {
+    "gemini": {
+      "adapter": "process",
+      "display_model": "Gemini 3.1 Pro Preview",
+      "command": ["gemini", "--model", "gemini-3.1-pro-preview", "--skip-trust", "--yolo", "--prompt", "Execute the Striatum work packet from stdin. Follow the packet exactly, edit only allowed paths, publish required artifacts, and record required Striatum completions or verdicts."],
+      "capabilities": ["review"],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    }
+  },
+  "roles": {
+    "reviewer": {
+      "definition_path": "striatum/rerun-backlog-focused-reviews-2026-05-13/roles/reviewer.md"
+    }
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "docs/process/multi-agent-review-loop.md", "required": true},
+    {"path": "docs/reviews/rerun-backlog-focused-reviews-2026-05-13/RFC0027_FOCUSED_REVIEW_RECOVERY.md", "required": true},
+    {"path": "striatum/rfc-0027-focused-repair-re-review-2026-05-13/RUNBOOK.md", "required": true}
+  ],
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 1,
+    "require_disjoint_write_scopes": true
+  },
+  "cycles": [],
+  "edges": [],
+  "jobs": [
+    {
+      "id": "rfc0027_web_state_re_review",
+      "type": "review",
+      "title": "Re-review RFC 0027 web privacy and session-state recovery fixes",
+      "role_id": "reviewer",
+      "lane_id": "gemini",
+      "fresh_session_required": true,
+      "objective": "Verify that the RFC 0027 repair resolves the five focused recovery findings without introducing broader web/privacy regressions.",
+      "task_prompt": {
+        "inline": "Review only the RFC 0027 repair after the recovery review found F001-F005. Confirm whether evidence/all now enforces parent-target Tier 1, closed sessions cannot be resumed or mutated, final completion uses remaining frozen version-matching targets rather than URL position, progress counts use the frozen target/version predicate, and targetless open sessions return a useful diagnostic. Do not promote RFC 0027. You may use maximal useful sub-agents internally for this assigned review."
+      },
+      "inputs": [
+        {"path": "docs/reviews/rerun-backlog-focused-reviews-2026-05-13/RFC0027_FOCUSED_REVIEW_RECOVERY.md", "kind": "prior_review"},
+        {"path": "docs/rfcs/0027-interview-web-ui.md", "kind": "rfc"},
+        {"path": "docs/specs/0027-interview-web-ui-spec.md", "kind": "spec"},
+        {"path": "src/engram/interview/web.py", "kind": "implementation"},
+        {"path": "src/engram/interview/storage.py", "kind": "implementation"},
+        {"path": "tests/test_interview_web.py", "kind": "test_surface"},
+        {"path": "tests/test_interview_storage.py", "kind": "test_surface"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rerun-backlog-focused-reviews-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "docs/rfcs/", "docs/specs/", "docs/schema/", "CHANGELOG.md", "OPERATOR_REPORT.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "rfc0027_web_state_re_review",
+          "kind": "finding",
+          "path": "docs/reviews/rerun-backlog-focused-reviews-2026-05-13/RFC0027_WEB_STATE_RE_REVIEW.md",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,393 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13",
+  "workflow_version": "2026-05-13+queued-scaffold",
+  "name": "Engram RFC 0044 Tenant-Aware Phase 1 Memory Integration",
+  "branch": {
+    "mode": "confirm",
+    "suggested_name": "engram/rfc0044-memory-phase1-tenant-isolation",
+    "allow_dirty": true
+  },
+  "coordinator": {
+    "role_id": "terminology_author",
+    "lane_id": "codex"
+  },
+  "lanes": {
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--dangerously-bypass-approvals-and-sandbox", "-"],
+      "capabilities": ["write", "review", "synthesis"],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    },
+    "claude": {
+      "adapter": "process",
+      "display_model": "Claude Opus",
+      "command": ["claude", "--model", "opus", "--dangerously-skip-permissions", "-p"],
+      "capabilities": ["review"],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    },
+    "gemini": {
+      "adapter": "process",
+      "display_model": "Gemini 3.1 Pro Preview",
+      "command": ["gemini", "--model", "gemini-3.1-pro-preview", "--skip-trust", "--yolo", "--prompt", "Execute the Striatum work packet from stdin. Follow the packet exactly, edit only allowed paths, publish required artifacts, and record required Striatum completions or verdicts."],
+      "capabilities": ["review"],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    }
+  },
+  "roles": {
+    "terminology_author": {
+      "definition_path": "striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/roles/terminology_author.md"
+    },
+    "implementer": {
+      "definition_path": "striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/roles/implementer.md"
+    },
+    "tester": {
+      "definition_path": "striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/roles/tester.md"
+    },
+    "reviewer": {
+      "definition_path": "striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/roles/reviewer.md"
+    },
+    "ledger": {
+      "definition_path": "striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/roles/ledger.md"
+    },
+    "synthesizer": {
+      "definition_path": "striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/roles/synthesizer.md"
+    }
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "HUMAN_REQUIREMENTS.md", "required": true},
+    {"path": "DECISION_LOG.md", "required": true},
+    {"path": "BUILD_PHASES.md", "required": true},
+    {"path": "ROADMAP.md", "required": true},
+    {"path": "SPEC.md", "required": true},
+    {"path": "docs/schema/README.md", "required": true},
+    {"path": "docs/rfcs/0012-python-agentic-coding-standard.md", "required": true},
+    {"path": "docs/process/multi-agent-review-loop.md", "required": true},
+    {"path": "docs/process/project-judgment.md", "required": true},
+    {"path": "CHANGELOG.md", "required": true}
+  ],
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 3,
+    "require_disjoint_write_scopes": true
+  },
+  "cycles": [],
+  "edges": [
+    {"from": "tenant_terminology_handoff", "on": "completed", "to": "implement_phase1"},
+    {"from": "implement_phase1", "on": "completed", "to": "capability_boundary_tests"},
+    {"from": "capability_boundary_tests", "on": "completed", "to": "review_boundary_claude"},
+    {"from": "capability_boundary_tests", "on": "completed", "to": "review_correctness_codex"},
+    {"from": "capability_boundary_tests", "on": "completed", "to": "review_operator_gemini"},
+    {"from": "review_boundary_claude", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_correctness_codex", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_operator_gemini", "on": "completed", "to": "findings_ledger"},
+    {"from": "findings_ledger", "on": "completed", "to": "final_synthesis"}
+  ],
+  "jobs": [
+    {
+      "id": "tenant_terminology_handoff",
+      "type": "draft",
+      "title": "Produce RFC 0044 tenant terminology handoff",
+      "role_id": "terminology_author",
+      "lane_id": "codex",
+      "objective": "Record the tenant/app isolation terminology and RFC amendment notes that must be read before Engram implementation starts.",
+      "task_prompt": {
+        "path": "striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/prompts/tenant_terminology.md"
+      },
+      "inputs": [
+        {"path": "/home/halbritt/git/striatum/ENGRAM_DEVELOPER_REQUEST.md", "kind": "source_request"},
+        {"path": "/home/halbritt/git/striatum/docs/rfcs/0044-engram-phase-1-implementation-spec.md", "kind": "striatum_rfc"},
+        {"path": "HUMAN_REQUIREMENTS.md", "kind": "engram_principles"},
+        {"path": "SPEC.md", "kind": "engram_spec"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "docs/schema/", "DECISION_LOG.md", "CHANGELOG.md", "OPERATOR_REPORT.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "tenant_terminology_handoff",
+          "kind": "handoff",
+          "path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/TENANT_TERMINOLOGY_HANDOFF.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "implement_phase1",
+      "type": "build",
+      "title": "Implement Engram RFC 0044 Phase 1",
+      "role_id": "implementer",
+      "lane_id": "codex",
+      "objective": "Implement tenant-aware Engram Phase 1 Striatum memory integration with bundle ingestion, read-only MCP stdio, capability boundaries, tests, and docs.",
+      "task_prompt": {
+        "path": "striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/prompts/implement.md"
+      },
+      "inputs": [
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/TENANT_TERMINOLOGY_HANDOFF.md", "kind": "tenant_terminology"},
+        {"path": "/home/halbritt/git/striatum/ENGRAM_DEVELOPER_REQUEST.md", "kind": "source_request"},
+        {"path": "/home/halbritt/git/striatum/docs/rfcs/0044-engram-phase-1-implementation-spec.md", "kind": "striatum_rfc"},
+        {"path": "migrations", "kind": "migration_surface"},
+        {"path": "src/engram", "kind": "implementation_surface"},
+        {"path": "tests", "kind": "test_surface"},
+        {"path": "pyproject.toml", "kind": "packaging_surface"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "migrations/",
+          "src/engram/",
+          "tests/",
+          "agent-runner/",
+          "pyproject.toml",
+          "README.md",
+          "SPEC.md",
+          "docs/rfcs/README.md",
+          "docs/schema/README.md",
+          "CHANGELOG.md",
+          "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "HUMAN_REQUIREMENTS.md",
+          "DECISION_LOG.md",
+          "BUILD_PHASES.md",
+          "ROADMAP.md",
+          "docs/reviews/phase3/",
+          "docs/operations/phase4-build/"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "implementation_handoff",
+          "kind": "handoff",
+          "path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/IMPLEMENTATION_HANDOFF.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "capability_boundary_tests",
+      "type": "test",
+      "title": "Run RFC 0044 capability boundary tests",
+      "role_id": "tester",
+      "lane_id": "codex",
+      "objective": "Run focused tests for tenant/corpus isolation, manifest/provenance handling, MCP read-only behavior, and no default personal-memory exposure.",
+      "task_prompt": {
+        "path": "striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/prompts/capability_tests.md"
+      },
+      "inputs": [
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/IMPLEMENTATION_HANDOFF.md", "kind": "implementation_handoff"},
+        {"path": "tests", "kind": "test_surface"},
+        {"path": "src/engram", "kind": "implementation_surface"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "README.md", "SPEC.md", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "capability_boundary_evidence",
+          "kind": "test_report",
+          "path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/CAPABILITY_BOUNDARY_EVIDENCE.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_boundary_claude",
+      "type": "review",
+      "title": "Review RFC 0044 boundary enforcement with Claude",
+      "role_id": "reviewer",
+      "lane_id": "claude",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "reviewer_access_scope": "repo_level",
+      "reviewer_context_policy": "fresh",
+      "review_posture": "security",
+      "objective": "Review tenant/corpus boundary enforcement, local-only posture, and capability refusal behavior.",
+      "task_prompt": {
+        "path": "striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/prompts/review.md"
+      },
+      "inputs": [
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/TENANT_TERMINOLOGY_HANDOFF.md", "kind": "tenant_terminology"},
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/IMPLEMENTATION_HANDOFF.md", "kind": "implementation_handoff"},
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/CAPABILITY_BOUNDARY_EVIDENCE.md", "kind": "test_report"},
+        {"path": "src/engram", "kind": "implementation_surface"},
+        {"path": "tests", "kind": "test_surface"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "README.md", "SPEC.md", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "review_boundary_claude",
+          "kind": "finding",
+          "path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REVIEW_boundary_claude.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_correctness_codex",
+      "type": "review",
+      "title": "Review RFC 0044 implementation correctness with Codex",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "reviewer_access_scope": "repo_level",
+      "reviewer_context_policy": "fresh",
+      "review_posture": "neutral",
+      "objective": "Review migration, ingestion, MCP, packaging, and tests for implementation correctness and phase discipline.",
+      "task_prompt": {
+        "path": "striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/prompts/review.md"
+      },
+      "inputs": [
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/TENANT_TERMINOLOGY_HANDOFF.md", "kind": "tenant_terminology"},
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/IMPLEMENTATION_HANDOFF.md", "kind": "implementation_handoff"},
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/CAPABILITY_BOUNDARY_EVIDENCE.md", "kind": "test_report"},
+        {"path": "migrations", "kind": "migration_surface"},
+        {"path": "src/engram", "kind": "implementation_surface"},
+        {"path": "tests", "kind": "test_surface"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "README.md", "SPEC.md", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "review_correctness_codex",
+          "kind": "finding",
+          "path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REVIEW_correctness_codex.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_operator_gemini",
+      "type": "review",
+      "title": "Review RFC 0044 operator contract with Gemini",
+      "role_id": "reviewer",
+      "lane_id": "gemini",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "reviewer_access_scope": "repo_level",
+      "reviewer_context_policy": "fresh",
+      "review_posture": "custom:operator_contract",
+      "objective": "Review bundle manifest/provenance handling, operator ergonomics, and augmentation-not-dependency contract.",
+      "task_prompt": {
+        "path": "striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/prompts/review.md"
+      },
+      "inputs": [
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/TENANT_TERMINOLOGY_HANDOFF.md", "kind": "tenant_terminology"},
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/IMPLEMENTATION_HANDOFF.md", "kind": "implementation_handoff"},
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/CAPABILITY_BOUNDARY_EVIDENCE.md", "kind": "test_report"},
+        {"path": "README.md", "kind": "docs"},
+        {"path": "SPEC.md", "kind": "docs"},
+        {"path": "src/engram", "kind": "implementation_surface"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "README.md", "SPEC.md", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "review_operator_gemini",
+          "kind": "finding",
+          "path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REVIEW_operator_gemini.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "findings_ledger",
+      "type": "ledger",
+      "title": "Record RFC 0044 findings ledger",
+      "role_id": "ledger",
+      "lane_id": "codex",
+      "objective": "Deduplicate the independent RFC 0044 reviews into one findings ledger before synthesis.",
+      "task_prompt": {
+        "path": "striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/prompts/findings_ledger.md"
+      },
+      "inputs": [
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REVIEW_boundary_claude.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REVIEW_correctness_codex.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REVIEW_operator_gemini.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/CAPABILITY_BOUNDARY_EVIDENCE.md", "kind": "test_report"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "README.md", "SPEC.md", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "findings_ledger",
+          "kind": "findings_ledger",
+          "path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/FINDINGS_LEDGER.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "final_synthesis",
+      "type": "synthesis",
+      "title": "Synthesize RFC 0044 Phase 1 outcome",
+      "role_id": "synthesizer",
+      "lane_id": "codex",
+      "objective": "Synthesize tenant terminology, implementation, capability evidence, and reviews into the final RFC 0044 Phase 1 queue outcome.",
+      "task_prompt": {
+        "path": "striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/prompts/final_synthesis.md"
+      },
+      "inputs": [
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/TENANT_TERMINOLOGY_HANDOFF.md", "kind": "tenant_terminology"},
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/IMPLEMENTATION_HANDOFF.md", "kind": "implementation_handoff"},
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/CAPABILITY_BOUNDARY_EVIDENCE.md", "kind": "test_report"},
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/FINDINGS_LEDGER.md", "kind": "findings_ledger"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "README.md", "SPEC.md", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "final_synthesis",
+          "kind": "synthesis",
+          "path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/FINAL_SYNTHESIS.md",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

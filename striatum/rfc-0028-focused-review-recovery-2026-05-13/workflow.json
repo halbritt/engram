@@ -1,0 +1,83 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "rfc-0028-focused-review-recovery-2026-05-13",
+  "workflow_version": "2026-05-13+prompt-literal-recheck",
+  "name": "RFC 0028 Focused Review Recovery",
+  "branch": {
+    "mode": "confirm",
+    "suggested_name": "engram/rfc0028-focused-review-recovery-2026-05-13",
+    "allow_dirty": true
+  },
+  "coordinator": {
+    "role_id": "reviewer",
+    "lane_id": "codex"
+  },
+  "lanes": {
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--dangerously-bypass-approvals-and-sandbox", "-"],
+      "capabilities": ["review"],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    }
+  },
+  "roles": {
+    "reviewer": {
+      "definition_path": "striatum/rerun-backlog-focused-reviews-2026-05-13/roles/reviewer.md"
+    }
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "docs/process/multi-agent-review-loop.md", "required": true},
+    {"path": "docs/reviews/rerun-backlog-focused-reviews-2026-05-13/RFC0028_FOCUSED_REVIEW.md", "required": true},
+    {"path": "striatum/rfc-0028-focused-review-recovery-2026-05-13/RUNBOOK.md", "required": true}
+  ],
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 1,
+    "require_disjoint_write_scopes": true
+  },
+  "cycles": [],
+  "edges": [],
+  "jobs": [
+    {
+      "id": "rfc0028_prompt_literal_re_review",
+      "type": "review",
+      "title": "Re-review RFC 0028 rendered zero-claim prompt literal",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Verify that the RFC 0028 prompt artifact now records the rendered runtime zero-claim literal and that focused tests guard against f-string source escaping.",
+      "task_prompt": {
+        "inline": "Review only the RFC 0028 prompt literal repair after the prior focused review found escaped double braces in `prompts/extraction/extractor_v9.md`. Confirm whether the governed artifact contains the rendered `{\"claims\":[]}` line, does not contain `{{\"claims\":[]}}`, and tests pin both artifact and runtime prompt behavior. Do not promote RFC 0028 or resolve D082. You may use maximal useful sub-agents internally for this assigned review."
+      },
+      "inputs": [
+        {"path": "docs/reviews/rerun-backlog-focused-reviews-2026-05-13/RFC0028_FOCUSED_REVIEW.md", "kind": "prior_review"},
+        {"path": "prompts/extraction/extractor_v9.md", "kind": "prompt_artifact"},
+        {"path": "tests/test_phase3_claims_beliefs.py", "kind": "test_surface"},
+        {"path": "src/engram/extractor.py", "kind": "implementation"},
+        {"path": "docs/rfcs/0028-predicate-intent-surfacing.md", "kind": "rfc"},
+        {"path": "DECISION_LOG.md", "kind": "decision_log"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rerun-backlog-focused-reviews-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "prompts/", "docs/rfcs/", "docs/schema/", "CHANGELOG.md", "OPERATOR_REPORT.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "rfc0028_prompt_literal_re_review",
+          "kind": "finding",
+          "path": "docs/reviews/rerun-backlog-focused-reviews-2026-05-13/RFC0028_PROMPT_LITERAL_RE_REVIEW.md",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

@@ -15,15 +15,13 @@ import importlib
 import os
 import sys
 import uuid
-from contextlib import contextmanager
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from psycopg import errors
 from psycopg.types.json import Jsonb
 
 from engram.consolidator import CONSOLIDATOR_MODEL_VERSION, CONSOLIDATOR_PROMPT_VERSION
@@ -33,9 +31,7 @@ from engram.interview import web as web_module
 from engram.interview.storage import (
     insert_label,
     insert_session,
-    mark_session_completed,
 )
-
 
 # ---------------------------------------------------------------------------
 # DB seed helpers (mirrors ``tests/test_interview_storage.py`` patterns to keep
@@ -56,7 +52,6 @@ from test_phase2_segments import (  # noqa: E402  (sys.path tweak above)
     insert_segment_row,
 )
 from test_phase3_claims_beliefs import insert_extracted_claim  # noqa: E402
-
 
 CLAIM_VERSION_TRIPLE = {
     "extraction_prompt_version": EXTRACTION_PROMPT_VERSION,
@@ -90,7 +85,7 @@ def _seed_claim(conn: Any, *, message_tier: int = 1) -> tuple[str, list[str]]:
     return claim_id, msg_ids
 
 
-def _seed_belief(conn: Any) -> str:
+def _seed_belief(conn: Any, *, privacy_tier: int = 1) -> str:
     conv_id, msg_ids = insert_conversation(conn, [("user", "I prefer vim", 1)])
     gen_id = insert_generation(conn, conv_id)
     seg_id = insert_segment_row(conn, gen_id, conv_id, msg_ids, active=True)
@@ -108,17 +103,17 @@ def _seed_belief(conn: Any) -> str:
         predicate="prefers",
         object_text="vim",
         object_json=None,
-        valid_from=datetime.now(timezone.utc),
+        valid_from=datetime.now(UTC),
         valid_to=None,
-        observed_at=datetime.now(timezone.utc),
-        extracted_at=datetime.now(timezone.utc),
+        observed_at=datetime.now(UTC),
+        extracted_at=datetime.now(UTC),
         status="candidate",
         confidence=0.7,
         evidence_ids=[msg_ids[0]],
         claim_ids=[claim_id],
         prompt_version=BELIEF_VERSION_TRIPLE["consolidation_prompt_version"],
         model_version=BELIEF_VERSION_TRIPLE["consolidation_model_version"],
-        privacy_tier=1,
+        privacy_tier=privacy_tier,
         raw_payload={"source": "rfc0027-web-test"},
         score_breakdown={
             "mean": 0.7, "max": 0.7, "min": 0.7, "count": 1, "stddev": 0,
@@ -186,6 +181,58 @@ def _create_session_with_one_claim(
     return session_id, claim_id, msg_ids
 
 
+def _create_session_with_one_belief(
+    conn: Any, *, belief_tier: int = 1
+) -> tuple[str, str]:
+    """Create a fresh session row + one materialized belief target at idx=0."""
+    belief_id = _seed_belief(conn, privacy_tier=belief_tier)
+    session_id = insert_session(
+        conn,
+        seed=43,
+        sampler_id="stratified",
+        sampler_version="stratified.v1.d079.initial",
+        strata_weights={},
+    )
+    confidence, observed_at, status = conn.execute(
+        "SELECT confidence, observed_at, status FROM beliefs WHERE id = %s",
+        (belief_id,),
+    ).fetchone()
+    conn.execute(
+        """
+        INSERT INTO gold_label_session_targets (
+            session_id, idx, target_kind, target_id,
+            candidate_pool_snapshot_id,
+            extraction_prompt_version, extraction_model_version,
+            consolidation_prompt_version, consolidation_model_version,
+            request_profile_version,
+            stability_class, conf_band, recency_band, belief_status,
+            confidence, observed_at
+        )
+        VALUES (
+            %s, 0, 'belief', %s,
+            %s,
+            NULL, NULL,
+            %s, %s,
+            %s,
+            'preference', '0.6-0.8', '<7d', %s,
+            %s, %s
+        )
+        """,
+        (
+            session_id,
+            belief_id,
+            str(uuid.uuid4()),
+            BELIEF_VERSION_TRIPLE["consolidation_prompt_version"],
+            BELIEF_VERSION_TRIPLE["consolidation_model_version"],
+            BELIEF_VERSION_TRIPLE["request_profile_version"],
+            status,
+            confidence,
+            observed_at,
+        ),
+    )
+    return session_id, belief_id
+
+
 # ---------------------------------------------------------------------------
 # TestClient fixture
 # ---------------------------------------------------------------------------
@@ -208,6 +255,14 @@ def client(monkeypatch: pytest.MonkeyPatch, conn: Any) -> Iterator[TestClient]:
         yield TestClient(web_module.app)
     finally:
         web_module.app.dependency_overrides.pop(web_module._get_conn, None)
+
+
+def _origin_headers(host: str = "127.0.0.1", port: int = 8765) -> dict[str, str]:
+    return {
+        "host": f"{host}:{port}",
+        "origin": f"http://{host}:{port}",
+        "sec-fetch-site": "same-origin",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -247,14 +302,95 @@ def test_index_renders_open_sessions_with_progress(
         conf_band="0.6-0.8",
         recency_band="<7d",
         belief_status=None,
-        asked_at=datetime.now(timezone.utc),
-        answered_at=datetime.now(timezone.utc),
+        asked_at=datetime.now(UTC),
+        answered_at=datetime.now(UTC),
     )
     resp = client.get("/")
     assert resp.status_code == 200
     body = resp.text
     assert "1/3 answered" in body
     assert session_id in body
+
+
+def test_get_session_resume_uses_frozen_version_triple(
+    client: TestClient, conn: Any
+) -> None:
+    session_id, claim_id, _ = _create_session_with_one_claim(conn, n=1)
+    asked = datetime.now(UTC)
+    conn.execute(
+        """
+        INSERT INTO gold_labels (
+            session_id, target_kind, target_id,
+            extraction_prompt_version, extraction_model_version,
+            consolidation_prompt_version, consolidation_model_version,
+            request_profile_version,
+            prompt_template_version, prompt_template_path, prompt_text,
+            evidence_excerpt, verdict, rationale,
+            sampler_id, sampler_version, candidate_pool_snapshot_id,
+            active_learning_signal_version, stability_class, conf_band,
+            recency_band, belief_status, strata_extra,
+            asked_at, answered_at, privacy_tier
+        )
+        VALUES (
+            %s, 'claim', %s,
+            %s, 'model-b',
+            NULL, NULL,
+            %s,
+            'interview.claim.v1.d079.initial',
+            'prompts/interview/claim_v1.md',
+            'Q',
+            NULL, 'true', NULL,
+            'stratified', 'stratified.v1.d079.initial', %s,
+            NULL, 'preference', '0.6-0.8',
+            '<7d', NULL, %s,
+            %s, %s, NULL
+        )
+        """,
+        (
+            session_id,
+            claim_id,
+            CLAIM_VERSION_TRIPLE["extraction_prompt_version"],
+            CLAIM_VERSION_TRIPLE["request_profile_version"],
+            str(uuid.uuid4()),
+            Jsonb({}),
+            asked,
+            asked,
+        ),
+    )
+
+    resp = client.get(f"/sessions/{session_id}", follow_redirects=False)
+    assert resp.status_code == 303
+    assert resp.headers["location"] == f"/sessions/{session_id}/q/1"
+
+    index_resp = client.get("/")
+    assert index_resp.status_code == 200
+    assert "0/1 answered" in index_resp.text
+
+    question_resp = client.get(f"/sessions/{session_id}/q/1")
+    assert question_resp.status_code == 200
+    assert "0/1 answered" in question_resp.text
+
+
+def test_get_session_targetless_open_session_requires_abandon(
+    client: TestClient, conn: Any
+) -> None:
+    session_id = insert_session(
+        conn,
+        seed=44,
+        sampler_id="stratified",
+        sampler_version="stratified.v1.d079.initial",
+        strata_weights={},
+    )
+
+    index_resp = client.get("/")
+    assert index_resp.status_code == 200
+    assert "0/0 answered" in index_resp.text
+
+    resume_resp = client.get(f"/sessions/{session_id}", follow_redirects=False)
+    assert resume_resp.status_code == 409
+    body = resume_resp.json()
+    assert body.get("error") == "session_has_no_materialized_targets"
+    assert body.get("action") == "abandon_required"
 
 
 def test_post_sessions_redirects_to_q1(
@@ -265,7 +401,7 @@ def test_post_sessions_redirects_to_q1(
     resp = client.post(
         "/sessions",
         data={"n": 1, "seed": 7},
-        headers={"origin": "http://127.0.0.1:8765"},
+        headers=_origin_headers(),
         follow_redirects=False,
     )
     assert resp.status_code == 303, resp.text
@@ -287,7 +423,7 @@ def test_post_sessions_empty_corpus_renders_diagnostic(
     resp = client.post(
         "/sessions",
         data={"n": 5, "seed": 7},
-        headers={"origin": "http://127.0.0.1:8765"},
+        headers=_origin_headers(),
         follow_redirects=False,
     )
     assert resp.status_code == 200, resp.text
@@ -325,6 +461,19 @@ def test_get_question_renders(client: TestClient, conn: Any) -> None:
         assert gloss in body, f"missing gloss for {verdict}"
 
 
+def test_get_question_enforces_tier_1_evidence(
+    client: TestClient, conn: Any
+) -> None:
+    session_id, _claim_id, _msg_ids = _create_session_with_one_claim(
+        conn, n=1, message_tier=2
+    )
+    resp = client.get(f"/sessions/{session_id}/q/1")
+    assert resp.status_code == 403
+    body = resp.json()
+    assert body.get("error") == "privacy_tier_ceiling"
+    assert body.get("tier") == 2
+
+
 def test_post_verdict_true_single_click_commit(
     client: TestClient, conn: Any
 ) -> None:
@@ -332,7 +481,7 @@ def test_post_verdict_true_single_click_commit(
     resp = client.post(
         f"/sessions/{session_id}/q/1/verdict",
         data={"verdict": "true", "rationale": ""},
-        headers={"origin": "http://127.0.0.1:8765"},
+        headers=_origin_headers(),
     )
     assert resp.status_code == 200, resp.text
     assert resp.headers.get("hx-redirect") == f"/sessions/{session_id}/q/2"
@@ -354,7 +503,7 @@ def test_post_verdict_skip_single_click_commit(
     resp = client.post(
         f"/sessions/{session_id}/q/1/verdict",
         data={"verdict": "skip", "rationale": ""},
-        headers={"origin": "http://127.0.0.1:8765"},
+        headers=_origin_headers(),
     )
     assert resp.status_code == 200, resp.text
     assert resp.headers.get("hx-redirect") == f"/sessions/{session_id}/q/2"
@@ -372,7 +521,7 @@ def test_post_verdict_false_two_click_flow(
     resp = client.post(
         f"/sessions/{session_id}/q/1/verdict",
         data={"verdict": "false", "rationale": "correct value text"},
-        headers={"origin": "http://127.0.0.1:8765"},
+        headers=_origin_headers(),
     )
     assert resp.status_code == 200, resp.text
     assert resp.headers.get("hx-redirect", "").endswith("/q/2")
@@ -390,7 +539,7 @@ def test_post_verdict_blank_rationale_rejected_server_side(
     resp = client.post(
         f"/sessions/{session_id}/q/1/verdict",
         data={"verdict": "false", "rationale": "   "},
-        headers={"origin": "http://127.0.0.1:8765"},
+        headers=_origin_headers(),
     )
     assert resp.status_code == 422
     assert resp.json() == {"error": "rationale_required", "verdict": "false"}
@@ -439,7 +588,7 @@ def test_post_verdict_trigger_rejection_renders_banner(
     resp = client.post(
         f"/sessions/{session_id}/q/1/verdict",
         data={"verdict": "true", "rationale": ""},
-        headers={"origin": "http://127.0.0.1:8765"},
+        headers=_origin_headers(),
     )
     assert resp.status_code == 200, resp.text
     body = resp.text
@@ -459,7 +608,7 @@ def test_post_verdict_404_unknown_session(client: TestClient) -> None:
     resp = client.post(
         f"/sessions/{fake_id}/q/1/verdict",
         data={"verdict": "true", "rationale": ""},
-        headers={"origin": "http://127.0.0.1:8765"},
+        headers=_origin_headers(),
     )
     assert resp.status_code == 404
 
@@ -471,7 +620,7 @@ def test_post_verdict_404_out_of_range_idx(
     resp = client.post(
         f"/sessions/{session_id}/q/99/verdict",
         data={"verdict": "true", "rationale": ""},
-        headers={"origin": "http://127.0.0.1:8765"},
+        headers=_origin_headers(),
     )
     assert resp.status_code == 404
 
@@ -483,7 +632,7 @@ def test_post_verdict_422_unknown_verdict(
     resp = client.post(
         f"/sessions/{session_id}/q/1/verdict",
         data={"verdict": "garbage", "rationale": ""},
-        headers={"origin": "http://127.0.0.1:8765"},
+        headers=_origin_headers(),
     )
     assert resp.status_code == 422
     body = resp.json()
@@ -516,16 +665,64 @@ def test_post_verdict_403_origin_mismatch(
     resp = client.post(
         f"/sessions/{session_id}/q/1/verdict",
         data={"verdict": "true", "rationale": ""},
-        headers={"origin": "http://evil.example"},
+        headers={
+            "host": "127.0.0.1:8765",
+            "origin": "http://evil.example:8765",
+            "sec-fetch-site": "same-origin",
+        },
     )
     assert resp.status_code == 403
     body = resp.json()
     assert body.get("error") == "origin_mismatch"
 
 
+def test_post_verdict_requires_origin_header(
+    client: TestClient, conn: Any
+) -> None:
+    session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=2)
+    resp = client.post(
+        f"/sessions/{session_id}/q/1/verdict",
+        data={"verdict": "true", "rationale": ""},
+        headers={"host": "127.0.0.1:8765", "sec-fetch-site": "same-origin"},
+    )
+    assert resp.status_code == 403
+    assert resp.json().get("error") == "origin_mismatch"
+
+
+def test_post_verdict_requires_same_origin_sec_fetch(
+    client: TestClient, conn: Any
+) -> None:
+    session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=2)
+    headers = _origin_headers()
+    headers.pop("sec-fetch-site")
+    resp = client.post(
+        f"/sessions/{session_id}/q/1/verdict",
+        data={"verdict": "true", "rationale": ""},
+        headers=headers,
+    )
+    assert resp.status_code == 403
+    assert resp.json().get("error") == "origin_mismatch"
+
+
+def test_post_verdict_rejects_allowed_host_on_wrong_port(
+    client: TestClient, conn: Any
+) -> None:
+    session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=2)
+    resp = client.post(
+        f"/sessions/{session_id}/q/1/verdict",
+        data={"verdict": "true", "rationale": ""},
+        headers={
+            "host": "127.0.0.1:8765",
+            "origin": "http://127.0.0.1:9999",
+            "sec-fetch-site": "same-origin",
+        },
+    )
+    assert resp.status_code == 403
+    assert resp.json().get("error") == "origin_mismatch"
+
+
 def test_allowed_origin_hosts_default_is_loopback_only() -> None:
     """Default allowlist is the loopback set, no env var set (D081)."""
-    import importlib
 
     import engram.interview.web as web
 
@@ -567,29 +764,132 @@ def test_post_verdict_completes_session_at_n(
     resp1 = client.post(
         f"/sessions/{session_id}/q/1/verdict",
         data={"verdict": "true"},
-        headers={"origin": "http://127.0.0.1:8765"},
+        headers=_origin_headers(),
     )
     assert resp1.status_code == 200
-    # Answer Q2 — should HX-Redirect to /complete.
+    # Answer Q2. The final POST should mark complete inside the guarded
+    # verdict transaction; no mutating GET is needed.
     resp2 = client.post(
         f"/sessions/{session_id}/q/2/verdict",
         data={"verdict": "true"},
-        headers={"origin": "http://127.0.0.1:8765"},
+        headers=_origin_headers(),
     )
     assert resp2.status_code == 200, resp2.text
     redirect = resp2.headers.get("hx-redirect")
-    assert redirect == f"/sessions/{session_id}/complete"
-    # Hit the /complete URL to actually mark it completed (the GET path
-    # mirrors the POST behavior so htmx redirects work).
-    resp3 = client.get(
-        f"/sessions/{session_id}/complete", follow_redirects=False
-    )
-    assert resp3.status_code == 303
+    assert redirect == "/"
     completed_at = conn.execute(
         "SELECT completed_at FROM gold_label_sessions WHERE session_id = %s",
         (session_id,),
     ).fetchone()[0]
     assert completed_at is not None
+
+
+def test_post_verdict_last_idx_first_does_not_complete_session(
+    client: TestClient, conn: Any
+) -> None:
+    session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=2)
+
+    resp = client.post(
+        f"/sessions/{session_id}/q/2/verdict",
+        data={"verdict": "true"},
+        headers=_origin_headers(),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.headers.get("hx-redirect") == f"/sessions/{session_id}/q/1"
+
+    completed_at = conn.execute(
+        "SELECT completed_at FROM gold_label_sessions WHERE session_id = %s",
+        (session_id,),
+    ).fetchone()[0]
+    assert completed_at is None
+
+    resume_resp = client.get(f"/sessions/{session_id}", follow_redirects=False)
+    assert resume_resp.status_code == 303
+    assert resume_resp.headers["location"] == f"/sessions/{session_id}/q/1"
+
+
+def test_completed_session_rejects_resume_question_and_verdict(
+    client: TestClient, conn: Any
+) -> None:
+    session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=1)
+    complete_resp = client.post(
+        f"/sessions/{session_id}/complete",
+        headers=_origin_headers(),
+        follow_redirects=False,
+    )
+    assert complete_resp.status_code == 303
+
+    resume_resp = client.get(f"/sessions/{session_id}", follow_redirects=False)
+    assert resume_resp.status_code == 409
+    assert resume_resp.json().get("error") == "session_closed"
+
+    question_resp = client.get(f"/sessions/{session_id}/q/1")
+    assert question_resp.status_code == 409
+    assert question_resp.json().get("error") == "session_closed"
+
+    verdict_resp = client.post(
+        f"/sessions/{session_id}/q/1/verdict",
+        data={"verdict": "true"},
+        headers=_origin_headers(),
+    )
+    assert verdict_resp.status_code == 409
+    assert verdict_resp.json().get("error") == "session_closed"
+    n_labels = conn.execute(
+        "SELECT count(*) FROM gold_labels WHERE session_id = %s",
+        (session_id,),
+    ).fetchone()[0]
+    assert n_labels == 0
+
+
+def test_abandoned_session_rejects_question_verdict_complete_and_reabandon(
+    client: TestClient, conn: Any
+) -> None:
+    session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=1)
+    abandon_resp = client.post(
+        f"/sessions/{session_id}/abandon",
+        headers=_origin_headers(),
+        follow_redirects=False,
+    )
+    assert abandon_resp.status_code == 303
+
+    question_resp = client.get(f"/sessions/{session_id}/q/1")
+    assert question_resp.status_code == 409
+    assert question_resp.json().get("error") == "session_closed"
+
+    verdict_resp = client.post(
+        f"/sessions/{session_id}/q/1/verdict",
+        data={"verdict": "true"},
+        headers=_origin_headers(),
+    )
+    assert verdict_resp.status_code == 409
+    assert verdict_resp.json().get("error") == "session_closed"
+
+    complete_resp = client.post(
+        f"/sessions/{session_id}/complete",
+        headers=_origin_headers(),
+        follow_redirects=False,
+    )
+    assert complete_resp.status_code == 409
+
+    reabandon_resp = client.post(
+        f"/sessions/{session_id}/abandon",
+        headers=_origin_headers(),
+        follow_redirects=False,
+    )
+    assert reabandon_resp.status_code == 409
+
+
+def test_get_complete_is_not_a_mutating_route(
+    client: TestClient, conn: Any
+) -> None:
+    session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=1)
+    resp = client.get(f"/sessions/{session_id}/complete", follow_redirects=False)
+    assert resp.status_code == 405
+    completed_at = conn.execute(
+        "SELECT completed_at FROM gold_label_sessions WHERE session_id = %s",
+        (session_id,),
+    ).fetchone()[0]
+    assert completed_at is None
 
 
 def test_get_messages_tier_1_enforced(client: TestClient, conn: Any) -> None:
@@ -688,10 +988,77 @@ def test_get_message_unreachable_from_session_returns_404(
     assert resp.status_code == 404
 
 
-def test_get_messages_context_caps(
+def test_get_message_same_conversation_non_evidence_returns_404(
     client: TestClient, conn: Any
 ) -> None:
     conv_id, msg_ids = insert_conversation(
+        conn,
+        [
+            ("user", "cited evidence", 1),
+            ("assistant", "same conversation but not cited", 1),
+        ],
+        conversation_tier=1,
+    )
+    gen_id = insert_generation(conn, conv_id)
+    seg_id = insert_segment_row(conn, gen_id, conv_id, msg_ids, active=True)
+    _, claim_id = insert_extracted_claim(
+        conn,
+        segment_id=seg_id,
+        generation_id=gen_id,
+        conversation_id=conv_id,
+        evidence_ids=[msg_ids[0]],
+        predicate="drives",
+        object_text="Subaru",
+    )
+    session_id = insert_session(
+        conn,
+        seed=1,
+        sampler_id="stratified",
+        sampler_version="stratified.v1.d079.initial",
+        strata_weights={},
+    )
+    confidence, observed_at = conn.execute(
+        "SELECT confidence, extracted_at FROM claims WHERE id = %s",
+        (claim_id,),
+    ).fetchone()
+    conn.execute(
+        """
+        INSERT INTO gold_label_session_targets (
+            session_id, idx, target_kind, target_id,
+            candidate_pool_snapshot_id,
+            extraction_prompt_version, extraction_model_version,
+            consolidation_prompt_version, consolidation_model_version,
+            request_profile_version,
+            stability_class, conf_band, recency_band, belief_status,
+            confidence, observed_at
+        )
+        VALUES (%s, 0, 'claim', %s, %s, %s, %s, NULL, NULL, %s,
+                'preference', '0.6-0.8', '<7d', NULL, %s, %s)
+        """,
+        (
+            session_id,
+            claim_id,
+            str(uuid.uuid4()),
+            CLAIM_VERSION_TRIPLE["extraction_prompt_version"],
+            CLAIM_VERSION_TRIPLE["extraction_model_version"],
+            CLAIM_VERSION_TRIPLE["request_profile_version"],
+            confidence,
+            observed_at,
+        ),
+    )
+
+    full_resp = client.get(f"/sessions/{session_id}/messages/{msg_ids[1]}")
+    assert full_resp.status_code == 404
+    context_resp = client.get(
+        f"/sessions/{session_id}/messages/{msg_ids[1]}/context"
+    )
+    assert context_resp.status_code == 404
+
+
+def test_get_messages_context_caps(
+    client: TestClient, conn: Any
+) -> None:
+    _conv_id, msg_ids = insert_conversation(
         conn, [("user", "x", 1)], conversation_tier=1
     )
     session_id = insert_session(
@@ -718,6 +1085,18 @@ def test_get_evidence_all_tier_1_enforced(
     assert resp.status_code == 403
     body = resp.json()
     assert body.get("error") == "privacy_tier_ceiling"
+
+
+def test_get_evidence_all_enforces_parent_target_tier(
+    client: TestClient, conn: Any
+) -> None:
+    # Parent belief is Tier 2 while its cited message remains Tier 1.
+    session_id, _belief_id = _create_session_with_one_belief(conn, belief_tier=2)
+    resp = client.get(f"/sessions/{session_id}/q/1/evidence/all")
+    assert resp.status_code == 403
+    body = resp.json()
+    assert body.get("error") == "privacy_tier_ceiling"
+    assert body.get("tier") == 2
 
 
 def test_get_evidence_all_checks_rows_beyond_preview_limit(
@@ -792,7 +1171,7 @@ def test_post_save_and_quit_discards_in_progress(
     session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=3)
     resp = client.post(
         f"/sessions/{session_id}/save-and-quit",
-        headers={"origin": "http://127.0.0.1:8765"},
+        headers=_origin_headers(),
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -812,7 +1191,7 @@ def test_post_abandon_marks_completed(client: TestClient, conn: Any) -> None:
     session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=3)
     resp = client.post(
         f"/sessions/{session_id}/abandon",
-        headers={"origin": "http://127.0.0.1:8765"},
+        headers=_origin_headers(),
         follow_redirects=False,
     )
     assert resp.status_code == 303

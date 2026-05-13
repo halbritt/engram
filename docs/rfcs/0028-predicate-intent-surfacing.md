@@ -26,7 +26,10 @@ Phase refs:
 
 Implementation note: the owner-directed implementation slice landed in the
 fresh 2026-05-13 author pass. Acceptance / promotion remains pending fresh
-review; no new `DECISION_LOG.md` row is recorded by the implementation pass.
+review. `DECISION_LOG.md` reserves D082 only as a proposed prompt-version
+slot; that reservation is not promotion authority. The governed extraction
+prompt artifact for the live implementation slot is
+`prompts/extraction/extractor_v9.md`.
 
 This RFC proposes that the **predicate vocabulary's `description` column
 become first-class** at three points where it is currently invisible:
@@ -161,11 +164,14 @@ existing rows; a follow-up migration seeds explicit hints for the top
 ~15 predicates from the operator-rationale evidence above). The hint
 is advisory, not a constraint; the schema stays as-is otherwise.
 
-Bump `EXTRACTION_PROMPT_VERSION` per RFC 0017's discipline. Suggested
-new value: `extractor.v6.d082.predicate-intent`. The artifact for the
-new prompt lands at the conventional path under the active extractor
-naming. Existing claim rows stay attached to the prior version
-(RFC 0017 immutability).
+Bump `EXTRACTION_PROMPT_VERSION` per RFC 0017's discipline. Implemented
+value: `extractor.v9.d082.predicate-intent`. The governed prompt artifact
+lands at `prompts/extraction/extractor_v9.md` under the conventional
+extraction-prompt path. `D082` remains a proposed reservation until fresh
+review clears the blockers and the owner promotes the decision; if that
+binding changes, mint a new prompt version per RFC 0017 rather than editing
+the v9 artifact in place. Existing claim rows stay attached to the prior
+version (RFC 0017 immutability).
 
 This is a routine prompt-version bump in the existing machinery; the
 re-extraction surface from RFC 0017 (`engram phase3 re-extract
@@ -367,8 +373,9 @@ continues to be append-only (RFC 0021 § Storage; D079's
    b. `src/engram/extractor.py::build_extraction_prompt` includes the
       description and the new hint in the vocab block. Bump
       `EXTRACTION_PROMPT_VERSION` to
-      `extractor.v9.d082.predicate-intent`. Add a unit test pinning
-      the rendered prompt shape.
+      `extractor.v9.d082.predicate-intent`, with the governed artifact at
+      `prompts/extraction/extractor_v9.md`. Add unit tests pinning the
+      artifact/version join and the rendered prompt shape.
    c. `src/engram/interview/render.py::format_summary_line` renders
       intent on its own line; `fetch_target_display` includes the
       heuristic warning flag. Update golden-output tests in

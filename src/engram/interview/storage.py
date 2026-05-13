@@ -15,8 +15,8 @@ callers in :mod:`engram.interview` see a domain error rather than a raw
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any  # noqa: F401  # used in psycopg signatures below
+from datetime import UTC, datetime
+from typing import Any  # used in psycopg signatures below
 
 import psycopg
 from psycopg import errors
@@ -25,11 +25,10 @@ from psycopg.types.json import Jsonb
 from engram.interview.errors import GoldLabelStorageError
 from engram.interview.sampler import SampledTarget
 
-
 VersionTriple = dict[str, str]
 """Mapping with required keys ``request_profile_version`` plus the kind-specific
-extraction or consolidation pair. Schema-level CHECKs enforce shape; this
-helper does not pre-validate beyond keying into the right columns."""
+extraction or consolidation pair. Helpers validate the triple against the
+parent target before insert; schema-level CHECKs also enforce shape."""
 
 
 @dataclass(frozen=True)
@@ -68,6 +67,94 @@ class SessionTarget:
 
 def _translate_raise(exc: errors.RaiseException) -> GoldLabelStorageError:
     return GoldLabelStorageError(str(exc).strip() or "gold-label storage trigger raised P0001")
+
+
+def _require_target_version_matches_parent(
+    conn: psycopg.Connection,
+    *,
+    table_name: str,
+    target_kind: str,
+    target_id: str,
+    extraction_prompt_version: str | None,
+    extraction_model_version: str | None,
+    consolidation_prompt_version: str | None,
+    consolidation_model_version: str | None,
+    request_profile_version: str | None,
+) -> None:
+    """Reject version triples that do not match the target parent row."""
+    if request_profile_version is None:
+        raise GoldLabelStorageError(
+            "version_triple missing required key request_profile_version"
+        )
+    if target_kind == "claim":
+        row = conn.execute(
+            """
+            SELECT extraction_prompt_version, extraction_model_version,
+                   request_profile_version
+            FROM claims
+            WHERE id = %s
+            """,
+            (target_id,),
+        ).fetchone()
+        if row is None:
+            raise GoldLabelStorageError(
+                f"{table_name} target_id {target_id} not found in claims"
+            )
+        if (
+            extraction_prompt_version != row[0]
+            or extraction_model_version != row[1]
+            or request_profile_version != row[2]
+            or consolidation_prompt_version is not None
+            or consolidation_model_version is not None
+        ):
+            raise GoldLabelStorageError(
+                f"{table_name} version triple does not match parent claim {target_id}"
+            )
+        return
+
+    if target_kind == "belief":
+        row = conn.execute(
+            """
+            SELECT prompt_version, model_version
+            FROM beliefs
+            WHERE id = %s
+            """,
+            (target_id,),
+        ).fetchone()
+        if row is None:
+            raise GoldLabelStorageError(
+                f"{table_name} target_id {target_id} not found in beliefs"
+            )
+        if (
+            consolidation_prompt_version != row[0]
+            or consolidation_model_version != row[1]
+            or extraction_prompt_version is not None
+            or extraction_model_version is not None
+        ):
+            raise GoldLabelStorageError(
+                f"{table_name} version triple does not match parent belief {target_id}"
+            )
+        return
+
+    raise GoldLabelStorageError(f"{table_name} unknown target_kind: {target_kind}")
+
+
+def _require_open_session_for_label(conn: psycopg.Connection, session_id: str) -> None:
+    """Reject verdict writes for missing or terminal sessions."""
+    row = conn.execute(
+        """
+        SELECT completed_at
+        FROM gold_label_sessions
+        WHERE session_id = %s
+        """,
+        (session_id,),
+    ).fetchone()
+    if row is None:
+        raise GoldLabelStorageError(f"gold_labels session_id {session_id} not found")
+    if row[0] is not None:
+        raise GoldLabelStorageError(
+            f"gold_labels session_id {session_id} is already closed"
+        )
 
 
 def insert_active_learning_event(
@@ -186,24 +273,30 @@ def insert_label(
 ) -> str:
     """Insert a new ``gold_labels`` row and return its UUID as a string.
 
-    The schema-level ``CHECK`` and the three ``BEFORE INSERT`` triggers do the
-    work of validating the version triple, refusing dangling ``target_id``
-    references, and carrying ``privacy_tier`` from the parent row. This helper
-    only routes columns into the right slots and translates any raised
-    ``P0001`` into :class:`GoldLabelStorageError`.
+    This helper validates the version triple against the parent target before
+    insert. The schema-level ``CHECK`` and ``BEFORE INSERT`` triggers still
+    enforce shape, reject dangling ``target_id`` references from raw SQL, and
+    carry ``privacy_tier`` from the parent row.
     """
     extraction_prompt_version = version_triple.get("extraction_prompt_version")
     extraction_model_version = version_triple.get("extraction_model_version")
     consolidation_prompt_version = version_triple.get("consolidation_prompt_version")
     consolidation_model_version = version_triple.get("consolidation_model_version")
     request_profile_version = version_triple.get("request_profile_version")
-    if request_profile_version is None:
-        raise GoldLabelStorageError(
-            "version_triple missing required key request_profile_version"
-        )
+    _require_target_version_matches_parent(
+        conn,
+        table_name="gold_labels",
+        target_kind=target_kind,
+        target_id=target_id,
+        extraction_prompt_version=extraction_prompt_version,
+        extraction_model_version=extraction_model_version,
+        consolidation_prompt_version=consolidation_prompt_version,
+        consolidation_model_version=consolidation_model_version,
+        request_profile_version=request_profile_version,
+    )
+    _require_open_session_for_label(conn, session_id)
 
-    # Schema-level CHECK and the validate-target trigger enforce the shape; we
-    # still pre-write a sentinel so the privacy_tier carry trigger can override
+    # Pre-write a sentinel so the privacy_tier carry trigger can override
     # without a NOT NULL violation when the operator omits the column.
     effective_tier = privacy_tier if privacy_tier is not None else 0
 
@@ -366,6 +459,18 @@ def insert_session_targets(
         )
         for idx, target in enumerate(sampled)
     ]
+    for target in sampled:
+        _require_target_version_matches_parent(
+            conn,
+            table_name="gold_label_session_targets",
+            target_kind=target.target_kind,
+            target_id=target.target_id,
+            extraction_prompt_version=target.extraction_prompt_version,
+            extraction_model_version=target.extraction_model_version,
+            consolidation_prompt_version=target.consolidation_prompt_version,
+            consolidation_model_version=target.consolidation_model_version,
+            request_profile_version=target.request_profile_version,
+        )
     try:
         with conn.cursor() as cur:
             cur.executemany(
@@ -507,6 +612,29 @@ def unanswered_session_targets(
         ),
         (session_id,),
     ).fetchall()
+    if not rows:
+        target_count_row = conn.execute(
+            """
+            SELECT count(*)
+            FROM gold_label_session_targets
+            WHERE session_id = %s
+            """,
+            (session_id,),
+        ).fetchone()
+        target_count = int(target_count_row[0]) if target_count_row is not None else 0
+        if target_count == 0:
+            session_row = conn.execute(
+                """
+                SELECT completed_at
+                FROM gold_label_sessions
+                WHERE session_id = %s
+                """,
+                (session_id,),
+            ).fetchone()
+            if session_row is not None and session_row[0] is None:
+                raise GoldLabelStorageError(
+                    "session has no materialized targets; cannot infer completion"
+                )
     return [_session_target_from_row(row) for row in rows]
 
 
@@ -517,7 +645,7 @@ def session_target_to_sampled(target: SessionTarget) -> SampledTarget:
         target_id=target.target_id,
         stability_class=target.stability_class,
         confidence=target.confidence if target.confidence is not None else 0.0,
-        observed_at=target.observed_at or datetime.now(timezone.utc),
+        observed_at=target.observed_at or datetime.now(UTC),
         conf_band=target.conf_band,
         recency_band=target.recency_band,
         belief_status=target.belief_status,
