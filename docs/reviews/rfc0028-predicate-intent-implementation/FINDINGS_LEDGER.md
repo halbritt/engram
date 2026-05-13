@@ -32,7 +32,7 @@ Rationale: The warning helper gates on substring membership in the
 `persons or organizations`, and `persons or households` enter the warning path
 even though those predicates explicitly allow non-person subjects. This can
 show "Likely a `false` extraction" for valid claims and can bias operator
-verdicts against D082's intent.
+verdicts against D-082's intent.
 
 Recommended action: Restrict the warning trigger to strictly person-only hints
 and add regression coverage proving mixed allowed hints do not query entity

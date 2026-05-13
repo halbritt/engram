@@ -29,7 +29,7 @@ legitimately reviewed.
 | `docs/rfcs/0028-predicate-intent-surfacing.md` status field | `accepted` | **repair** | Restore to `proposal`. |
 | `docs/rfcs/0029-bench-triage-workbench.md` status field | `promoted` | **repair** | Restore to `proposal` (or `draft`). Remove the "Spec refs / Review refs" link assertions that imply a clean review chain. |
 | `docs/specs/0029-bench-triage-workbench-spec.md` | `Status: accepted` (effective) | **repair** | Demote header to `Status: draft`. Spec content is reviewable on its own merits (Block C accepted) but its acceptance is contested. |
-| `DECISION_LOG.md` row **D082** (RFC 0028 acceptance) | accepted | **revert** | Remove the D082 row. If RFC 0028 is later re-accepted through a legitimate process, a fresh D### row can be written. |
+| `DECISION_LOG.md` row **D-082** (RFC 0028 acceptance) | accepted | **revert** | Remove the D-082 row. If RFC 0028 is later re-accepted through a legitimate process, a fresh D### row can be written. |
 | `CHANGELOG.md` `[Unreleased]` section | Adds entries claiming RFC 0028 / RFC 0029 / bench-review CLI are landed | **repair** | Replace the suspect-burst CHANGELOG entries with a single "audit pending" note pointing at RFC 0032. The implementation-shipped-but-not-accepted reality is what the entries should describe. |
 
 ## Section 2 — Suspect review directories (preserve as quarantine)
@@ -163,7 +163,7 @@ Either:
 If the operator chooses to apply the dispositions, the safest order is:
 
 1. **Mark quarantines first** (add `QUARANTINE.md` notes; no diff to suspect content). Lowest-risk, makes the unverified status visible immediately.
-2. **Revert status promotions** (Section 1: README.md status columns, RFC body status fields, D082, suspect CHANGELOG entries). Mid-risk; pure doc edits.
+2. **Revert status promotions** (Section 1: README.md status columns, RFC body status fields, D-082, suspect CHANGELOG entries). Mid-risk; pure doc edits.
 3. **Revert root-level guides** (Section 6). Low-risk; no other code depends on those files.
 4. **Repair the Tailscale-suffix and host-check issues in `bench_review/web.py`** (Section 4 F-RFC0029-D-001/D-002). Code change with tests.
 5. **Repair the cli.py broad-except blocks in `bench_review/cli.py`** (Section 4 F-RFC0029-I-001). Trivial code change.

@@ -4,12 +4,12 @@ author: reviewer-claude-opus-002
 Status: review
 Date: 2026-05-09
 RFC refs: RFC-0028
-Decision refs: D082
+Decision refs: D-082
 Phase refs: PHASE-0003, PHASE-0003-FOLLOWON
 
 ## Scope
 
-Contract review of the RFC 0028 / D082 implementation against the eight-item
+Contract review of the RFC 0028 / D-082 implementation against the eight-item
 checklist in `striatum/rfc-0028-predicate-intent-implementation/prompts/review.md`.
 The review is contract-only: read the touched code, schema, tests, and docs;
 do not re-run the focused tests reported in the handoff. Implementation
@@ -252,11 +252,11 @@ identical.
 
 ### F009 — Docs are updated coherently across CHANGELOG, DECISION_LOG, RFC index, and schema reference
 Severity: nit (informational; PASS)
-Source: `CHANGELOG.md` Unreleased section (RFC 0028 / D082 entry),
-`DECISION_LOG.md` D082 (line 106, accepted) and existing D016/D044/D069/D079/D080
+Source: `CHANGELOG.md` Unreleased section (RFC 0028 / D-082 entry),
+`DECISION_LOG.md` D-082 (line 106, accepted) and existing D016/D044/D069/D079/D080
 references are intact, `docs/rfcs/0028-predicate-intent-surfacing.md`
 front-matter (Status: accepted, Implementation: partial, Date: 2026-05-09,
-Decision refs include D082, Review refs:
+Decision refs include D-082, Review refs:
 striatum/rfc-0028-predicate-intent-implementation, Phase refs PHASE-0003 +
 PHASE-0003-FOLLOWON), `docs/rfcs/README.md:48`
 (`| [0028](0028-predicate-intent-surfacing.md) | accepted | partial |
@@ -269,7 +269,7 @@ a freshly migrated `engram_test` database, consistent with the AGENTS.md
 rule "Do not rewrite generated schema docs by hand; use `make schema-docs`."
 PASS. Note: the implementation is correctly marked `partial` in the RFC and
 the index — the bench (100–500 segment re-extraction) and full-corpus
-re-extraction remain gated, which is the explicit RFC 0028 / D082 promotion
+re-extraction remain gated, which is the explicit RFC 0028 / D-082 promotion
 path and an honest characterization of state.
 
 ### F010 — Local-first / privacy posture and gold-label/claim/belief contracts are unchanged

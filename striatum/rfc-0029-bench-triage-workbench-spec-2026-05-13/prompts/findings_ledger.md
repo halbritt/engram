@@ -1,0 +1,39 @@
+# Spec 0029 Findings Ledger
+
+Read the Claude, Codex, Gemini, and adversarial usability review artifacts for
+Spec 0029. Normalize them into one findings ledger.
+
+Output:
+
+`docs/reviews/rfc0029-bench-triage-workbench-spec-2026-05-13/FINDINGS_LEDGER.md`
+
+Use this structure:
+
+```md
+# Spec 0029 Bench Triage Workbench Findings Ledger
+author: <packet author line>
+
+Status: findings
+Date: 2026-05-13
+RFC refs: RFC-0029
+Spec refs: SPEC-0029 (draft unless promoted by fresh review)
+Decision refs: D020, D074
+Phase refs: PHASE-0003-FOLLOWON, PHASE-0004
+
+## Findings
+
+### L001 - <normalized title>
+Severity: <blocking | major | minor | nit>
+Sources: <review ids>
+Disposition target: <accept | reject | defer | needs-owner>
+Rationale: <paragraph>
+
+## Consensus
+
+## Conflicts
+
+## Recommended next action
+```
+
+Do not modify files outside `docs/reviews/rfc0029-bench-triage-workbench-spec-2026-05-13/`.
+

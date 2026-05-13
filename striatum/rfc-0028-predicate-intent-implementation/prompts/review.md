@@ -30,7 +30,7 @@ author: <packet author line>
 Status: review
 Date: 2026-05-09
 RFC refs: RFC-0028
-Decision refs: D082
+Decision refs: D-082
 Phase refs: PHASE-0003, PHASE-0003-FOLLOWON
 
 ## Findings

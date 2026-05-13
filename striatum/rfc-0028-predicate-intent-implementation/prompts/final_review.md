@@ -1,6 +1,6 @@
 # Final Review RFC 0028 Implementation
 
-Review the final implementation against RFC 0028, D082, the review ledger,
+Review the final implementation against RFC 0028, D-082, the review ledger,
 and the revision synthesis. Do not modify implementation files.
 
 Prioritize:

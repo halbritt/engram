@@ -8,16 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- RFC 0032 proposes an independent recovery and audit of commit
-  `c4a48ab` (suspect autonomous work checkpoint) and supersedes RFC
-  0031, which was itself authored inside the suspect commit and is
-  therefore not load-bearing as audit charter. The RFC 0031 row in
-  `docs/rfcs/README.md` is marked `superseded` with a pointer; RFC
-  0031's body is preserved unchanged as quarantined evidence.
-- RFC 0031 suspect autonomous work audit proposal: marks the recent
-  autonomous RFC 0028 / RFC 0029 / Striatum-driven checkpoint as suspect
-  pending provenance, byline, code, benchmark, and artifact-disposition
-  review before further promotion.
+- RFC 0032 completed the independent recovery audit for commit `c4a48ab`
+  (suspect autonomous work checkpoint): inventory, provenance audit,
+  independent code/design reviews, artifact disposition, final decision, and
+  forward-path documentation now live under
+  `docs/reviews/rfc0032-suspect-work-audit/`. RFC 0031 is preserved unchanged
+  as quarantined historical evidence and superseded by RFC 0032.
+- RFC 0030 public-dataset entity grounding exists as proposal-only design
+  work, with a dangling-branch audit and operator-driven Striatum review
+  scaffold. It is not accepted and has no implementation in the current tree.
+- Fresh Striatum rerun scaffolds were added for legitimate RFC 0028 promotion,
+  RFC 0029 design/spec/implementation review, Phase 4 multi-lane gate review,
+  and pre-suspect RFC 0021/RFC 0027 provenance reruns.
 - RFC 0027 implementation: FastAPI + htmx web UI for the gold-set
   interview surface, served by `engram phase3 interview serve` (RFC
   0027 / spec 0027 / D080). Loopback-only with no escape clause;
@@ -40,12 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loopback bind can reach the UI from another device the operator
   controls. The howto guide gains a "Tailnet access" section.
   Non-loopback bind plus token auth remains the F005 follow-on.
-- RFC 0024 Phase 4 tiered gate execution artifacts:
+- RFC 0024 Phase 4 tiered-gate notes:
   Tier 0 bounded smoke, Tier 1 non-human evidence, Tier 2 bounded
   preflight scaffold, final gate review, and run summary under
-  `docs/operations/phase4-build/tiered-gate/`. The gate remains
-  blocked on human-labeled entity precision/recall and review-queue UX
-  evidence before any full-corpus Phase 4 promotion.
+  `docs/operations/phase4-build/tiered-gate/`. RFC 0032 reframes these as
+  single-lane Codex notes and a truthful Striatum export, not a multi-lane
+  RFC 0024 gate verdict. Phase 4 promotion and full-corpus authorization
+  remain blocked pending fresh gate evidence.
 - Initial creation of `CHANGELOG.md` based on repository commit history and project phases.
 - Mandated `CHANGELOG.md` maintenance in `AGENTS.md` and `GEMINI.md`.
 - RFC 0025: Command naming review.
@@ -64,13 +67,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   templates per RFC 0017, and 32 new tests covering CLI dispatch, sampler
   determinism, append-only / parent-validation / privacy-tier triggers,
   and migration 010 application.
-- Striatum scaffolds at `striatum/rfc-0021-gold-set-review/` (multi-agent
-  review run: claude / codex / gemini reviewers + ledger + claude
-  synthesis + codex final review) and
+- Striatum scaffolds at `striatum/rfc-0021-gold-set-review/` (historical
+  review workflow: claude / codex / gemini reviewer bylines + ledger +
+  synthesis + final review; model-lane provenance pending rerun) and
   `striatum/rfc-0021-gold-set-implementation/` (implement → verify →
   final review code-change run).
-- Run artifacts at `docs/reviews/rfc0021/` (3 reviews, ledger, synthesis,
-  final review, evidence, run summary, coordinator-continue decision)
+- Historical run artifacts at `docs/reviews/rfc0021/` (3 reviews, ledger,
+  synthesis, final review, evidence, run summary, coordinator-continue
+  decision; independent lane bylines later found unattested)
   and `docs/reviews/rfc0021-gold-set-implementation/` (handoff,
   verification report, final review, evidence, run summary).
 - Operator guide for the gold-set interview surface at
@@ -85,12 +89,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Spec 0027 at `docs/specs/0027-interview-web-ui-spec.md` (1230-line
   implementation contract; RFC 0027 promoted via D080).
 - Striatum scaffold at `striatum/rfc-0027-interview-web-ui-review/`
-  driving the multi-agent review run (claude / codex / gemini reviewers
-  + ledger + claude synthesis + codex final review).
-- Run artifacts at `docs/reviews/rfc0027/` (3 reviews, ledger with 29
-  findings — 2 blocking + 19 major + 7 minor + 1 nit, synthesis
+  for the historical interview-web review workflow (claude / codex / gemini
+  reviewer bylines + ledger + synthesis + final review; model-lane provenance
+  pending rerun).
+- Historical run artifacts at `docs/reviews/rfc0027/` (3 reviews, ledger with
+  29 findings — 2 blocking + 19 major + 7 minor + 1 nit, synthesis
   recommending revise-rfc with full spec deltas, final review
-  `accept_with_findings`, evidence + run summary).
+  `accept_with_findings`, evidence + run summary; independent lane bylines
+  later found unattested).
 - `.claude/skills/` populated by `striatum skills install --profile
   claude_code --scope project` (5 lazily-loadable skills:
   striatum-workflow, striatum-scaffold, striatum-claim-loop,
@@ -107,10 +113,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - RFC 0032 cleanup quarantines the suspect RFC 0028/RFC 0029 review
   directories and RFC 0029 Striatum scaffolds, demotes RFC 0028/RFC 0029
-  status claims back to proposal/draft, and removes the unauthorized D082
+  status claims back to proposal/draft, and removes the unauthorized
+  RFC 0028/RFC 0029 decision row
   decision row. It also removes the stale root-level Striatum 1.14 guide
   files. Existing code remains reviewable implementation work, not decision
   authority.
+- RFC 0028 predicate-intent surfacing remains `proposal` / `partial`: the
+  implementation survived technical audit, but the status promotion and
+  unauthorized decision row were removed pending fresh legitimate review.
+- RFC 0029 bench triage workbench remains `proposal` / `implemented` with a
+  draft, unpromoted spec and quarantined review chain. The workbench is
+  local-only scratch tooling until fresh review promotes or revises it.
+- Pre-suspect RFC 0021/RFC 0027 review artifacts are now marked for
+  provenance rerun because their multi-lane bylines are not backed by
+  Striatum process execution evidence in `.striatum/state.sqlite3`.
 - Bench-review workbench host validation now rejects non-loopback configured
   hosts at app creation, requires explicit
   `ENGRAM_BENCH_REVIEW_ALLOWED_DNS_SUFFIXES` opt-in for tailnet DNS suffixes,
@@ -241,9 +257,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reorganized repository structure (moved many markdown files from root).
 
 ### Fixed
-- SWAPPED UUIDs in span-expansion audit.
-- Swapped consolidator null group keys.
-- Swapped message IDs constraint to window schema.
+- Constrained segmenter message IDs to the active window schema.
 
 ## [Phase 1.5] - 2026-04-30
 
@@ -253,7 +267,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Gemini Takeout ingestion.
 - Cleanup and multi-source ingestion refinements.
 
-## [Phase 1] - 2026-03-15
+## [Phase 1] - 2026-04-26..2026-04-28
 
 ### Added
 - Raw evidence layer and initial ingestion pipeline.

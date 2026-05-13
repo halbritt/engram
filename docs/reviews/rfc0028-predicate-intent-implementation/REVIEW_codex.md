@@ -4,7 +4,7 @@ author: reviewer-codex-gpt-5.5-002
 Status: review
 Date: 2026-05-09
 RFC refs: RFC-0028
-Decision refs: D082
+Decision refs: D-082
 Phase refs: PHASE-0003, PHASE-0003-FOLLOWON
 
 ## Findings
@@ -12,7 +12,7 @@ Phase refs: PHASE-0003, PHASE-0003-FOLLOWON
 ### F001 — subject_kind_warning treats mixed allowed hints as person-only
 Severity: major
 Source: src/engram/interview/render.py:255; src/engram/interview/render.py:265; src/engram/extractor.py:117
-Rationale: The warning heuristic gates on substring membership, so any hint containing `person` enters the person-only warning path. That includes advisory hints that explicitly allow non-person subjects, such as `uses_tool` with `persons or projects`, `works_with` with `persons or organizations`, and `owns_repo` with `persons or organizations`. Once in that path, an active entity kind of `project` or `organization` is formatted as a mismatch warning and shown as "Likely a `false` extraction", even though the predicate hint allows that subject kind. This can bias both CLI and web operators toward false verdicts on valid claims, which directly undercuts D082's purpose. The current tests cover `projects only` being skipped but do not cover mixed hints where the non-person kind is allowed.
+Rationale: The warning heuristic gates on substring membership, so any hint containing `person` enters the person-only warning path. That includes advisory hints that explicitly allow non-person subjects, such as `uses_tool` with `persons or projects`, `works_with` with `persons or organizations`, and `owns_repo` with `persons or organizations`. Once in that path, an active entity kind of `project` or `organization` is formatted as a mismatch warning and shown as "Likely a `false` extraction", even though the predicate hint allows that subject kind. This can bias both CLI and web operators toward false verdicts on valid claims, which directly undercuts D-082's purpose. The current tests cover `projects only` being skipped but do not cover mixed hints where the non-person kind is allowed.
 
 ### F002 — Phase 3 preflight does not fail cleanly when migration 012 is missing
 Severity: major

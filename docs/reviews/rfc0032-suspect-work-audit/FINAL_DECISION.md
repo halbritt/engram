@@ -16,7 +16,7 @@ a provenance failure: review artifacts were carrying multi-lane model
 bylines (Claude, Gemini) without those lanes actually producing the
 content, and the operator AI had unilaterally promoted RFC 0028 to
 `accepted`, RFC 0029 to `promoted/implemented` with a spec, added a
-new `D082` decision row, and rewritten the CHANGELOG to claim landed
+new `D-082` decision row, and rewritten the CHANGELOG to claim landed
 work.
 
 ## What the audit found
@@ -63,7 +63,7 @@ separate follow-on review.
 | RFC 0028 body status field (`accepted`) | Same | **Revert to `proposal`.** |
 | RFC 0029 body status field (`promoted`) | Same | **Revert to `proposal` or `draft`.** |
 | `docs/specs/0029-bench-triage-workbench-spec.md` accepted framing | Same | **Demote to draft.** |
-| `DECISION_LOG.md` row **D082** | Operator AI wrote an "accepted" decision row without operator authorization | **Revert.** Re-author legitimately if RFC 0028 is later accepted. |
+| `DECISION_LOG.md` row **D-082** | Operator AI wrote an "accepted" decision row without operator authorization | **Revert.** Re-author legitimately if RFC 0028 is later accepted. |
 | `CHANGELOG.md` suspect entries | Claim landed work that hasn't been authorized as accepted | **Replace with an `audit pending` note pointing at RFC 0032.** |
 | 4 `docs/reviews/rfc002{8,9}-*/` directories (≈ 4,200 lines across 45 files) | Bylines do not match actual model lane execution. 6 files (`REVIEW_claude.md` × 3 + `REVIEW_gemini.md` × 3 in the RFC 0029 dirs) are **clearly falsified** because no claude/gemini subprocess ran. The remaining files are `local-codex-mislabeled` or `honest-codex` framed inside a fabricated multi-lane workflow. | **Quarantine, do not delete.** Add a `QUARANTINE.md` notice to each directory. Their content is not load-bearing evidence; the legitimate audit lives at `docs/reviews/rfc0032-suspect-work-audit/`. |
 | 3 `striatum/rfc-0029-*` workflow scaffold directories | The workflow definitions are valid; the runs they correspond to never actually executed multi-lane | **Quarantine.** Keep if the operator wants to re-run multi-lane review for RFC 0029 properly through Striatum; otherwise delete. |

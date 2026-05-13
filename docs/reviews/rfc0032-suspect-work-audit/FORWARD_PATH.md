@@ -19,7 +19,7 @@ these before starting new RFC-scoped work:
 
 1. **Apply ARTIFACT_DISPOSITION.md Section 1.** Revert the unilateral
    status promotions: `docs/rfcs/README.md` rows, RFC 0028 body status,
-   RFC 0029 body status, `D082` in `DECISION_LOG.md`, suspect CHANGELOG
+   RFC 0029 body status, `D-082` in `DECISION_LOG.md`, suspect CHANGELOG
    entries. One commit per logical group; pure doc edits.
 2. **Add `QUARANTINE.md` to the 4 suspect review directories**
    (`docs/reviews/rfc0028-predicate-intent-implementation/`,
@@ -143,7 +143,7 @@ forward roadmap:
 A reasonable two-week shape:
 
 - **Week 1 (cleanup + small repairs):** ARTIFACT_DISPOSITION Section 1
-  revs (status, D082, CHANGELOG); QUARANTINE notices on the 4 suspect
+  revs (status, D-082, CHANGELOG); QUARANTINE notices on the 4 suspect
   review dirs; revert root-level Striatum guides; fix the
   pipeline-command test; repair the `bench_review/web.py`
   Tailscale-suffix issue and `bench_review/cli.py` except-blocks.

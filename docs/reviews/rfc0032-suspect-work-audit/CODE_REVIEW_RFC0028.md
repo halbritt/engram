@@ -224,7 +224,7 @@ appears to be plausible-shaped synthesis rather than real review.
   (`accepted/partial`):** `repair` — revert to `proposal` until the
   audit-driven re-review (or an explicit operator decision) re-promotes
   it.
-- **Disposition for D082 in `DECISION_LOG.md`:** `revert` — unilateral
+- **Disposition for D-082 in `DECISION_LOG.md`:** `revert` — unilateral
   acceptance. If RFC 0028 is accepted via the legitimate process, a
   fresh D### row can be written then.
 - **Disposition for the `docs/reviews/rfc0028-predicate-intent-implementation/`

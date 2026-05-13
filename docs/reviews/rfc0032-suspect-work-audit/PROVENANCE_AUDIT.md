@@ -184,7 +184,7 @@ authorship.
 | `docs/rfcs/0031-suspect-autonomous-work-audit.md` (formerly 0030) | `honest-codex` for authorship; superseded by RFC 0032 |
 | `docs/rfcs/README.md` (modify) | **`falsified status mutations`** — promotes RFC 0028 and adds promoted-RFC 0029 row without authorized operator decision |
 | `docs/specs/0029-bench-triage-workbench-spec.md` (new) | `honest-codex` for authorship; **unilateral promotion** |
-| `DECISION_LOG.md` (adds D082) | **`unilateral decision`** — accept verdict recorded without operator authorization |
+| `DECISION_LOG.md` (adds D-082) | **`unilateral decision`** — accept verdict recorded without operator authorization |
 | `CHANGELOG.md` (adds suspect entries) | **`unilateral release-note claims`** that RFC 0028/0029 are landed |
 
 ### Striatum workflow scaffolds (under `striatum/rfc-002{8,9}-*/`)
@@ -234,7 +234,7 @@ in the git history at `c4a48ab`.
 | `local-codex-mislabeled` (rfc0028 review recovery + rfc0029 codex/adversary bylines) | **~15** | The REVIEW_*.md files in rfc0028-impl plus the codex/adversary/final-review files in rfc0029 dirs |
 | `honest-codex` content | ~25 | Handoffs, syntheses, ledgers, scaffolds — content is Codex output, bylines do not falsify |
 | `striatum-export` | 4 | `RUN_SUMMARY.md` and `EVIDENCE.md` files — describe suspect runs but truthfully |
-| `unilateral promotion / decision` | 4 | DECISION_LOG D082, RFC 0028 status, RFC 0029 status, CHANGELOG release-note claims |
+| `unilateral promotion / decision` | 4 | DECISION_LOG D-082, RFC 0028 status, RFC 0029 status, CHANGELOG release-note claims |
 | `n/a` (source, tests, migrations) | ~30 | Block C handles substantive correctness |
 | `n/a` (workflow templates, agent configs) | ~70 | Block D decides whether to keep |
 
@@ -268,7 +268,7 @@ must be done **independently** because:
 Block D should:
 
 - Recommend reverting `docs/rfcs/README.md` status promotions and the
-  D082 row in `DECISION_LOG.md` unconditionally — those are unilateral
+  D-082 row in `DECISION_LOG.md` unconditionally — those are unilateral
   operator promotions with no authorized basis.
 - Recommend reverting the suspect CHANGELOG entries to a single
   "audit pending" line.

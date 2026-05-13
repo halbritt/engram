@@ -1,0 +1,688 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "phase-4-tiered-gate-multilane-2026-05-13",
+  "workflow_version": "2026-05-13+multilane-rerun",
+  "name": "Engram Phase 4 RFC 0024 Multi-Lane Tiered Gate",
+  "branch": {
+    "mode": "confirm",
+    "suggested_name": "engram/phase4-tiered-gate-multilane-2026-05-13",
+    "allow_dirty": true
+  },
+  "coordinator": {
+    "role_id": "operator",
+    "lane_id": "codex"
+  },
+  "lanes": {
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": [
+        "codex",
+        "exec",
+        "--model",
+        "gpt-5.5",
+        "-"
+      ],
+      "capabilities": [
+        "write",
+        "review"
+      ],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    },
+    "claude": {
+      "adapter": "process",
+      "display_model": "Claude Opus",
+      "command": [
+        "claude",
+        "--model",
+        "opus",
+        "-p"
+      ],
+      "capabilities": [
+        "review"
+      ],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    },
+    "gemini": {
+      "adapter": "process",
+      "display_model": "Gemini 3.1 Pro Preview",
+      "command": [
+        "gemini",
+        "--model",
+        "gemini-3.1-pro-preview"
+      ],
+      "capabilities": [
+        "review"
+      ],
+      "constraints": {
+        "network": "forbidden",
+        "transcripts": "off",
+        "repo_scope": "local_only"
+      }
+    }
+  },
+  "roles": {
+    "operator": {
+      "definition_path": "striatum/phase-4-tiered-gate-multilane-2026-05-13/roles/operator.md"
+    },
+    "reviewer": {
+      "definition_path": "striatum/phase-4-tiered-gate-multilane-2026-05-13/roles/reviewer.md"
+    },
+    "ledger": {
+      "definition_path": "striatum/phase-4-tiered-gate-multilane-2026-05-13/roles/ledger.md"
+    },
+    "synthesizer": {
+      "definition_path": "striatum/phase-4-tiered-gate-multilane-2026-05-13/roles/synthesizer.md"
+    }
+  },
+  "context_docs": [
+    {
+      "path": "AGENTS.md",
+      "required": true
+    },
+    {
+      "path": "README.md",
+      "required": true
+    },
+    {
+      "path": "HUMAN_REQUIREMENTS.md",
+      "required": true
+    },
+    {
+      "path": "DECISION_LOG.md",
+      "required": true
+    },
+    {
+      "path": "BUILD_PHASES.md",
+      "required": true
+    },
+    {
+      "path": "docs/rfcs/0024-phase-4-pre-full-corpus-benchmark-gate.md",
+      "required": true
+    },
+    {
+      "path": "docs/rfcs/0021-gold-set-interview-curation.md",
+      "required": true
+    },
+    {
+      "path": "docs/rfcs/0025-phase-scoped-command-names.md",
+      "required": true
+    },
+    {
+      "path": "docs/process/project-judgment.md",
+      "required": true
+    }
+  ],
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 3,
+    "require_disjoint_write_scopes": true
+  },
+  "jobs": [
+    {
+      "id": "tier0_schema_workflow_smoke",
+      "type": "draft",
+      "title": "Tier 0 schema and workflow smoke",
+      "role_id": "operator",
+      "lane_id": "codex",
+      "objective": "Run or dry-run the RFC 0024 Tier 0 Phase 4 schema/workflow smoke checks over a tiny local slice and record aggregate-only evidence.",
+      "task_prompt": {
+        "path": "striatum/phase-4-tiered-gate-multilane-2026-05-13/prompts/tier0_smoke.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/rfcs/0024-phase-4-pre-full-corpus-benchmark-gate.md",
+          "kind": "accepted_rfc"
+        },
+        {
+          "path": "DECISION_LOG.md",
+          "kind": "decision_log"
+        },
+        {
+          "path": "migrations/009_phase4_entities_review.sql",
+          "kind": "schema"
+        },
+        {
+          "path": "src/engram/phase4.py",
+          "kind": "implementation"
+        },
+        {
+          "path": "tests/test_phase4_entities_review.py",
+          "kind": "test_surface"
+        },
+        {
+          "path": "Makefile",
+          "kind": "operator_surface"
+        }
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "src/engram/",
+          "tests/",
+          "migrations/",
+          "Makefile"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "tier0_smoke_report",
+          "kind": "finding",
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER0_SMOKE_REPORT.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "tier1_nonhuman_quality_gate",
+      "type": "draft",
+      "title": "Tier 1 non-human quality and UX gate",
+      "role_id": "operator",
+      "lane_id": "codex",
+      "objective": "Collect the non-human RFC 0024 Tier 1 quality, UX, rebuild, status-semantics, and query-plan evidence; explicitly defer hand-labeled entity precision/recall to the RFC 0021 interview branch.",
+      "task_prompt": {
+        "path": "striatum/phase-4-tiered-gate-multilane-2026-05-13/prompts/tier1_nonhuman_gate.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER0_SMOKE_REPORT.md",
+          "kind": "tier0_report"
+        },
+        {
+          "path": "docs/rfcs/0024-phase-4-pre-full-corpus-benchmark-gate.md",
+          "kind": "accepted_rfc"
+        },
+        {
+          "path": "docs/rfcs/0021-gold-set-interview-curation.md",
+          "kind": "deferred_human_input"
+        },
+        {
+          "path": "src/engram/phase4.py",
+          "kind": "implementation"
+        },
+        {
+          "path": "tests/test_phase4_entities_review.py",
+          "kind": "test_surface"
+        }
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "src/engram/",
+          "tests/",
+          "migrations/",
+          "Makefile"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "tier1_nonhuman_report",
+          "kind": "finding",
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER1_NONHUMAN_REPORT.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "tier2_bounded_preflight_scaffold",
+      "type": "draft",
+      "title": "Tier 2 bounded production preflight scaffold",
+      "role_id": "operator",
+      "lane_id": "codex",
+      "objective": "Prepare the RFC 0024 Tier 2 bounded production preflight plan and dry-run evidence without authorizing or running full-corpus Phase 4.",
+      "task_prompt": {
+        "path": "striatum/phase-4-tiered-gate-multilane-2026-05-13/prompts/tier2_preflight_scaffold.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER1_NONHUMAN_REPORT.md",
+          "kind": "tier1_report"
+        },
+        {
+          "path": "docs/rfcs/0024-phase-4-pre-full-corpus-benchmark-gate.md",
+          "kind": "accepted_rfc"
+        },
+        {
+          "path": "Makefile",
+          "kind": "operator_surface"
+        },
+        {
+          "path": "src/engram/cli.py",
+          "kind": "command_surface"
+        },
+        {
+          "path": "src/engram/phase4.py",
+          "kind": "implementation"
+        }
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "src/engram/",
+          "tests/",
+          "migrations/",
+          "Makefile"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "tier2_preflight_scaffold",
+          "kind": "handoff",
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER2_PREFLIGHT_SCAFFOLD.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_entity_quality",
+      "type": "review",
+      "title": "Review Phase 4 entity quality evidence",
+      "role_id": "reviewer",
+      "lane_id": "claude",
+      "parallel_group": "independent_gate_reviews",
+      "fresh_session_required": true,
+      "objective": "Review the fresh Tier 0-2 Phase 4 evidence for entity quality readiness: false merge/split risk, human-label sufficiency, review-queue actionability, and whether the evidence supports any promotion claim.",
+      "task_prompt": {
+        "path": "striatum/phase-4-tiered-gate-multilane-2026-05-13/prompts/review_entity_quality.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER0_SMOKE_REPORT.md",
+          "kind": "tier0_report"
+        },
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER1_NONHUMAN_REPORT.md",
+          "kind": "tier1_report"
+        },
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER2_PREFLIGHT_SCAFFOLD.md",
+          "kind": "tier2_scaffold"
+        },
+        {
+          "path": "docs/rfcs/0024-phase-4-pre-full-corpus-benchmark-gate.md",
+          "kind": "accepted_rfc"
+        },
+        {
+          "path": "docs/rfcs/0021-gold-set-interview-curation.md",
+          "kind": "human_label_substrate"
+        }
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "src/engram/",
+          "tests/",
+          "migrations/",
+          "Makefile"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "entity_quality_review",
+          "kind": "finding",
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/REVIEW_entity_quality.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_invariants",
+      "type": "review",
+      "title": "Review Phase 4 audit and transition invariants",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "parallel_group": "independent_gate_reviews",
+      "fresh_session_required": true,
+      "objective": "Review the fresh Tier 0-2 Phase 4 evidence for D017/D044/D052 invariants: append-only corrections, no auto-promotion, review transition auditability, and current_beliefs status semantics.",
+      "task_prompt": {
+        "path": "striatum/phase-4-tiered-gate-multilane-2026-05-13/prompts/review_invariants.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER0_SMOKE_REPORT.md",
+          "kind": "tier0_report"
+        },
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER1_NONHUMAN_REPORT.md",
+          "kind": "tier1_report"
+        },
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER2_PREFLIGHT_SCAFFOLD.md",
+          "kind": "tier2_scaffold"
+        },
+        {
+          "path": "DECISION_LOG.md",
+          "kind": "decision_log"
+        },
+        {
+          "path": "src/engram/phase4.py",
+          "kind": "implementation"
+        },
+        {
+          "path": "tests/test_phase4_entities_review.py",
+          "kind": "test_surface"
+        }
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "src/engram/",
+          "tests/",
+          "migrations/",
+          "Makefile"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "invariants_review",
+          "kind": "finding",
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/REVIEW_invariants.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_privacy_provenance",
+      "type": "review",
+      "title": "Review Phase 4 privacy and provenance evidence",
+      "role_id": "reviewer",
+      "lane_id": "gemini",
+      "parallel_group": "independent_gate_reviews",
+      "fresh_session_required": true,
+      "objective": "Review the fresh Tier 0-2 Phase 4 evidence for local-first privacy, redaction, Striatum provenance, branch consistency, and whether any artifact overclaims full-corpus authorization.",
+      "task_prompt": {
+        "path": "striatum/phase-4-tiered-gate-multilane-2026-05-13/prompts/review_privacy_provenance.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER0_SMOKE_REPORT.md",
+          "kind": "tier0_report"
+        },
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER1_NONHUMAN_REPORT.md",
+          "kind": "tier1_report"
+        },
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER2_PREFLIGHT_SCAFFOLD.md",
+          "kind": "tier2_scaffold"
+        },
+        {
+          "path": "docs/reviews/rfc0032-suspect-work-audit/FINAL_DECISION.md",
+          "kind": "provenance_context"
+        }
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "src/engram/",
+          "tests/",
+          "migrations/",
+          "Makefile"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "privacy_provenance_review",
+          "kind": "finding",
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/REVIEW_privacy_provenance.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "findings_ledger",
+      "type": "ledger",
+      "title": "Record Phase 4 gate review findings ledger",
+      "role_id": "ledger",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Normalize the independent Phase 4 gate reviews into one findings ledger without overstating promotion readiness.",
+      "task_prompt": {
+        "path": "striatum/phase-4-tiered-gate-multilane-2026-05-13/prompts/findings_ledger.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/REVIEW_entity_quality.md",
+          "kind": "review"
+        },
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/REVIEW_invariants.md",
+          "kind": "review"
+        },
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/REVIEW_privacy_provenance.md",
+          "kind": "review"
+        }
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "src/engram/",
+          "tests/",
+          "migrations/",
+          "Makefile"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "findings_ledger",
+          "kind": "findings_ledger",
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/FINDINGS_LEDGER.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "promotion_synthesis",
+      "type": "synthesis",
+      "title": "Synthesize Phase 4 gate promotion evidence",
+      "role_id": "synthesizer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Synthesize the Tier 0-2 evidence and independent reviews into a concrete recommendation: promote, block pending human labels, block pending fixes, or authorize only a bounded next preflight.",
+      "task_prompt": {
+        "path": "striatum/phase-4-tiered-gate-multilane-2026-05-13/prompts/synthesis.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/FINDINGS_LEDGER.md",
+          "kind": "findings_ledger"
+        },
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER0_SMOKE_REPORT.md",
+          "kind": "tier0_report"
+        },
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER1_NONHUMAN_REPORT.md",
+          "kind": "tier1_report"
+        },
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER2_PREFLIGHT_SCAFFOLD.md",
+          "kind": "tier2_scaffold"
+        }
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "src/engram/",
+          "tests/",
+          "migrations/",
+          "Makefile"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "promotion_synthesis",
+          "kind": "synthesis",
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/PROMOTION_SYNTHESIS.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "final_gate_review",
+      "type": "review",
+      "title": "Final review of non-human Phase 4 gate evidence",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Review Tier 0-2 artifacts for RFC 0024 conformance, privacy safety, and explicit non-authorization of full-corpus Phase 4 until RFC 0021 interview evidence is available.",
+      "task_prompt": {
+        "path": "striatum/phase-4-tiered-gate-multilane-2026-05-13/prompts/final_review.md"
+      },
+      "inputs": [
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER0_SMOKE_REPORT.md",
+          "kind": "tier0_report"
+        },
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER1_NONHUMAN_REPORT.md",
+          "kind": "tier1_report"
+        },
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/TIER2_PREFLIGHT_SCAFFOLD.md",
+          "kind": "tier2_scaffold"
+        },
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/FINDINGS_LEDGER.md",
+          "kind": "findings_ledger"
+        },
+        {
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/PROMOTION_SYNTHESIS.md",
+          "kind": "promotion_synthesis"
+        },
+        {
+          "path": "docs/rfcs/0024-phase-4-pre-full-corpus-benchmark-gate.md",
+          "kind": "accepted_rfc"
+        },
+        {
+          "path": "docs/rfcs/0021-gold-set-interview-curation.md",
+          "kind": "deferred_human_input"
+        }
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/"
+        ],
+        "forbidden_paths": [
+          ".striatum/",
+          "src/engram/",
+          "tests/",
+          "migrations/",
+          "Makefile"
+        ]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "final_gate_review",
+          "kind": "finding",
+          "path": "docs/operations/phase4-build/tiered-gate-multilane-2026-05-13/FINAL_GATE_REVIEW.md",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "tier0_schema_workflow_smoke",
+      "to": "tier1_nonhuman_quality_gate",
+      "on": "completed"
+    },
+    {
+      "from": "tier1_nonhuman_quality_gate",
+      "to": "tier2_bounded_preflight_scaffold",
+      "on": "completed"
+    },
+    {
+      "from": "tier2_bounded_preflight_scaffold",
+      "to": "review_entity_quality",
+      "on": "completed"
+    },
+    {
+      "from": "tier2_bounded_preflight_scaffold",
+      "to": "review_invariants",
+      "on": "completed"
+    },
+    {
+      "from": "tier2_bounded_preflight_scaffold",
+      "to": "review_privacy_provenance",
+      "on": "completed"
+    },
+    {
+      "from": "review_entity_quality",
+      "to": "findings_ledger",
+      "on": "completed"
+    },
+    {
+      "from": "review_invariants",
+      "to": "findings_ledger",
+      "on": "completed"
+    },
+    {
+      "from": "review_privacy_provenance",
+      "to": "findings_ledger",
+      "on": "completed"
+    },
+    {
+      "from": "findings_ledger",
+      "to": "promotion_synthesis",
+      "on": "completed"
+    },
+    {
+      "from": "promotion_synthesis",
+      "to": "final_gate_review",
+      "on": "completed"
+    }
+  ],
+  "cycles": []
+}

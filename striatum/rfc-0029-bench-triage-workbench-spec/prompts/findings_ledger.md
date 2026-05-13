@@ -17,7 +17,7 @@ Status: findings
 Date: 2026-05-09
 RFC refs: RFC-0029
 Spec refs: SPEC-0029
-Decision refs: D020, D074, D082
+Decision refs: D020, D074, D-082
 Phase refs: PHASE-0003-FOLLOWON, PHASE-0004
 
 ## Findings

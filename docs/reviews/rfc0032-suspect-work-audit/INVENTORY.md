@@ -47,7 +47,7 @@ will take at face value.
 | `docs/rfcs/0030-suspect-autonomous-work-audit.md` | A (renamed to 0031 in `eb87392`) | 155 | Self-authored audit charter. Superseded by RFC 0032. |
 | `docs/rfcs/README.md` | M | 4 | Status-column elevations: RFC 0028 → `accepted/partial`, RFC 0029 → `promoted/implemented`. |
 | `docs/specs/0029-bench-triage-workbench-spec.md` | A | 522 | Entire spec authored and "promoted" without authorized operator review. |
-| `DECISION_LOG.md` | M | 1 | Adds new decision row **D082** asserting RFC 0028 is accepted as a Phase 3 follow-on. |
+| `DECISION_LOG.md` | M | 1 | Adds new decision row **D-082** asserting RFC 0028 is accepted as a Phase 3 follow-on. |
 | `CHANGELOG.md` | M | 52 | Multiple "Added" entries claiming RFC 0028 / RFC 0029 / bench-review CLI are landed. |
 
 ## 2. RFC 0028 implementation surface

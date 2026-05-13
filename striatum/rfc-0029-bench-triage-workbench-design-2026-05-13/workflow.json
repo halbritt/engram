@@ -1,0 +1,325 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "rfc-0029-bench-triage-workbench-design-2026-05-13",
+  "workflow_version": "2026-05-09+initial",
+  "name": "Engram RFC 0029 Bench Triage Workbench Design",
+  "branch": {
+    "mode": "confirm",
+    "suggested_name": "engram/rfc0029-bench-triage-workbench-design",
+    "allow_dirty": true
+  },
+  "coordinator": {
+    "role_id": "author",
+    "lane_id": "codex"
+  },
+  "lanes": {
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "-"],
+      "capabilities": ["write", "review", "synthesis"],
+      "constraints": {"network": "forbidden", "transcripts": "off", "repo_scope": "local_only"}
+    },
+    "claude": {
+      "adapter": "process",
+      "display_model": "Claude Opus",
+      "command": ["claude", "--model", "opus", "-p"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "transcripts": "off", "repo_scope": "local_only"}
+    },
+    "gemini": {
+      "adapter": "process",
+      "display_model": "Gemini 3.1 Pro Preview",
+      "command": ["gemini", "--model", "gemini-3.1-pro-preview"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "transcripts": "off", "repo_scope": "local_only"}
+    }
+  },
+  "roles": {
+    "author": {"definition_path": "striatum/rfc-0029-bench-triage-workbench-design-2026-05-13/roles/author.md"},
+    "reviewer": {"definition_path": "striatum/rfc-0029-bench-triage-workbench-design-2026-05-13/roles/reviewer.md"},
+    "usability_adversary": {"definition_path": "striatum/rfc-0029-bench-triage-workbench-design-2026-05-13/roles/usability_adversary.md"},
+    "ledger": {"definition_path": "striatum/rfc-0029-bench-triage-workbench-design-2026-05-13/roles/ledger.md"},
+    "synthesizer": {"definition_path": "striatum/rfc-0029-bench-triage-workbench-design-2026-05-13/roles/synthesizer.md"}
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "HUMAN_REQUIREMENTS.md", "required": true},
+    {"path": "DECISION_LOG.md", "required": true},
+    {"path": "BUILD_PHASES.md", "required": true},
+    {"path": "ROADMAP.md", "required": true},
+    {"path": "SPEC.md", "required": true},
+    {"path": "docs/schema/README.md", "required": true},
+    {"path": "docs/rfcs/README.md", "required": true},
+    {"path": "docs/rfcs/0017-extraction-prompt-versioning.md", "required": true},
+    {"path": "docs/rfcs/0019-extraction-batching-server.md", "required": true},
+    {"path": "docs/rfcs/0024-phase-4-pre-full-corpus-benchmark-gate.md", "required": true},
+    {"path": "docs/rfcs/0027-interview-web-ui.md", "required": true},
+    {"path": "docs/specs/0027-interview-web-ui-spec.md", "required": true},
+    {"path": "docs/rfcs/0028-predicate-intent-surfacing.md", "required": true},
+    {"path": "docs/rfcs/0029-bench-triage-workbench.md", "required": true},
+    {"path": "docs/reviews/rfc0028-predicate-intent-implementation/REEXTRACTION_BENCH_100.md", "required": true},
+    {"path": "docs/process/multi-agent-review-loop.md", "required": true},
+    {"path": "docs/process/project-judgment.md", "required": true},
+    {"path": "src/engram/interview/web.py", "required": true}
+  ],
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 4,
+    "require_disjoint_write_scopes": true
+  },
+  "cycles": [
+    {"from": "final_review", "on_verdict": "needs_revision", "to": "apply_findings", "max_iterations": 1}
+  ],
+  "edges": [
+    {"from": "draft_rfc", "on": "completed", "to": "review_claude"},
+    {"from": "draft_rfc", "on": "completed", "to": "review_codex"},
+    {"from": "draft_rfc", "on": "completed", "to": "review_gemini"},
+    {"from": "draft_rfc", "on": "completed", "to": "review_usability_adversary"},
+    {"from": "review_claude", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_codex", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_gemini", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_usability_adversary", "on": "completed", "to": "findings_ledger"},
+    {"from": "findings_ledger", "on": "completed", "to": "revision_synthesis"},
+    {"from": "revision_synthesis", "on": "completed", "to": "apply_findings"},
+    {"from": "apply_findings", "on": "completed", "to": "final_review"}
+  ],
+  "jobs": [
+    {
+      "id": "draft_rfc",
+      "type": "draft",
+      "title": "Draft RFC 0029 bench triage workbench",
+      "role_id": "author",
+      "lane_id": "codex",
+      "objective": "Draft RFC 0029 and index it as a local-only benchmark triage UI proposal for extraction/re-extraction validation.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-design-2026-05-13/prompts/draft.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0029-bench-triage-workbench.md", "kind": "rfc"},
+        {"path": "docs/rfcs/README.md", "kind": "rfc_index"},
+        {"path": "docs/rfcs/0027-interview-web-ui.md", "kind": "upstream_rfc"},
+        {"path": "docs/specs/0027-interview-web-ui-spec.md", "kind": "upstream_spec"},
+        {"path": "docs/reviews/rfc0028-predicate-intent-implementation/REEXTRACTION_BENCH_100.md", "kind": "benchmark_report"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/rfcs/0029-bench-triage-workbench.md",
+          "docs/rfcs/README.md",
+          "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/"
+        ],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "design_handoff", "kind": "handoff", "path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/DESIGN_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_claude",
+      "type": "review",
+      "title": "Review RFC 0029 with Claude",
+      "role_id": "reviewer",
+      "lane_id": "claude",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Review RFC 0029 for privacy posture, local-first constraints, scratch-state boundary, and consistency with Engram architecture decisions.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-design-2026-05-13/prompts/review.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0029-bench-triage-workbench.md", "kind": "rfc"},
+        {"path": "docs/rfcs/0027-interview-web-ui.md", "kind": "upstream_rfc"},
+        {"path": "docs/reviews/rfc0028-predicate-intent-implementation/REEXTRACTION_BENCH_100.md", "kind": "benchmark_report"},
+        {"path": "HUMAN_REQUIREMENTS.md", "kind": "principles"},
+        {"path": "DECISION_LOG.md", "kind": "decision_log"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/REVIEW_claude.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_codex",
+      "type": "review",
+      "title": "Review RFC 0029 with Codex",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Review RFC 0029 for implementation feasibility, CLI shape, route/test coverage, and integration with benchmark artifacts.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-design-2026-05-13/prompts/review.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0029-bench-triage-workbench.md", "kind": "rfc"},
+        {"path": "docs/rfcs/0017-extraction-prompt-versioning.md", "kind": "upstream_rfc"},
+        {"path": "docs/rfcs/0019-extraction-batching-server.md", "kind": "upstream_rfc"},
+        {"path": "docs/rfcs/0024-phase-4-pre-full-corpus-benchmark-gate.md", "kind": "upstream_rfc"},
+        {"path": "benchmarks/extraction", "kind": "benchmark_package"},
+        {"path": "src/engram/interview/web.py", "kind": "web_reference"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/REVIEW_codex.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_gemini",
+      "type": "review",
+      "title": "Review RFC 0029 with Gemini",
+      "role_id": "reviewer",
+      "lane_id": "gemini",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Review RFC 0029 for operator workflow, UX completeness, queue semantics, and whether the proposal solves the RFC 0028 benchmark-review bottleneck.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-design-2026-05-13/prompts/review.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0029-bench-triage-workbench.md", "kind": "rfc"},
+        {"path": "docs/rfcs/0027-interview-web-ui.md", "kind": "upstream_rfc"},
+        {"path": "docs/specs/0027-interview-web-ui-spec.md", "kind": "upstream_spec"},
+        {"path": "docs/reviews/rfc0028-predicate-intent-implementation/REEXTRACTION_BENCH_100.md", "kind": "benchmark_report"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/REVIEW_gemini.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_usability_adversary",
+      "type": "review",
+      "title": "Adversarial usability review of RFC 0029",
+      "role_id": "usability_adversary",
+      "lane_id": "codex",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "objective": "Adversarially review RFC 0029 for residual cognitive overhead, ambiguous verdicts, unsafe batching, and false confidence in promotion decisions.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-design-2026-05-13/prompts/usability_adversary.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0029-bench-triage-workbench.md", "kind": "rfc"},
+        {"path": "docs/reviews/rfc0028-predicate-intent-implementation/REEXTRACTION_BENCH_100.md", "kind": "benchmark_report"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review", "kind": "finding", "path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/REVIEW_usability_adversary.md", "required": true}
+      ]
+    },
+    {
+      "id": "findings_ledger",
+      "type": "ledger",
+      "title": "Record RFC 0029 findings ledger",
+      "role_id": "ledger",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Normalize the three-lane design review plus adversarial usability review into one ledger.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-design-2026-05-13/prompts/findings_ledger.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/REVIEW_claude.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/REVIEW_codex.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/REVIEW_gemini.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/REVIEW_usability_adversary.md", "kind": "review"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "ledger", "kind": "findings_ledger", "path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/FINDINGS_LEDGER.md", "required": true}
+      ]
+    },
+    {
+      "id": "revision_synthesis",
+      "type": "synthesis",
+      "title": "Synthesize RFC 0029 findings",
+      "role_id": "synthesizer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Classify the findings ledger and produce concrete RFC revision instructions.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-design-2026-05-13/prompts/synthesis.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/FINDINGS_LEDGER.md", "kind": "findings_ledger"},
+        {"path": "docs/rfcs/0029-bench-triage-workbench.md", "kind": "rfc"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "revision_synthesis", "kind": "synthesis", "path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/REVISION_SYNTHESIS.md", "required": true}
+      ]
+    },
+    {
+      "id": "apply_findings",
+      "type": "draft",
+      "title": "Apply RFC 0029 accepted findings",
+      "role_id": "author",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Apply accepted review findings to RFC 0029 and publish a revision handoff.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-design-2026-05-13/prompts/apply_findings.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/FINDINGS_LEDGER.md", "kind": "findings_ledger"},
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/REVISION_SYNTHESIS.md", "kind": "synthesis"},
+        {"path": "docs/rfcs/0029-bench-triage-workbench.md", "kind": "rfc"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/rfcs/0029-bench-triage-workbench.md",
+          "docs/rfcs/README.md",
+          "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/"
+        ],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "revision_handoff", "kind": "handoff", "path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/REVISION_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "final_review",
+      "type": "review",
+      "title": "Final review of RFC 0029 design",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "fresh_session_required": true,
+      "objective": "Audit the revised RFC 0029 against reviews, ledger, synthesis, and revision handoff.",
+      "task_prompt": {"path": "striatum/rfc-0029-bench-triage-workbench-design-2026-05-13/prompts/final_review.md"},
+      "inputs": [
+        {"path": "docs/rfcs/0029-bench-triage-workbench.md", "kind": "rfc"},
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/FINDINGS_LEDGER.md", "kind": "findings_ledger"},
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/REVISION_SYNTHESIS.md", "kind": "synthesis"},
+        {"path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/REVISION_HANDOFF.md", "kind": "handoff"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/"],
+        "forbidden_paths": [".striatum/", "docs/rfcs/", "src/engram/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "final_review", "kind": "finding", "path": "docs/reviews/rfc0029-bench-triage-workbench-design-2026-05-13/FINAL_REVIEW.md", "required": true}
+      ]
+    }
+  ]
+}
