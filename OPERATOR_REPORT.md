@@ -9,7 +9,7 @@ Last updated: 2026-05-13
 - Current objective: recover and promote the RFC 0028/RFC 0029 work through legitimate review, rerun Phase 4 gate review with multi-lane evidence, audit older Striatum provenance gaps, and then scaffold/execute the backlog with maximum useful parallelism.
 - Current checkpoint: RFC 0032 recovery implementation is committed as `4c59259` (`Recover RFC 0032 audit findings`); fresh quarantine/rerun scaffolds are committed as `d56cef7` (`Scaffold attested review reruns`); lane-command repair is committed as `6d537cc` (`Fix Striatum lane commands`); Gemini trust automation is committed as `6590970` (`Trust Gemini automation worktrees`).
 - Sync status: fetched and rebased against `origin/master`; branch was already up to date.
-- Current uncommitted batch: live-run operator-report update while second-wave Striatum adapter jobs execute in clean worktrees.
+- Current uncommitted batch: live-run operator-report update capturing review checkpoints and remaining active lanes.
 
 ## Verified Work
 
@@ -46,6 +46,7 @@ Last updated: 2026-05-13
    - First execution probes were canceled after Codex/Claude exited without required artifacts or verdicts and Gemini exited nonzero in review lanes. The workflow command arrays have been patched to use explicit noninteractive write-capable launch modes before restarting from clean worktrees.
    - Second-wave runs are active in clean worktrees created from `6d537cc`.
    - Second-wave Gemini review lanes initially exited nonzero because Gemini headless mode requires trusted worktrees. Fresh scaffolds are being patched with `--skip-trust`; already-prepared active runs should retry Gemini lanes with `GEMINI_CLI_TRUST_WORKSPACE=true`.
+   - Several reruns now have substantive `needs_revision` verdicts. Treat these as real work items, not Striatum infrastructure failures.
 7. Synthesize review outcomes, promote accepted artifacts, and update `DECISION_LOG.md`, `CHANGELOG.md`, and docs.
 8. Scaffold backlog workflows and drive independent implementation lanes in parallel.
 
@@ -83,20 +84,21 @@ Last updated: 2026-05-13
   - Codex review: `sess_7bd6adc29a3444ccb4cf35dac8ad330e`, lease `lease_74fa1e74917c4cb291dd0f3a4058ed67`
   - Gemini initial review: `sess_4997481fa993447ea8e9209156a3cc74`, lease `lease_2481d05d6d7f4040b4cfcb19e66e62ad`, exited nonzero on trust gate and released.
   - Gemini trusted retry: `sess_5b605b4efd224ee089aef2ba94464862`, lease `lease_0d89d26d57f2455e93df2a8fa1a38d66`
-  - Current state: Claude completed `accept_with_findings`; Codex completed `needs_revision` and opened a human checkpoint; Gemini retry is running.
+  - Current state: Claude completed `accept_with_findings`; Codex completed `needs_revision` and opened a human checkpoint; Gemini retry is still running.
 - RFC 0027 rerun in `/home/halbritt/git/engram-worktrees/rfc0027-rerun`:
   `run_91107d8cb1094166806a93f446dfa243`
   - Claude review: `sess_62c7f3c7ea414190b40fb05520a00f32`, lease `lease_49920a71f0de47a99a42baeb81197929`
   - Codex review: `sess_644864b83f1547f6b7fcea7f214ebcc9`, lease `lease_d0e28d05f5414767a4c3d4ebe2e79a4f`
   - Gemini initial review: `sess_9fc3b94b532b4c839fb67a05d3623438`, lease `lease_8571c481cf704ac1b04453ab8774f77b`, exited nonzero on trust gate and released.
   - Gemini trusted retry: `sess_5cbf352db3d94549aa65605bb46dd380`, lease `lease_a1dba1a2173b47b4bc6d691b9c0843f8`
-  - Current state: Claude and Codex completed; Gemini retry is running.
+  - Current state: Claude and Gemini completed; Codex completed `needs_revision` and opened a human checkpoint.
 - RFC 0028 promotion in `/home/halbritt/git/engram-worktrees/rfc0028-promotion`:
   `run_d7a2a36954be46f98e2ce022e71ca336`
   - Codex author: `sess_c9c3f4ec22994abab7d3fcf05c729e3b`, lease `lease_c565c389622141eca2a6a44f9b317211`, completed and closed.
   - Claude review: `sess_6cf0e69dcdbe4cbba9787d55271f3f38`, lease `lease_653a44c6dcba4a449beedcdb23d08144`
   - Codex review: `sess_f653460fc9ea4366b732fcf2e2fd8cbc`, lease `lease_05e5f9e9758a485c81ccc93668458f4a`
-  - Gemini review: `sess_323ac273490f4e1ea33a0975d04308cc`, lease `lease_6e719a710403472298877ea175ebc91f`
+  - Gemini review: `sess_323ac273490f4e1ea33a0975d04308cc`, lease `lease_6e719a710403472298877ea175ebc91f`, exited nonzero after Gemini model-capacity 429s.
+  - Current state: Claude completed, Codex completed `needs_revision`, Gemini is blocked; ledger is blocked.
 - RFC 0029 design in `/home/halbritt/git/engram-worktrees/rfc0029-design`:
   `run_5ad589fe9f82497e9f8d508589ea343e`
   - Codex author: `sess_ac5071c9db554c31bc687097ca55aff0`, lease `lease_2815107fd55044c0ab37f17006af7742`, completed and closed.
@@ -104,10 +106,12 @@ Last updated: 2026-05-13
   - Codex review: `sess_10c38d3e36a84fb2a4124ff9911c5165`, lease `lease_92ee2e63494d458c9ad2e4fc65e36c09`
   - Gemini review: `sess_d3937c8f2cc74196a5a1880e4f57d1d6`, lease `lease_6443b80aa62247689e021e1e39542f18`
   - Codex usability adversary: `sess_7b19dd8ead49424289b94231486b7e2b`, lease `lease_3047a0de71aa4778966e1b495c9bef39`
+  - Current state: all design reviews completed; usability adversary completed `needs_revision`, blocking the ledger.
 - Phase 4 gate in `/home/halbritt/git/engram-worktrees/phase4-gate`:
   `run_ebabb539d62f4f62a192783cd9704140`
   - Codex Tier 0 operator: `sess_9f737b9bbd464b9fb77cab2fa8f02958`, lease `lease_e250bcd8db634bb592d5872b6ebed013`, completed.
-  - Codex Tier 1 operator: `sess_5f7cae5a6ca74cba9a47928d0d53c73d`, lease `lease_07262098c5bb48de97d7be65a85f3279`, running.
+  - Codex Tier 1 operator: `sess_5f7cae5a6ca74cba9a47928d0d53c73d`, lease `lease_07262098c5bb48de97d7be65a85f3279`, completed.
+  - Codex Tier 2 operator: `sess_bddb170daa9c48d9a48e1f34b3521e49`, lease `lease_c2a50df7e9144763a62ccf5af9946449`, running.
 
 ## Execution Constraints
 
