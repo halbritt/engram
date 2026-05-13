@@ -9,7 +9,7 @@ Last updated: 2026-05-13
 - Current objective: recover and promote the RFC 0028/RFC 0029 work through legitimate review, rerun Phase 4 gate review with multi-lane evidence, audit older Striatum provenance gaps, and then scaffold/execute the backlog with maximum useful parallelism.
 - Current checkpoint: RFC 0032 recovery implementation is committed as `4c59259` (`Recover RFC 0032 audit findings`); fresh quarantine/rerun scaffolds are committed as `d56cef7` (`Scaffold attested review reruns`); lane-command repair is committed and pushed as `6d537cc` (`Fix Striatum lane commands`).
 - Sync status: fetched and rebased against `origin/master`; branch was already up to date.
-- Current uncommitted batch: live-run operator-report update while second-wave Striatum adapter jobs execute in clean worktrees.
+- Current uncommitted batch: Gemini headless trust-gate scaffold fix while second-wave Striatum adapter jobs execute in clean worktrees.
 
 ## Verified Work
 
@@ -45,6 +45,7 @@ Last updated: 2026-05-13
    - Fresh validated scaffolds exist for RFC 0021 rerun, RFC 0027 rerun, RFC 0028 promotion, RFC 0029 design/spec/implementation, and Phase 4 multi-lane gate.
    - First execution probes were canceled after Codex/Claude exited without required artifacts or verdicts and Gemini exited nonzero in review lanes. The workflow command arrays have been patched to use explicit noninteractive write-capable launch modes before restarting from clean worktrees.
    - Second-wave runs are active in clean worktrees created from `6d537cc`.
+   - Second-wave Gemini review lanes initially exited nonzero because Gemini headless mode requires trusted worktrees. Fresh scaffolds are being patched with `--skip-trust`; already-prepared active runs should retry Gemini lanes with `GEMINI_CLI_TRUST_WORKSPACE=true`.
 7. Synthesize review outcomes, promote accepted artifacts, and update `DECISION_LOG.md`, `CHANGELOG.md`, and docs.
 8. Scaffold backlog workflows and drive independent implementation lanes in parallel.
 

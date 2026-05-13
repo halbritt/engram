@@ -35,7 +35,7 @@
     "gemini": {
       "adapter": "process",
       "display_model": "Gemini 3.1 Pro Preview",
-      "command": ["gemini", "--model", "gemini-3.1-pro-preview", "--yolo", "--prompt", "Execute the Striatum work packet from stdin. Follow the packet exactly, edit only allowed paths, publish required artifacts, and record required Striatum completions or verdicts."],
+      "command": ["gemini", "--model", "gemini-3.1-pro-preview", "--skip-trust", "--yolo", "--prompt", "Execute the Striatum work packet from stdin. Follow the packet exactly, edit only allowed paths, publish required artifacts, and record required Striatum completions or verdicts."],
       "capabilities": [
         "review"
       ],

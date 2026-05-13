@@ -22,7 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and pre-suspect RFC 0021/RFC 0027 provenance reruns. A first execution probe
   exposed noninteractive lane commands that could exit without artifacts; those
   probe runs were canceled and the fresh scaffolds now launch Codex, Claude, and
-  Gemini in explicit noninteractive write-capable modes.
+  Gemini in explicit noninteractive write-capable modes. A second probe found
+  Gemini's headless trust gate, so the scaffolds now pass `--skip-trust` for
+  clean automation worktrees.
 - RFC 0027 implementation: FastAPI + htmx web UI for the gold-set
   interview surface, served by `engram phase3 interview serve` (RFC
   0027 / spec 0027 / D080). Loopback-only with no escape clause;
