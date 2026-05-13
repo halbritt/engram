@@ -91,6 +91,7 @@ def test_re_extract_cli_dispatches_with_kwargs(
 
     rc = cli.main(
         [
+            "phase3",
             "re-extract",
             "--version",
             "extractor.v9.d999.smoke",
@@ -116,14 +117,14 @@ def test_re_extract_cli_dispatches_with_kwargs(
 
 def test_re_extract_cli_missing_version_exits_nonzero() -> None:
     with pytest.raises(SystemExit) as excinfo:
-        cli.main(["re-extract"])
+        cli.main(["phase3", "re-extract"])
     assert excinfo.value.code != 0
 
 
 def test_re_extract_cli_bad_version_format_exits_nonzero(
     fake_connect: Any, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    rc = cli.main(["re-extract", "--version", "not-a-valid-format"])
+    rc = cli.main(["phase3", "re-extract", "--version", "not-a-valid-format"])
     assert rc == 1
     err = capsys.readouterr().err
     assert "re-extract" in err.lower()
@@ -133,7 +134,7 @@ def test_re_extract_cli_bad_version_format_exits_nonzero(
 def test_re_extract_cli_rejects_same_version(
     fake_connect: Any, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    rc = cli.main(["re-extract", "--version", EXTRACTION_PROMPT_VERSION])
+    rc = cli.main(["phase3", "re-extract", "--version", EXTRACTION_PROMPT_VERSION])
     assert rc == 1
     err = capsys.readouterr().err
     assert "re-extract" in err.lower()
@@ -167,7 +168,7 @@ def test_re_extract_dry_run_writes_no_rows(
     initial_claims = conn.execute("SELECT count(*) FROM claims").fetchone()[0]
 
     rc = cli.main(
-        ["re-extract", "--dry-run", "--version", TARGET_VERSION]
+        ["phase3", "re-extract", "--dry-run", "--version", TARGET_VERSION]
     )
 
     assert rc == 0
@@ -229,7 +230,7 @@ def test_re_extract_creates_new_rows_under_new_version_and_preserves_old(
     )
     monkeypatch.setattr(cli, "IkLlamaExtractorClient", lambda: static_client)
 
-    rc = cli.main(["re-extract", "--version", TARGET_VERSION])
+    rc = cli.main(["phase3", "re-extract", "--version", TARGET_VERSION])
     assert rc == 0
 
     # New rows under the new version exist.
@@ -314,7 +315,7 @@ def test_re_extract_preserves_immutable_evidence(
     )
     monkeypatch.setattr(cli, "IkLlamaExtractorClient", lambda: static_client)
 
-    rc = cli.main(["re-extract", "--version", TARGET_VERSION])
+    rc = cli.main(["phase3", "re-extract", "--version", TARGET_VERSION])
     assert rc == 0
 
     msg_payloads_after = conn.execute(
@@ -350,7 +351,7 @@ def test_re_extract_reports_coverage_gap_when_new_version_drops_claims(
     static_client = StaticExtractor([])
     monkeypatch.setattr(cli, "IkLlamaExtractorClient", lambda: static_client)
 
-    rc = cli.main(["re-extract", "--version", TARGET_VERSION])
+    rc = cli.main(["phase3", "re-extract", "--version", TARGET_VERSION])
     assert rc == 0
     out = capsys.readouterr().out
     assert "coverage gap" in out.lower()
@@ -393,7 +394,7 @@ def test_re_extract_diff_sample_compares_versions(
     monkeypatch.setattr(cli, "IkLlamaExtractorClient", lambda: static_client)
 
     rc = cli.main(
-        ["re-extract", "--version", TARGET_VERSION, "--diff-sample", "2"]
+        ["phase3", "re-extract", "--version", TARGET_VERSION, "--diff-sample", "2"]
     )
     assert rc == 0
     out = capsys.readouterr().out
@@ -438,7 +439,7 @@ def test_re_extract_limit_caps_segment_count(
     monkeypatch.setattr(extractor, "extract_claims_from_segment", fake_extract_one)
 
     rc = cli.main(
-        ["re-extract", "--version", TARGET_VERSION, "--limit", "2"]
+        ["phase3", "re-extract", "--version", TARGET_VERSION, "--limit", "2"]
     )
     assert rc == 0
     assert len(extracted) == 2
@@ -496,6 +497,7 @@ def test_re_extract_source_id_filter_restricts_segments(
 
     rc = cli.main(
         [
+            "phase3",
             "re-extract",
             "--version",
             TARGET_VERSION,
@@ -522,6 +524,7 @@ def test_re_extract_batch_size_is_accepted_and_threads_through(
 
     rc = cli.main(
         [
+            "phase3",
             "re-extract",
             "--version",
             "extractor.v9.d111.batch-test",

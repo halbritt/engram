@@ -2243,7 +2243,8 @@ def test_cli_pipeline_is_phase2_only_and_pipeline3_warns(monkeypatch, capsys):
     monkeypatch.setattr(cli, "run_segment_batches", lambda *a, **k: type("R", (), {"processed": 0, "created": 0, "skipped": 0, "failed": 0})())
     monkeypatch.setattr(cli, "run_embed_batches", lambda *a, **k: type("R", (), {"processed": 0, "created": 0, "cache_hits": 0, "activated": 0, "failed": 0})())
     monkeypatch.setattr(cli, "run_extract_batches", lambda *a, **k: (_ for _ in ()).throw(AssertionError("phase3 should not run")))
-    assert cli.main(["pipeline", "--limit", "1"]) == 0
+    assert cli.main(["pipeline", "--limit", "1"]) == 2
+    assert "ambiguous command: pipeline" in capsys.readouterr().err
 
     monkeypatch.setattr(cli, "phase3_schema_preflight", lambda conn: None)
     monkeypatch.setattr(cli, "apply_phase3_reclassification_invalidations", lambda conn: 0)

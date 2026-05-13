@@ -11,6 +11,7 @@ from engram.phase4 import (
     build_deterministic_entities,
     correct_belief,
     entity_neighborhood,
+    promote_to_pinned,
     refresh_current_beliefs,
     reject_review_belief,
     run_phase4_smoke,
@@ -66,7 +67,6 @@ def test_current_beliefs_and_review_actions_follow_transition_api(conn):
 
     accepted = accept_belief(conn, belief_id, actor="test", note="looks grounded")
     assert accepted.action_status == "applied"
-    refresh_current_beliefs(conn)
     assert conn.execute(
         "SELECT status FROM current_beliefs WHERE id = %s",
         (belief_id,),
@@ -110,7 +110,6 @@ def test_correction_is_raw_capture_and_reject_exits_current_view(conn):
 
     rejected = reject_review_belief(conn, belief_id, actor="test", note="superseded by correction")
     assert rejected.action_status == "applied"
-    refresh_current_beliefs(conn)
     assert (
         conn.execute(
             "SELECT count(*) FROM current_beliefs WHERE id = %s",
@@ -118,6 +117,34 @@ def test_correction_is_raw_capture_and_reject_exits_current_view(conn):
         ).fetchone()[0]
         == 0
     )
+
+
+def test_promote_to_pinned_is_idempotent_and_refreshes_review_queue(conn):
+    belief_id = insert_candidate_belief(conn)
+
+    refresh_current_beliefs(conn)
+    promoted = promote_to_pinned(conn, belief_id, actor="test", note="always include")
+
+    assert promoted.action_status == "applied"
+    assert promoted.changed is True
+    assert conn.execute(
+        "SELECT actor FROM pinned_beliefs WHERE belief_id = %s",
+        (belief_id,),
+    ).fetchone() == ("test",)
+    assert conn.execute(
+        "SELECT status FROM current_beliefs WHERE id = %s",
+        (belief_id,),
+    ).fetchone() == ("accepted",)
+    assert conn.execute("SELECT count(*) FROM belief_review_queue").fetchone()[0] == 0
+
+    repeated = promote_to_pinned(conn, belief_id, actor="test")
+
+    assert repeated.action_status == "recorded"
+    assert repeated.changed is False
+    assert conn.execute(
+        "SELECT count(*) FROM pinned_beliefs WHERE belief_id = %s",
+        (belief_id,),
+    ).fetchone()[0] == 1
 
 
 def test_deterministic_entity_build_is_idempotent_and_queryable(conn):

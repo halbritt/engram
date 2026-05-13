@@ -5,11 +5,11 @@
 |-------|-------|
 | Spec | 0029 |
 | Title | Bench Triage Workbench |
-| Status | accepted |
+| Status | draft |
 | Source RFC | [RFC 0029](../rfcs/0029-bench-triage-workbench.md) |
-| Source review | [RFC 0029 final design review](../reviews/rfc0029-bench-triage-workbench/FINAL_REVIEW.md) |
+| Review status | Source review chain quarantined by [RFC 0032](../reviews/rfc0032-suspect-work-audit/FINAL_DECISION.md) |
 | Date | 2026-05-09 |
-| Decision refs | D020, D074, D082 |
+| Decision refs | D020, D074 |
 | Phase refs | PHASE-0003-FOLLOWON, PHASE-0004 |
 
 ## Purpose

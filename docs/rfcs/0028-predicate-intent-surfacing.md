@@ -5,7 +5,7 @@
 |-------|-------|
 | RFC | 0028 |
 | Title | Predicate-Intent Surfacing Across Extraction and Interview |
-| Status | accepted |
+| Status | proposal |
 | Implementation | partial |
 | Date | 2026-05-09 |
 | Context | RFC 0011 § Schema (`predicate_vocabulary`); RFC 0017 (extraction prompt versioning); RFC 0021 / D079 (gold-set interview); RFC 0027 / D080 (interview web UI); D016 (eval gate sequencing); `src/engram/extractor.py:1961` (`build_extraction_prompt`); `src/engram/interview/render.py` (operator UI rendering); `predicate_vocabulary.description` column |
@@ -16,10 +16,9 @@ Decision refs:
   - D069
   - D079
   - D080
-  - D082
 
-Review refs:
-  - striatum/rfc-0028-predicate-intent-implementation
+Audit refs:
+  - [RFC 0032 suspect-work audit](../reviews/rfc0032-suspect-work-audit/FINAL_DECISION.md)
 
 Phase refs:
   - PHASE-0003 (extraction)

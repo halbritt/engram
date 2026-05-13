@@ -20,11 +20,18 @@ from engram.consolidator.transitions import BeliefPayload, insert_belief
 from engram.extractor import EXTRACTION_PROMPT_VERSION, EXTRACTION_REQUEST_PROFILE_VERSION
 from engram.interview.errors import GoldLabelStorageError
 from engram.interview.storage import (
+    get_active_learning_signal_version,
     insert_label,
+    insert_active_learning_event,
     insert_session,
+    insert_session_targets,
+    list_session_targets,
     list_sessions,
     mark_session_completed,
+    session_target_to_sampled,
+    unanswered_session_targets,
 )
+from engram.interview.sampler import SampledTarget
 
 
 def _exec_translated(conn, sql, params=()):  # type: ignore[no-untyped-def]
@@ -101,6 +108,26 @@ def _seed_belief(conn, *, privacy_tier: int = 1) -> str:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _sampled_claim_target(claim_id: str, *, active_signal: str | None = None) -> SampledTarget:
+    return SampledTarget(
+        target_kind="claim",
+        target_id=claim_id,
+        stability_class="preference",
+        confidence=0.7,
+        observed_at=_now(),
+        conf_band="0.6-0.8",
+        recency_band="<7d",
+        belief_status=None,
+        candidate_pool_snapshot_id=str(uuid.uuid4()),
+        active_learning_signal_version=active_signal,
+        extraction_prompt_version=CLAIM_VERSION_TRIPLE["extraction_prompt_version"],
+        extraction_model_version=CLAIM_VERSION_TRIPLE["extraction_model_version"],
+        consolidation_prompt_version=None,
+        consolidation_model_version=None,
+        request_profile_version=CLAIM_VERSION_TRIPLE["request_profile_version"],
+    )
 
 
 def test_session_and_label_happy_path(conn) -> None:
@@ -381,3 +408,80 @@ def test_list_sessions_filters_by_state(conn) -> None:
     assert open_id in open_ids
     assert closed_id in completed_ids
     assert open_id not in completed_ids
+
+
+def test_active_learning_event_latest_lookup_and_append_only(conn) -> None:
+    assert get_active_learning_signal_version(conn) is None
+    first = insert_active_learning_event(conn, signal_version="rfc0018.reviewer.v1")
+    second = insert_active_learning_event(conn, signal_version="rfc0018.reviewer.v2")
+    assert first != second
+    assert get_active_learning_signal_version(conn) == "rfc0018.reviewer.v2"
+
+    with pytest.raises(GoldLabelStorageError, match="append-only"):
+        _exec_translated(
+            conn,
+            "UPDATE gold_label_active_learning_events SET signal_version = 'changed'",
+        )
+
+
+def test_session_targets_round_trip_preserves_active_signal_and_confidence(conn) -> None:
+    claim_id = _seed_claim(conn)
+    session_id = insert_session(
+        conn,
+        seed=8,
+        sampler_id="stratified",
+        sampler_version="stratified.v1.d079.initial",
+        strata_weights={"stability_class": "preference"},
+    )
+    sampled = _sampled_claim_target(claim_id, active_signal="rfc0018.reviewer.v1")
+    insert_session_targets(conn, session_id=session_id, sampled=[sampled])
+
+    targets = list_session_targets(conn, session_id=session_id)
+    assert len(targets) == 1
+    target = targets[0]
+    assert target.active_learning_signal_version == "rfc0018.reviewer.v1"
+    assert target.confidence == 0.7
+    assert target.observed_at == sampled.observed_at
+
+    reconstructed = session_target_to_sampled(target)
+    assert reconstructed.active_learning_signal_version == "rfc0018.reviewer.v1"
+    assert reconstructed.confidence == 0.7
+    assert reconstructed.observed_at == sampled.observed_at
+
+
+def test_unanswered_session_targets_skip_recorded_version(conn) -> None:
+    claim_id = _seed_claim(conn)
+    session_id = insert_session(
+        conn,
+        seed=9,
+        sampler_id="stratified",
+        sampler_version="stratified.v1.d079.initial",
+        strata_weights={},
+    )
+    sampled = _sampled_claim_target(claim_id)
+    insert_session_targets(conn, session_id=session_id, sampled=[sampled])
+    assert len(unanswered_session_targets(conn, session_id=session_id)) == 1
+
+    insert_label(
+        conn,
+        session_id=session_id,
+        target_kind="claim",
+        target_id=claim_id,
+        version_triple=CLAIM_VERSION_TRIPLE,
+        prompt_template_version="interview.claim.v1.d079.initial",
+        prompt_template_path="prompts/interview/claim_v1.md",
+        prompt_text="Q",
+        verdict="true",
+        rationale=None,
+        sampler_id="stratified",
+        sampler_version="stratified.v1.d079.initial",
+        candidate_pool_snapshot_id=sampled.candidate_pool_snapshot_id,
+        active_learning_signal_version=None,
+        stability_class="preference",
+        conf_band="0.6-0.8",
+        recency_band="<7d",
+        belief_status=None,
+        asked_at=_now(),
+        answered_at=_now(),
+    )
+    assert unanswered_session_targets(conn, session_id=session_id) == []

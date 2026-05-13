@@ -8,20 +8,20 @@ embedding rows exist.
 
 ```bash
 make migrate
-make segment
-make embed
+make phase2-segment
+make phase2-embed
 ```
 
-`make pipeline` runs `segment` then `embed` with defaults and is the normal
-operator path. A standalone `segment` run creates inactive segment generations;
-run `engram embed` before expecting retrieval visibility.
+`make phase2-run` runs `phase2-segment` then `phase2-embed` with defaults and
+is the normal operator path. A standalone segment run creates inactive segment
+generations; run `engram phase2 embed` before expecting retrieval visibility.
 
 Useful CLI forms:
 
 ```bash
-engram segment --source-id UUID --batch-size 10 --limit 100
-engram embed --model-version nomic-embed-text:latest --batch-size 100
-engram pipeline --segment-batch-size 10 --embed-batch-size 100
+engram phase2 segment --source-id UUID --batch-size 10 --limit 100
+engram phase2 embed --model-version nomic-embed-text:latest --batch-size 100
+engram phase2 run --segment-batch-size 10 --embed-batch-size 100
 ```
 
 For long unattended runs, pin the probed ik-llama model id so every batch does
@@ -29,10 +29,11 @@ not need to call `/v1/models`:
 
 ```bash
 export ENGRAM_SEGMENTER_MODEL=~/models/Qwen_Qwen3.6-35B-A3B-IQ4_XS.gguf
-make pipeline
+make phase2-run
 ```
 
-The Makefile also accepts `SEGMENTER_MODEL=...` for `segment` and `pipeline`.
+The Makefile also accepts `SEGMENTER_MODEL=...` for `phase2-segment` and
+`phase2-run`.
 
 ## Local Preflight
 
@@ -80,7 +81,7 @@ Before any long segmentation or soak run, run P-HEALTH:
    replaced:
 
    ```bash
-   make pipeline-isolated SEGMENTER_MODEL="$ENGRAM_SEGMENTER_MODEL"
+   make phase2-run-isolated SEGMENTER_MODEL="$ENGRAM_SEGMENTER_MODEL"
    ```
 
    For a bounded preflight, call the CLI directly with `--limit 10`.
@@ -225,7 +226,7 @@ Re-running the same `segmenter_prompt_version` and `segmenter_model_version` is
 a no-op once a generation is `segmented`, `embedding`, or `active`.
 
 Changing the prompt/model inserts a new generation and inactive segment rows.
-The old active generation remains retrieval-visible until `engram embed`
+The old active generation remains retrieval-visible until `engram phase2 embed`
 creates all required `segment_embeddings` for the new generation. Activation
 then supersedes the prior generation and flips old segment/vector rows
 inactive in one transaction.
@@ -270,5 +271,5 @@ queue only the affected parent for reprocessing.
 This phase does not extract claims, create beliefs, canonicalize entities,
 serve `context_for`, segment Obsidian notes, or segment capture rows. Re-embed
 of existing active generations under a new embedding model is operator-driven
-via `engram embed --model-version ...`; it is not automatically run by
-`engram segment`.
+via `engram phase2 embed --model-version ...`; it is not automatically run by
+`engram phase2 segment`.

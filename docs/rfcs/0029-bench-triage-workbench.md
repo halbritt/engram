@@ -5,23 +5,20 @@
 |-------|-------|
 | RFC | 0029 |
 | Title | Bench Triage Workbench |
-| Status | promoted |
+| Status | proposal |
 | Implementation | implemented |
 | Date | 2026-05-09 |
-| Context | RFC 0017 (re-extraction dry runs); RFC 0019 (extraction backend benchmark harness); RFC 0024 (Phase 4 pre-full-corpus benchmark gate); RFC 0027 (localhost-only FastAPI/htmx web UI); RFC 0028 (predicate-intent surfacing); D020 / D074 / D082; `benchmarks/extraction/`; `docs/reviews/rfc0028-predicate-intent-implementation/REEXTRACTION_BENCH_100.md` |
+| Context | RFC 0017 (re-extraction dry runs); RFC 0019 (extraction backend benchmark harness); RFC 0024 (Phase 4 pre-full-corpus benchmark gate); RFC 0027 (localhost-only FastAPI/htmx web UI); RFC 0028 (predicate-intent surfacing); D020 / D074; `benchmarks/extraction/`; RFC 0032 audit of the RFC 0028 bench artifact |
 
-Spec refs:
-  - [Spec 0029](../specs/0029-bench-triage-workbench-spec.md)
+Draft spec refs:
+  - [Spec 0029](../specs/0029-bench-triage-workbench-spec.md) (draft; not promoted)
 
 Decision refs:
   - D020
   - D074
-  - D082
 
-Review refs:
-  - [RFC 0029 design final review](../reviews/rfc0029-bench-triage-workbench/FINAL_REVIEW.md)
-  - [Spec 0029 final review](../reviews/rfc0029-bench-triage-workbench-spec/FINAL_REVIEW.md)
-  - [RFC 0029 implementation final review](../reviews/rfc0029-bench-triage-workbench-implementation/FINAL_REVIEW.md)
+Audit refs:
+  - [RFC 0032 suspect-work audit](../reviews/rfc0032-suspect-work-audit/FINAL_DECISION.md)
 
 Phase refs:
   - PHASE-0003-FOLLOWON

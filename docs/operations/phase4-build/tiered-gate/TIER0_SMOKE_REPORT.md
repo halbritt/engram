@@ -7,6 +7,14 @@ RFC refs: RFC-0024
 Decision refs: D020, D044, D052, D074, D077
 Phase refs: PHASE-0004
 
+## Editor's Note
+
+Per RFC 0032, this artifact is retained as single-lane Codex
+operator/reviewer notes only. It is not a multi-lane RFC 0024 Phase 4
+gate verdict, does not authorize Phase 4 promotion, and does not
+authorize full-corpus Phase 4 execution. The parent Striatum run recorded
+`doctor ok=false`.
+
 ## Summary
 
 Ran the RFC 0024 Tier 0 schema/workflow smoke checks over a bounded local slice.

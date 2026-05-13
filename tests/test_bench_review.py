@@ -8,8 +8,11 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from engram.bench_review import cli as bench_cli
 from engram.bench_review import detail as detail_module
+from engram.bench_review import web as bench_web
 from engram.bench_review.artifacts import (
+    BenchReviewArtifactError,
     PriorSegmentResult,
     build_segment_comparisons,
     load_candidate_run,
@@ -25,6 +28,7 @@ from engram.bench_review.detail import (
 )
 from engram.bench_review.export import BenchReviewExportError, export_markdown, render_status
 from engram.bench_review.storage import (
+    BenchReviewStorageError,
     ReviewSessionConfig,
     initialize_review_db,
     record_run_decision,
@@ -284,9 +288,39 @@ def test_web_rejects_cross_site_and_disables_missing_candidate(
     assert response.status_code == 303
 
 
-def test_web_accepts_same_origin_tailscale_posts(
+def test_web_rejects_same_origin_tailscale_posts_without_opt_in(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(bench_web, "ALLOWED_DNS_SUFFIXES", ())
+    db_path = tmp_path / "review.sqlite3"
+    row = build_segment_comparisons(
+        segment_ids=("seg-a",),
+        candidate_records=load_segment_records(None),
+        prior_summaries={},
+    )[0]
+    initialize_review_db(db_path, config=_session_config(tmp_path), rows=(row,))
+    monkeypatch.setattr(
+        detail_module,
+        "fetch_segment_detail",
+        lambda _db_path, segment_id: _fake_detail(segment_id),
+    )
+    client = TestClient(
+        create_app(review_db_path=db_path, port=8766),
+        base_url="https://proximal.tail0ecc2e.ts.net:8766",
+    )
+    response = client.post(
+        "/segments/seg-a/decision",
+        data={"decision": "needs_followup", "rationale": "ok"},
+        headers={"origin": "https://proximal.tail0ecc2e.ts.net:8766"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 403
+
+
+def test_web_accepts_same_origin_tailscale_posts_with_suffix_opt_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(bench_web, "ALLOWED_DNS_SUFFIXES", (".ts.net",))
     db_path = tmp_path / "review.sqlite3"
     row = build_segment_comparisons(
         segment_ids=("seg-a",),
@@ -310,6 +344,22 @@ def test_web_accepts_same_origin_tailscale_posts(
         follow_redirects=False,
     )
     assert response.status_code == 303
+
+
+def test_allowed_dns_suffixes_env_var_is_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ENGRAM_BENCH_REVIEW_ALLOWED_DNS_SUFFIXES", raising=False)
+    assert bench_web._resolve_allowed_dns_suffixes() == ()
+
+    monkeypatch.setenv(
+        "ENGRAM_BENCH_REVIEW_ALLOWED_DNS_SUFFIXES",
+        "ts.net, .example.test., ,ts.net",
+    )
+    assert bench_web._resolve_allowed_dns_suffixes() == (".ts.net", ".example.test")
+
+
+def test_create_app_refuses_non_loopback_configured_host(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="loopback"):
+        create_app(review_db_path=tmp_path / "review.sqlite3", host="0.0.0.0")
 
 
 def test_segment_decision_advances_within_current_review_queue(
@@ -373,3 +423,75 @@ def test_cli_serve_refuses_non_loopback_host() -> None:
     with pytest.raises(SystemExit) as exc:
         run_phase3_bench_review_serve(args)
     assert exc.value.code == 8
+
+
+def test_cli_status_catches_expected_errors(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fail_status(_path: Path) -> str:
+        raise BenchReviewStorageError("missing review db")
+
+    monkeypatch.setattr(bench_cli, "render_status", fail_status)
+    rc = bench_cli.run_phase3_bench_review_status(Namespace(review_db="missing.sqlite3"))
+    assert rc == 1
+    assert "missing review db" in capsys.readouterr().err
+
+
+def test_cli_status_propagates_unexpected_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_status(_path: Path) -> str:
+        raise ValueError("programming bug")
+
+    monkeypatch.setattr(bench_cli, "render_status", fail_status)
+    with pytest.raises(ValueError, match="programming bug"):
+        bench_cli.run_phase3_bench_review_status(Namespace(review_db="missing.sqlite3"))
+
+
+def test_cli_export_catches_expected_errors(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fail_export(**_kwargs: object) -> Path:
+        raise BenchReviewExportError("unsafe export path")
+
+    monkeypatch.setattr(bench_cli, "export_markdown", fail_export)
+    rc = bench_cli.run_phase3_bench_review_export(
+        Namespace(
+            review_db="review.sqlite3",
+            output="out.md",
+            allow_outside_reviews=False,
+        )
+    )
+    assert rc == 1
+    assert "unsafe export path" in capsys.readouterr().err
+
+
+def test_cli_export_propagates_unexpected_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_export(**_kwargs: object) -> Path:
+        raise ValueError("programming bug")
+
+    monkeypatch.setattr(bench_cli, "export_markdown", fail_export)
+    with pytest.raises(ValueError, match="programming bug"):
+        bench_cli.run_phase3_bench_review_export(
+            Namespace(
+                review_db="review.sqlite3",
+                output="out.md",
+                allow_outside_reviews=False,
+            )
+        )
+
+
+def test_cli_export_catches_artifact_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fail_export(**_kwargs: object) -> Path:
+        raise BenchReviewArtifactError("bad artifact")
+
+    monkeypatch.setattr(bench_cli, "export_markdown", fail_export)
+    rc = bench_cli.run_phase3_bench_review_export(
+        Namespace(
+            review_db="review.sqlite3",
+            output="out.md",
+            allow_outside_reviews=False,
+        )
+    )
+    assert rc == 1
+    assert "bad artifact" in capsys.readouterr().err

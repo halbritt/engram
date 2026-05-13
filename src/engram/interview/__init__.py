@@ -35,10 +35,18 @@ from engram.interview.sampler import (
 )
 from engram.interview.storage import (
     Session,
+    SessionTarget,
+    get_active_learning_signal_version,
     insert_label,
+    insert_active_learning_event,
     insert_session,
+    insert_session_targets,
+    list_session_targets,
     list_sessions,
+    load_session_target,
     mark_session_completed,
+    session_target_to_sampled,
+    unanswered_session_targets,
 )
 
 
@@ -91,11 +99,19 @@ __all__ = [
     "SAMPLER_VERSION",
     "SampledTarget",
     "Session",
+    "SessionTarget",
     "VALID_VERDICTS",
     "build_strata_key",
     "cooldown_days_for",
+    "get_active_learning_signal_version",
+    "insert_active_learning_event",
     "insert_label",
     "insert_session",
+    "insert_session_targets",
+    "list_session_targets",
     "list_sessions",
+    "load_session_target",
     "mark_session_completed",
+    "session_target_to_sampled",
+    "unanswered_session_targets",
 ]

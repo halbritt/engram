@@ -124,10 +124,12 @@ class MockConn:
         claim_rows: list[tuple[Any, ...]] | None = None,
         belief_rows: list[tuple[Any, ...]] | None = None,
         last_seen_rows: list[tuple[Any, ...]] | None = None,
+        reask_count_rows: list[tuple[Any, ...]] | None = None,
     ) -> None:
         self.claim_rows = claim_rows or []
         self.belief_rows = belief_rows or []
         self.last_seen_rows = last_seen_rows or []
+        self.reask_count_rows = reask_count_rows or []
         self.queries: list[str] = []
 
     def execute(self, query: str, params: tuple[Any, ...] = ()) -> _Result:
@@ -138,6 +140,8 @@ class MockConn:
         if "from current_beliefs" in text or "from beliefs" in text:
             return _Result(self.belief_rows)
         if "from gold_labels" in text:
+            if "count(*)" in text:
+                return _Result(self.reask_count_rows)
             return _Result(self.last_seen_rows)
         return _Result([])
 
@@ -266,6 +270,77 @@ def test_sampler_no_active_learning_signal_by_default() -> None:
     out = GoldLabelSampler(conn, seed=0, now=now).sample(1)  # type: ignore[arg-type]
     assert len(out) == 1
     assert out[0].active_learning_signal_version is None
+
+
+def test_sampler_filters_by_strata_expression_values() -> None:
+    now = _utc(2026, 5, 8)
+    identity = _claim_pool_row(
+        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        observed=now,
+        confidence=0.7,
+    )
+    identity = (identity[0], "identity", *identity[2:])
+    preference = _claim_pool_row(
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        observed=now,
+        confidence=0.3,
+    )
+    conn = MockConn(claim_rows=[identity, preference])
+    out = GoldLabelSampler(
+        conn,  # type: ignore[arg-type]
+        seed=0,
+        strata_weights={"stability_class": "identity", "conf_band": "0.6-0.8"},
+        now=now,
+    ).sample(5)
+    assert [target.target_id for target in out] == ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]
+
+
+def test_sampler_reask_cap_filters_target_at_default_cap() -> None:
+    now = _utc(2026, 5, 8)
+    target_id = "77777777-7777-7777-7777-777777777777"
+    conn = MockConn(
+        claim_rows=[_claim_pool_row(target_id, observed=now)],
+        reask_count_rows=[
+            (
+                "claim",
+                target_id,
+                "extract.v1.d000",
+                "extract-model.v1.d000",
+                None,
+                None,
+                "extract-profile.v1.d000",
+                sampler_module.ENGRAM_GOLD_REASK_CAP,
+            )
+        ],
+    )
+    assert GoldLabelSampler(conn, seed=0, now=now).sample(1) == []  # type: ignore[arg-type]
+
+
+def test_sampler_ignore_reask_cap_surfaces_capped_target() -> None:
+    now = _utc(2026, 5, 8)
+    target_id = "88888888-8888-8888-8888-888888888888"
+    conn = MockConn(
+        claim_rows=[_claim_pool_row(target_id, observed=now)],
+        reask_count_rows=[
+            (
+                "claim",
+                target_id,
+                "extract.v1.d000",
+                "extract-model.v1.d000",
+                None,
+                None,
+                "extract-profile.v1.d000",
+                sampler_module.ENGRAM_GOLD_REASK_CAP,
+            )
+        ],
+    )
+    out = GoldLabelSampler(
+        conn,  # type: ignore[arg-type]
+        seed=0,
+        ignore_reask_cap=True,
+        now=now,
+    ).sample(1)
+    assert [target.target_id for target in out] == [target_id]
 
 
 def test_sampler_each_call_emits_a_new_candidate_pool_snapshot_id() -> None:

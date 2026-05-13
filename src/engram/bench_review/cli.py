@@ -15,8 +15,12 @@ from engram.bench_review.artifacts import (
     load_slice_segment_ids,
     resolve_segment_records_path,
 )
-from engram.bench_review.export import export_markdown, render_status
-from engram.bench_review.storage import ReviewSessionConfig, initialize_review_db
+from engram.bench_review.export import BenchReviewExportError, export_markdown, render_status
+from engram.bench_review.storage import (
+    BenchReviewStorageError,
+    ReviewSessionConfig,
+    initialize_review_db,
+)
 
 SERVE_LOOPBACK_HOSTS: frozenset[str] = frozenset({"127.0.0.1", "localhost", "::1"})
 
@@ -60,7 +64,7 @@ def run_phase3_bench_review_status(args: Namespace) -> int:
     """Print aggregate review status."""
     try:
         print(render_status(Path(args.review_db)), end="")
-    except Exception as exc:
+    except (BenchReviewArtifactError, BenchReviewStorageError, OSError) as exc:
         print(f"phase3 bench-review status: {exc}", file=sys.stderr)
         return 1
     return 0
@@ -75,7 +79,12 @@ def run_phase3_bench_review_export(args: Namespace) -> int:
             repo_root=Path.cwd(),
             allow_outside_reviews=bool(args.allow_outside_reviews),
         )
-    except Exception as exc:
+    except (
+        BenchReviewArtifactError,
+        BenchReviewExportError,
+        BenchReviewStorageError,
+        OSError,
+    ) as exc:
         print(f"phase3 bench-review export: {exc}", file=sys.stderr)
         return 1
     print(f"phase3 bench-review export: wrote {output}")

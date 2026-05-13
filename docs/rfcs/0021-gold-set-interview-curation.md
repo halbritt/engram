@@ -370,7 +370,7 @@ introduced in RFC 0025 (D078); the bare `engram interview` namespace is
 incompatible with the just-landed command contract:
 
 - `engram phase3 interview start [--n 10] [--strata <expr>] [--seed <int>]
-  [--include-superseded] [--ignore-cooldown]`
+  [--include-superseded] [--ignore-cooldown] [--ignore-reask-cap]`
 - `engram phase3 interview resume [--session-id <id>]`
 - `engram phase3 interview history [--target <id>] [--since <ts>]`
 - `engram phase3 interview export --format jsonl [--privacy-tier-max <N>]`

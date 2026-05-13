@@ -179,7 +179,7 @@ Useful targeted Phase 3 recovery commands:
 `engram phase3 interview` is the append-only gold-label authoring surface.
 See [docs/howto/gold-set-interview.md](docs/howto/gold-set-interview.md)
 for the operator guide (verdict glossary, cooldowns, privacy-tier export
-defaults, v1 Python harness for verdict capture).
+defaults, resume behavior, active-learning stamping, and strata filters).
 
 Generic `pipeline` targets intentionally fail closed with phase-scoped
 alternatives. Use Docker variants (`make phase2-segment-docker`,

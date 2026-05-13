@@ -1070,28 +1070,28 @@ insert (defense in depth in case the schema enum is bypassed).
 
 ## CLI / operator expectations
 
-These names are illustrative; the build prompt locks the spelling.
+These are the current phase-scoped operator forms.
 
 ```bash
-engram extract --batch-size 10 --limit 100        # Stage A only
-engram consolidate --batch-size 10                # Stage B only
-engram pipeline-3 --extract-batch-size 10 --consolidate-batch-size 10
-                                                  # full Phase 3 pipeline,
-                                                  # per-conversation
-engram extract --segment-id UUID                  # single-segment retarget
-engram consolidate --rebuild                      # close active beliefs,
-                                                  # rerun consolidator over
-                                                  # current active claims
-engram extract --requeue --conversation-id UUID   # reset error_count and
-                                                  # retry the parent
+engram phase3 extract --batch-size 10 --limit 100        # Stage A only
+engram phase3 consolidate --batch-size 10                # Stage B only
+engram phase3 run --extract-batch-size 10 --consolidate-batch-size 10
+                                                         # full Phase 3 pipeline,
+                                                         # per-conversation
+engram phase3 extract --segment-id UUID                  # single-segment retarget
+engram phase3 consolidate --rebuild                      # close active beliefs,
+                                                         # rerun consolidator over
+                                                         # current active claims
+engram phase3 extract --requeue --conversation-id UUID   # reset error_count and
+                                                         # retry the parent
 ```
 
-`make pipeline-3` is the operator entry for an unattended local run.
+`make phase3-run` is the operator entry for an unattended local run.
 Progress is printed per-parent with elapsed seconds; throttled progress is
 written to stdout the same way Phase 2 emits it. Long runs expect the same
 `ENGRAM_EXTRACTOR_TIMEOUT_SECONDS` shape as `ENGRAM_SEGMENTER_TIMEOUT_SECONDS`.
 
-The CLI documents that `engram pipeline-3` is **non-destructive** by default
+The CLI documents that `engram phase3 run` is **non-destructive** by default
 and emits warnings if active beliefs already exist for a different
 consolidator `prompt_version`.
 

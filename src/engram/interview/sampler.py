@@ -52,6 +52,7 @@ ENGRAM_GOLD_COOLDOWN_PROJECT_STATUS_DAYS = int(
 ENGRAM_GOLD_ACTIVE_LEARNING_THRESHOLD = int(
     os.environ.get("ENGRAM_GOLD_ACTIVE_LEARNING_THRESHOLD", 500)
 )
+ENGRAM_GOLD_REASK_CAP = int(os.environ.get("ENGRAM_GOLD_REASK_CAP", 3))
 
 SAMPLER_ID = "stratified"
 SAMPLER_VERSION = "stratified.v1.d079.initial"
@@ -178,6 +179,9 @@ class CandidatePoolRow:
     privacy_tier: int
 
 
+ReaskKey = tuple[str, str, str | None, str | None, str | None, str | None, str]
+
+
 class GoldLabelSampler:
     """Stratified sampler with seeded RNG.
 
@@ -190,10 +194,11 @@ class GoldLabelSampler:
         conn: psycopg.Connection,
         *,
         seed: int,
-        strata_weights: dict[str, float] | None = None,
+        strata_weights: dict[str, Any] | None = None,
         include_superseded: bool = False,
         ignore_cooldown: bool = False,
         active_learning_signal_version: str | None = None,
+        ignore_reask_cap: bool = False,
         now: datetime | None = None,
     ) -> None:
         self.conn = conn
@@ -202,6 +207,7 @@ class GoldLabelSampler:
         self.include_superseded = include_superseded
         self.ignore_cooldown = ignore_cooldown
         self.active_learning_signal_version = active_learning_signal_version
+        self.ignore_reask_cap = ignore_reask_cap
         self._now = now or datetime.now(timezone.utc)
         self._rng = random.Random(seed)
 
@@ -319,6 +325,95 @@ class GoldLabelSampler:
                 kept.append(row)
         return kept
 
+    def _label_counts_by_target_version(self) -> dict[ReaskKey, int]:
+        """Return non-skip label counts by target and exact version triple."""
+        rows = self.conn.execute(
+            """
+            SELECT
+                target_kind,
+                target_id::text,
+                extraction_prompt_version,
+                extraction_model_version,
+                consolidation_prompt_version,
+                consolidation_model_version,
+                request_profile_version,
+                count(*)
+            FROM gold_labels
+            WHERE verdict <> 'skip'
+            GROUP BY
+                target_kind,
+                target_id,
+                extraction_prompt_version,
+                extraction_model_version,
+                consolidation_prompt_version,
+                consolidation_model_version,
+                request_profile_version
+            """
+        ).fetchall()
+        counts: dict[ReaskKey, int] = {}
+        for row in rows:
+            key = (
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+                row[5],
+                row[6],
+            )
+            counts[key] = int(row[7])
+        return counts
+
+    def _reask_key(self, row: CandidatePoolRow) -> ReaskKey:
+        return (
+            row.target_kind,
+            row.target_id,
+            row.extraction_prompt_version,
+            row.extraction_model_version,
+            row.consolidation_prompt_version,
+            row.consolidation_model_version,
+            row.request_profile_version,
+        )
+
+    def _reask_cap_filter(
+        self,
+        pool: list[CandidatePoolRow],
+        counts: dict[ReaskKey, int],
+    ) -> list[CandidatePoolRow]:
+        if self.ignore_reask_cap or ENGRAM_GOLD_REASK_CAP <= 0:
+            return pool
+        return [
+            row
+            for row in pool
+            if counts.get(self._reask_key(row), 0) < ENGRAM_GOLD_REASK_CAP
+        ]
+
+    def _strata_filter(self, pool: list[CandidatePoolRow]) -> list[CandidatePoolRow]:
+        if not self.strata_weights:
+            return pool
+        allowed_keys = {"stability_class", "conf_band", "recency_band", "belief_status"}
+        unknown = sorted(set(self.strata_weights) - allowed_keys)
+        if unknown:
+            raise GoldLabelSamplerError(f"unknown strata filter key(s): {', '.join(unknown)}")
+
+        filtered: list[CandidatePoolRow] = []
+        for row in pool:
+            conf_band, recency_band = build_strata_key(
+                row.stability_class,
+                row.confidence,
+                row.observed_at,
+                self._now,
+            )
+            values = {
+                "stability_class": row.stability_class,
+                "conf_band": conf_band,
+                "recency_band": recency_band,
+                "belief_status": row.belief_status,
+            }
+            if all(values[key] == str(value) for key, value in self.strata_weights.items()):
+                filtered.append(row)
+        return filtered
+
     def sample(self, n: int) -> list[SampledTarget]:
         if n < 0:
             raise GoldLabelSamplerError(f"sample n must be >= 0, got {n}")
@@ -330,6 +425,8 @@ class GoldLabelSampler:
 
         last_seen = {} if self.ignore_cooldown else self._last_blocking_label_at()
         filtered = self._cooldown_filter(pool, last_seen)
+        filtered = self._reask_cap_filter(filtered, self._label_counts_by_target_version())
+        filtered = self._strata_filter(filtered)
         if not filtered:
             return []
 

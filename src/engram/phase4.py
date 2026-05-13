@@ -135,6 +135,7 @@ def accept_belief(
     request_uuid: str | None = None,
 ) -> ReviewActionResult:
     """Promote a candidate/provisional belief to accepted via the transition API."""
+    phase4_schema_preflight(conn)
     request_uuid = request_uuid or str(uuid.uuid4())
     with conn.transaction():
         transition = transition_belief_status(
@@ -160,6 +161,7 @@ def accept_belief(
                 "changed": transition.changed,
             },
         )
+    refresh_current_beliefs(conn)
     return ReviewActionResult(
         action_id=action_id,
         belief_id=belief_id,
@@ -179,6 +181,7 @@ def reject_review_belief(
     request_uuid: str | None = None,
 ) -> ReviewActionResult:
     """Reject a review-queue belief through the audited transition path."""
+    phase4_schema_preflight(conn)
     request_uuid = request_uuid or str(uuid.uuid4())
     with conn.transaction():
         transition = transition_belief_status(
@@ -204,6 +207,7 @@ def reject_review_belief(
                 "changed": transition.changed,
             },
         )
+    refresh_current_beliefs(conn)
     return ReviewActionResult(
         action_id=action_id,
         belief_id=belief_id,
@@ -296,6 +300,7 @@ def promote_to_pinned(
     request_uuid: str | None = None,
 ) -> ReviewActionResult:
     """Accept a belief if needed and add it to the pinned-belief projection."""
+    phase4_schema_preflight(conn)
     request_uuid = request_uuid or str(uuid.uuid4())
     with conn.transaction():
         transition = transition_belief_status(
@@ -331,6 +336,7 @@ def promote_to_pinned(
                 "pinned_inserted": pinned is not None,
             },
         )
+    refresh_current_beliefs(conn)
     return ReviewActionResult(
         action_id=action_id,
         belief_id=belief_id,

@@ -617,6 +617,68 @@ def test_phase4_run_is_not_a_command() -> None:
     assert excinfo.value.code != 0
 
 
+def test_phase3_re_extract_dispatches_to_current_re_extract_path(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_cli_connect: Any,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_re_extract(connection: Any, target_version: str, **kwargs: Any) -> Any:
+        captured["conn"] = connection
+        captured["target_version"] = target_version
+        captured.update(kwargs)
+        return SimpleNamespace(
+            target_version=target_version,
+            plan=SimpleNamespace(
+                current_version="extractor.v1.test",
+                segment_count=0,
+                prior_version_counts={},
+                source_kind_counts={},
+            ),
+            processed=0,
+            created=0,
+            skipped=0,
+            failed=0,
+            dry_run=True,
+            coverage_gaps=[],
+            diff_samples=[],
+        )
+
+    monkeypatch.setattr(cli, "re_extract", fake_re_extract)
+    monkeypatch.setattr(
+        cli,
+        "apply_phase3_reclassification_invalidations",
+        lambda _conn: 0,
+    )
+
+    rc = cli.main(
+        [
+            "phase3",
+            "re-extract",
+            "--version",
+            "extractor.v9.d999.phase-scoped",
+            "--batch-size",
+            "7",
+            "--limit",
+            "11",
+            "--source-id",
+            "src-abc",
+            "--diff-sample",
+            "3",
+            "--dry-run",
+        ]
+    )
+
+    assert rc == 0
+    assert captured["conn"] is fake_cli_connect
+    assert captured["target_version"] == "extractor.v9.d999.phase-scoped"
+    assert captured["batch_size"] == 7
+    assert captured["limit"] == 11
+    assert captured["source_id"] == "src-abc"
+    assert captured["diff_sample"] == 3
+    assert captured["dry_run"] is True
+
+
 def test_legacy_segment_command_prints_replacement_warning(
     monkeypatch: pytest.MonkeyPatch,
     fake_cli_connect: Any,
@@ -651,6 +713,7 @@ def test_makefile_has_phase_scoped_targets_and_pipeline_fail_closed() -> None:
         "phase2-run-isolated:",
         "phase3-run:",
         "phase3-run-docker:",
+        "phase3-re-extract:",
         "phase4-smoke:",
     ):
         assert target in makefile

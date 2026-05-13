@@ -117,6 +117,15 @@ def test_rfc0028_migration_012_exists_on_disk() -> None:
     assert "has_name" in text
 
 
+def test_interview_active_learning_migration_013_exists_on_disk() -> None:
+    path = MIGRATIONS_DIR / "013_interview_active_learning_state.sql"
+    assert path.exists(), f"missing migration: {path}"
+    text = path.read_text(encoding="utf-8")
+    assert "gold_label_active_learning_events" in text
+    assert "active_learning_signal_version" in text
+    assert "fn_gold_label_active_learning_events_append_only" in text
+
+
 def test_rfc0021_migration_010_applies_via_conn_fixture(conn) -> None:
     """The conftest fixture already runs ``migrate(conn)``; presence of the
     new tables/views is the contract."""
@@ -153,6 +162,45 @@ def test_012_predicate_subject_kind_hint_applies(conn) -> None:
             WHERE predicate = 'has_name'
             """
         )
+    conn.rollback()
+
+
+def test_013_interview_active_learning_state_applies(conn) -> None:
+    table_row = conn.execute(
+        "SELECT to_regclass('public.gold_label_active_learning_events') IS NOT NULL"
+    ).fetchone()
+    assert table_row[0] is True
+    columns = {
+        row[0]
+        for row in conn.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'gold_label_session_targets'
+            """
+        ).fetchall()
+    }
+    assert {
+        "active_learning_signal_version",
+        "confidence",
+        "observed_at",
+    } <= columns
+
+    event_id = conn.execute(
+        """
+        INSERT INTO gold_label_active_learning_events (signal_version)
+        VALUES ('rfc0018.reviewer.v1')
+        RETURNING id
+        """
+    ).fetchone()[0]
+    with pytest.raises(errors.RaiseException) as update_exc:
+        conn.execute(
+            "UPDATE gold_label_active_learning_events SET signal_version = 'changed' "
+            "WHERE id = %s",
+            (event_id,),
+        )
+    assert update_exc.value.diag.sqlstate == "P0001"
     conn.rollback()
 
 

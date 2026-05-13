@@ -29,9 +29,9 @@ A `current_gold_label` view returns the latest verdict per
 
 | Subcommand | Status |
 |------------|--------|
-| `start` | Opens a session, samples N targets, runs an interactive question-by-question loop on a tty, commits each verdict as it's answered, marks the session complete on exhaustion. `--non-interactive` skips the loop for scripts/tests. |
-| `resume` | Looks up a session by id and prints whether it is open. |
-| `history` | Prints the recorded verdicts for a `--target <uuid>`. |
+| `start` | Opens a session, samples N targets, runs an interactive question-by-question loop on a tty, commits each verdict as it's answered, marks the session complete on exhaustion. `--strata key=value,...` narrows sampling; `--non-interactive` skips the loop for scripts/tests. |
+| `resume` | Continues an open materialized session from its next unanswered target on a tty; outside a tty it prints the next target. |
+| `history` | Prints the recorded verdicts for a `--target <uuid>`, optionally filtered with `--since <RFC3339 timestamp>`. |
 | `export` | JSONL dump of `gold_labels` filtered by `--privacy-tier-max` (default 1). |
 | `list-sessions` | Lists sessions, optionally filtered by `--state open|completed`. |
 | `coverage` | Counts rows by `stability_class`. |
@@ -39,10 +39,7 @@ A `current_gold_label` view returns the latest verdict per
 
 Press `q` (or Ctrl-C) at any verdict prompt to save-and-quit; the session
 stays open and a resume hint is printed. Resume with
-`engram phase3 interview resume --session-id <uuid>` (currently a status
-check; running `start` with the same `--seed` re-samples the same target
-set against the same session if you commit each verdict yourself via the
-Python harness shown below).
+`engram phase3 interview resume --session-id <uuid>`.
 
 ## Prerequisites
 
@@ -80,7 +77,11 @@ On a tty, `start` runs the interactive loop directly:
 
 ```sh
 engram phase3 interview start --n 5 --seed 4
+engram phase3 interview start --strata stability_class=identity,conf_band=0.6-0.8
 ```
+
+The `--strata` grammar is comma-separated `key=value` filters. V1 accepts
+`stability_class`, `conf_band`, `recency_band`, and `belief_status`.
 
 Output (illustrative):
 
@@ -109,6 +110,9 @@ engram phase3 interview list-sessions --state open
 
 engram phase3 interview history --target <belief-or-claim-uuid>
 # → all verdicts on that target across sessions, newest first
+
+engram phase3 interview history --target <uuid> --since 2026-05-13T12:00:00Z
+# → only verdicts answered at or after that timestamp
 ```
 
 ## Web UI (alternative to the CLI loop)
@@ -277,6 +281,11 @@ skipped targets re-surface immediately on the next session.
 Override per-run by env-var or with `--ignore-cooldown` (does not relax
 the privacy ceiling).
 
+The sampler also enforces a default three-reask cap per
+`(target_kind, target_id, version_triple)` for non-`skip` labels. Override
+that cap for an explicit audit run with `--ignore-reask-cap`; change the
+default with `ENGRAM_GOLD_REASK_CAP`.
+
 ## Resume, save-and-quit, list-sessions
 
 A session stays open until you mark it complete. Running `start --n 5`
@@ -286,6 +295,10 @@ again opens a *new* session; it does not resume.
 engram phase3 interview list-sessions --state open
 engram phase3 interview resume --session-id <uuid>
 ```
+
+`resume` uses the session's materialized target order rather than
+re-sampling. It skips targets already labeled in that session and continues
+the normal prompt loop when run from a tty.
 
 To mark a session complete from your harness script:
 
@@ -309,9 +322,10 @@ recency_band, per-session deltas) is a v1.1 expansion.
 
 Off by default. The bias does not run silently — you must call
 `enable-active-learning --signal-version <v>` to record the operator-visible
-at-scale signal version, and even then v1 stamps the version on emitted rows
-without re-ranking. Re-ranking lands when RFC 0018 reviewer output reaches
-the threshold (default 500 audit rows; tunable via
+at-scale signal version in local Postgres. Subsequent CLI and web sessions
+stamp that version on materialized session targets and emitted labels. V1
+still does not re-rank; re-ranking lands when RFC 0018 reviewer output
+reaches the threshold (default 500 audit rows; tunable via
 `ENGRAM_GOLD_ACTIVE_LEARNING_THRESHOLD`).
 
 The signal version is a small but real decision: if you flip the bias on

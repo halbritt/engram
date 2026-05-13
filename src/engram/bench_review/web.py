@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from importlib import resources
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
@@ -17,11 +18,32 @@ from engram.bench_review.classify import STRONG_DECISION_DISABLED_STATES, state_
 
 ALLOWED_HOSTS: frozenset[str] = frozenset({"127.0.0.1", "localhost", "::1", "testserver"})
 ALLOWED_FETCH_SITES: frozenset[str] = frozenset({"same-origin", "same-site", "none"})
-TAILSCALE_DNS_SUFFIX: str = ".ts.net"
+
+
+def _resolve_allowed_dns_suffixes() -> tuple[str, ...]:
+    """Return operator-opted-in DNS suffixes allowed by Origin checks."""
+    configured = os.environ.get("ENGRAM_BENCH_REVIEW_ALLOWED_DNS_SUFFIXES", "")
+    suffixes: list[str] = []
+    seen: set[str] = set()
+    for raw in configured.split(","):
+        suffix = raw.strip().lower().rstrip(".")
+        if not suffix:
+            continue
+        if not suffix.startswith("."):
+            suffix = f".{suffix}"
+        if suffix not in seen:
+            seen.add(suffix)
+            suffixes.append(suffix)
+    return tuple(suffixes)
+
+
+ALLOWED_DNS_SUFFIXES: tuple[str, ...] = _resolve_allowed_dns_suffixes()
 
 
 def create_app(*, review_db_path: Path, host: str = "127.0.0.1", port: int = 8770) -> FastAPI:
     """Create a bench review FastAPI app over one scratch review DB."""
+    if host not in ALLOWED_HOSTS:
+        raise ValueError(f"bench review host must be loopback, got {host!r}")
     app = FastAPI(title="Engram bench review")
     templates = Jinja2Templates(directory=str(_resource_dir("templates")))
     app.mount("/static", StaticFiles(directory=str(_resource_dir("static"))), name="static")
@@ -207,14 +229,15 @@ def _origin_check(request: Request, *, host: str, port: int) -> None:
             raise HTTPException(status_code=403, detail={"error": "origin_not_allowed"})
         if parsed.port is not None and parsed.port not in {port, 80}:
             raise HTTPException(status_code=403, detail={"error": "origin_port_mismatch"})
-    if host not in ALLOWED_HOSTS:
-        raise HTTPException(status_code=403, detail={"error": "configured_host_not_loopback"})
 
 
 def _is_allowed_request_host(hostname: str | None) -> bool:
     if hostname is None:
         return False
-    return hostname in ALLOWED_HOSTS or hostname.endswith(TAILSCALE_DNS_SUFFIX)
+    normalized = hostname.lower().rstrip(".")
+    return normalized in ALLOWED_HOSTS or any(
+        normalized.endswith(suffix) for suffix in ALLOWED_DNS_SUFFIXES
+    )
 
 
 def _next_segment_url(

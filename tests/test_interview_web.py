@@ -149,6 +149,10 @@ def _create_session_with_one_claim(
         rows.append((extra_claim, extra_msg_ids))
     snapshot_id = str(uuid.uuid4())
     for idx, (cid, _) in enumerate(rows):
+        confidence, observed_at = conn.execute(
+            "SELECT confidence, extracted_at FROM claims WHERE id = %s",
+            (cid,),
+        ).fetchone()
         conn.execute(
             """
             INSERT INTO gold_label_session_targets (
@@ -157,7 +161,8 @@ def _create_session_with_one_claim(
                 extraction_prompt_version, extraction_model_version,
                 consolidation_prompt_version, consolidation_model_version,
                 request_profile_version,
-                stability_class, conf_band, recency_band, belief_status
+                stability_class, conf_band, recency_band, belief_status,
+                confidence, observed_at
             )
             VALUES (
                 %s, %s, 'claim', %s,
@@ -165,7 +170,8 @@ def _create_session_with_one_claim(
                 %s, %s,
                 NULL, NULL,
                 %s,
-                'preference', '0.6-0.8', '<7d', NULL
+                'preference', '0.6-0.8', '<7d', NULL,
+                %s, %s
             )
             """,
             (
@@ -173,6 +179,8 @@ def _create_session_with_one_claim(
                 CLAIM_VERSION_TRIPLE["extraction_prompt_version"],
                 CLAIM_VERSION_TRIPLE["extraction_model_version"],
                 CLAIM_VERSION_TRIPLE["request_profile_version"],
+                confidence,
+                observed_at,
             ),
         )
     return session_id, claim_id, msg_ids
@@ -301,6 +309,8 @@ def test_get_question_renders(client: TestClient, conn: Any) -> None:
     body = resp.text
     # Header line carries [1/2].
     assert "[1/2]" in body
+    assert "conf=0.90" in body
+    assert "conf=0.00" not in body
     # Six verdict buttons present.
     for v in ("true", "false", "stale", "unsupported", "unsure", "skip"):
         assert f'data-verdict="{v}"' in body
@@ -371,6 +381,24 @@ def test_post_verdict_false_two_click_flow(
         (session_id,),
     ).fetchone()
     assert row == ("false", "correct value text")
+
+
+def test_post_verdict_blank_rationale_rejected_server_side(
+    client: TestClient, conn: Any
+) -> None:
+    session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=3)
+    resp = client.post(
+        f"/sessions/{session_id}/q/1/verdict",
+        data={"verdict": "false", "rationale": "   "},
+        headers={"origin": "http://127.0.0.1:8765"},
+    )
+    assert resp.status_code == 422
+    assert resp.json() == {"error": "rationale_required", "verdict": "false"}
+    rows = conn.execute(
+        "SELECT count(*) FROM gold_labels WHERE session_id = %s",
+        (session_id,),
+    ).fetchone()
+    assert rows[0] == 0
 
 
 def test_post_verdict_trigger_rejection_renders_banner(
@@ -565,16 +593,9 @@ def test_post_verdict_completes_session_at_n(
 
 
 def test_get_messages_tier_1_enforced(client: TestClient, conn: Any) -> None:
-    # Seed a tier-2 message and try to render it.
-    conv_id, msg_ids = insert_conversation(
-        conn, [("user", "tier-2 secret", 2)], conversation_tier=1
-    )
-    session_id = insert_session(
-        conn,
-        seed=1,
-        sampler_id="stratified",
-        sampler_version="stratified.v1.d079.initial",
-        strata_weights={},
+    # Seed a reachable tier-2 evidence message and try to render it.
+    session_id, _claim_id, msg_ids = _create_session_with_one_claim(
+        conn, n=1, message_tier=2
     )
     resp = client.get(f"/sessions/{session_id}/messages/{msg_ids[0]}")
     assert resp.status_code == 403
@@ -598,12 +619,52 @@ def test_get_messages_context_max_tier_carry(
         ],
         conversation_tier=1,
     )
+    gen_id = insert_generation(conn, conv_id)
+    seg_id = insert_segment_row(conn, gen_id, conv_id, msg_ids, active=True)
+    _, claim_id = insert_extracted_claim(
+        conn,
+        segment_id=seg_id,
+        generation_id=gen_id,
+        conversation_id=conv_id,
+        evidence_ids=[msg_ids[1]],
+        predicate="drives",
+        object_text="Subaru",
+    )
     session_id = insert_session(
         conn,
         seed=1,
         sampler_id="stratified",
         sampler_version="stratified.v1.d079.initial",
         strata_weights={},
+    )
+    confidence, observed_at = conn.execute(
+        "SELECT confidence, extracted_at FROM claims WHERE id = %s",
+        (claim_id,),
+    ).fetchone()
+    conn.execute(
+        """
+        INSERT INTO gold_label_session_targets (
+            session_id, idx, target_kind, target_id,
+            candidate_pool_snapshot_id,
+            extraction_prompt_version, extraction_model_version,
+            consolidation_prompt_version, consolidation_model_version,
+            request_profile_version,
+            stability_class, conf_band, recency_band, belief_status,
+            confidence, observed_at
+        )
+        VALUES (%s, 0, 'claim', %s, %s, %s, %s, NULL, NULL, %s,
+                'preference', '0.6-0.8', '<7d', NULL, %s, %s)
+        """,
+        (
+            session_id,
+            claim_id,
+            str(uuid.uuid4()),
+            CLAIM_VERSION_TRIPLE["extraction_prompt_version"],
+            CLAIM_VERSION_TRIPLE["extraction_model_version"],
+            CLAIM_VERSION_TRIPLE["request_profile_version"],
+            confidence,
+            observed_at,
+        ),
     )
     # Anchor on msg_ids[1] (tier 1) but the +1 window pulls in msg_ids[2]
     # (tier 2). Context route MUST 403.
@@ -614,6 +675,17 @@ def test_get_messages_context_max_tier_carry(
     assert resp.status_code == 403
     body = resp.json()
     assert body.get("error") == "privacy_tier_ceiling"
+
+
+def test_get_message_unreachable_from_session_returns_404(
+    client: TestClient, conn: Any
+) -> None:
+    session_id, _claim_id, _session_msg_ids = _create_session_with_one_claim(conn, n=1)
+    _conv_id, other_msg_ids = insert_conversation(
+        conn, [("user", "unrelated tier 1", 1)], conversation_tier=1
+    )
+    resp = client.get(f"/sessions/{session_id}/messages/{other_msg_ids[0]}")
+    assert resp.status_code == 404
 
 
 def test_get_messages_context_caps(
@@ -641,6 +713,72 @@ def test_get_evidence_all_tier_1_enforced(
     # Seed a session whose target's evidence is tier 2.
     session_id, _claim_id, _ = _create_session_with_one_claim(
         conn, n=1, message_tier=2
+    )
+    resp = client.get(f"/sessions/{session_id}/q/1/evidence/all")
+    assert resp.status_code == 403
+    body = resp.json()
+    assert body.get("error") == "privacy_tier_ceiling"
+
+
+def test_get_evidence_all_checks_rows_beyond_preview_limit(
+    client: TestClient, conn: Any
+) -> None:
+    conv_id, msg_ids = insert_conversation(
+        conn,
+        [
+            ("user", "ok 1", 1),
+            ("user", "ok 2", 1),
+            ("user", "ok 3", 1),
+            ("user", "secret 4", 2),
+        ],
+        conversation_tier=1,
+    )
+    gen_id = insert_generation(conn, conv_id)
+    seg_id = insert_segment_row(conn, gen_id, conv_id, msg_ids, active=True)
+    _, claim_id = insert_extracted_claim(
+        conn,
+        segment_id=seg_id,
+        generation_id=gen_id,
+        conversation_id=conv_id,
+        evidence_ids=msg_ids,
+        predicate="drives",
+        object_text="Subaru",
+    )
+    session_id = insert_session(
+        conn,
+        seed=1,
+        sampler_id="stratified",
+        sampler_version="stratified.v1.d079.initial",
+        strata_weights={},
+    )
+    confidence, observed_at = conn.execute(
+        "SELECT confidence, extracted_at FROM claims WHERE id = %s",
+        (claim_id,),
+    ).fetchone()
+    conn.execute(
+        """
+        INSERT INTO gold_label_session_targets (
+            session_id, idx, target_kind, target_id,
+            candidate_pool_snapshot_id,
+            extraction_prompt_version, extraction_model_version,
+            consolidation_prompt_version, consolidation_model_version,
+            request_profile_version,
+            stability_class, conf_band, recency_band, belief_status,
+            confidence, observed_at
+        )
+        VALUES (%s, 0, 'claim', %s, %s, %s, %s, NULL, NULL, %s,
+                'preference', '0.6-0.8', '<7d', NULL, %s, %s)
+        """,
+        (
+            session_id,
+            claim_id,
+            str(uuid.uuid4()),
+            CLAIM_VERSION_TRIPLE["extraction_prompt_version"],
+            CLAIM_VERSION_TRIPLE["extraction_model_version"],
+            CLAIM_VERSION_TRIPLE["request_profile_version"],
+            confidence,
+            observed_at,
+        ),
     )
     resp = client.get(f"/sessions/{session_id}/q/1/evidence/all")
     assert resp.status_code == 403

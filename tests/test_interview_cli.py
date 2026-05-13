@@ -112,8 +112,10 @@ def test_phase3_interview_start_dispatches_to_start_driver(
     args = captured["args"]
     assert args.n == 3
     assert args.seed == 42
+    assert args.strata == {}
     assert args.include_superseded is False
     assert args.ignore_cooldown is False
+    assert args.ignore_reask_cap is False
 
 
 def test_phase3_interview_start_passes_include_superseded_and_ignore_cooldown(
@@ -133,12 +135,17 @@ def test_phase3_interview_start_passes_include_superseded_and_ignore_cooldown(
             "start",
             "--include-superseded",
             "--ignore-cooldown",
+            "--ignore-reask-cap",
+            "--strata",
+            "stability_class=identity,conf_band=0.6-0.8",
         ]
     )
     assert rc == 0
     args = captured["args"]
     assert args.include_superseded is True
     assert args.ignore_cooldown is True
+    assert args.ignore_reask_cap is True
+    assert args.strata == {"stability_class": "identity", "conf_band": "0.6-0.8"}
 
 
 def test_phase3_interview_resume_dispatches_with_session_id(
@@ -163,12 +170,24 @@ def test_phase3_interview_history_dispatches_with_target(
 
     def fake_history(args: Any) -> int:
         captured["target"] = args.target
+        captured["since"] = args.since
         return 0
 
     monkeypatch.setattr(cli, "run_phase3_interview_history", fake_history)
-    rc = cli.main(["phase3", "interview", "history", "--target", "deadbeef"])
+    rc = cli.main(
+        [
+            "phase3",
+            "interview",
+            "history",
+            "--target",
+            "deadbeef",
+            "--since",
+            "2026-05-13T12:00:00Z",
+        ]
+    )
     assert rc == 0
     assert captured["target"] == "deadbeef"
+    assert captured["since"] == "2026-05-13T12:00:00Z"
 
 
 def test_phase3_interview_list_sessions_dispatches_with_state(
@@ -240,6 +259,82 @@ def test_phase3_interview_enable_active_learning_dispatches(
     assert captured["signal_version"] == "rfc0018.reviewer.v1"
 
 
+def test_phase3_interview_strata_rejects_unknown_key() -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["phase3", "interview", "start", "--strata", "unknown=value"])
+    assert excinfo.value.code != 0
+
+
+def test_phase3_interview_enable_active_learning_writes_local_state(
+    monkeypatch: pytest.MonkeyPatch,
+    conn: Any,
+) -> None:
+    @contextmanager
+    def _fake_connect(*args: Any, **kwargs: Any) -> Iterator[Any]:
+        yield conn
+
+    monkeypatch.setattr(cli, "connect", _fake_connect)
+    rc = cli.run_phase3_interview_enable_active_learning(
+        SimpleNamespace(signal_version="rfc0018.reviewer.v1")
+    )
+    assert rc == 0
+    row = conn.execute(
+        "SELECT signal_version FROM gold_label_active_learning_events"
+    ).fetchone()
+    assert row == ("rfc0018.reviewer.v1",)
+
+
+def test_phase3_interview_history_applies_since_filter(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class _Rows:
+        def fetchall(self) -> list[tuple[Any, ...]]:
+            return [
+                (
+                    "label-a",
+                    "claim",
+                    "true",
+                    datetime(2026, 5, 13, 13, 0, tzinfo=timezone.utc),
+                )
+            ]
+
+    class _Conn:
+        params: tuple[Any, ...] | None = None
+
+        def execute(self, _query: str, params: tuple[Any, ...]) -> _Rows:
+            self.params = params
+            return _Rows()
+
+    fake_conn = _Conn()
+
+    @contextmanager
+    def _fake_connect(*args: Any, **kwargs: Any) -> Iterator[Any]:
+        yield fake_conn
+
+    monkeypatch.setattr(cli, "connect", _fake_connect)
+    rc = cli.run_phase3_interview_history(
+        SimpleNamespace(
+            target="00000000-0000-0000-0000-000000000001",
+            since="2026-05-13T12:00:00Z",
+        )
+    )
+    assert rc == 0
+    assert fake_conn.params is not None
+    assert fake_conn.params[1] == datetime(2026, 5, 13, 12, 0, tzinfo=timezone.utc)
+    assert "label-a" not in capsys.readouterr().err
+
+
+def test_phase3_interview_history_invalid_since_returns_2(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    rc = cli.run_phase3_interview_history(
+        SimpleNamespace(target="00000000-0000-0000-0000-000000000001", since="not-a-date")
+    )
+    assert rc == 2
+    assert "expected RFC3339" in capsys.readouterr().err
+
+
 # ---------------------------------------------------------------------------
 # RFC 0027 / Spec 0027: gold_label_session_targets materialization on start
 # ---------------------------------------------------------------------------
@@ -254,6 +349,7 @@ def _build_sampled_target(
     conf_band: str = "0.6-0.8",
     recency_band: str = "<30d",
     belief_status: str | None = None,
+    active_learning_signal_version: str | None = None,
 ) -> SampledTarget:
     if target_kind == "claim":
         ext_prompt: str | None = "ext-prompt-v1"
@@ -275,7 +371,7 @@ def _build_sampled_target(
         recency_band=recency_band,
         belief_status=belief_status,
         candidate_pool_snapshot_id=snapshot_id,
-        active_learning_signal_version=None,
+        active_learning_signal_version=active_learning_signal_version,
         extraction_prompt_version=ext_prompt,
         extraction_model_version=ext_model,
         consolidation_prompt_version=cons_prompt,
@@ -297,6 +393,7 @@ def test_phase3_interview_start_writes_session_targets(
         yield conn
 
     monkeypatch.setattr(cli, "connect", _fake_connect)
+    cli.insert_active_learning_event(conn, signal_version="rfc0018.reviewer.v1")
 
     snapshot_id = str(uuid.uuid4())
     sampled = [
@@ -328,10 +425,24 @@ def test_phase3_interview_start_writes_session_targets(
     ]
 
     class _StubSampler:
+        captured_kwargs: dict[str, Any] = {}
+
         def __init__(self, *args: Any, **kwargs: Any) -> None:
-            pass
+            self.captured_kwargs.update(kwargs)
 
         def sample(self, n: int) -> list[SampledTarget]:
+            active_signal = self.captured_kwargs.get("active_learning_signal_version")
+            for idx, target in enumerate(sampled):
+                sampled[idx] = _build_sampled_target(
+                    target_kind=target.target_kind,
+                    target_id=target.target_id,
+                    snapshot_id=target.candidate_pool_snapshot_id,
+                    stability_class=target.stability_class,
+                    conf_band=target.conf_band,
+                    recency_band=target.recency_band,
+                    belief_status=target.belief_status,
+                    active_learning_signal_version=active_signal,
+                )
             return list(sampled[:n])
 
     monkeypatch.setattr(cli, "GoldLabelSampler", _StubSampler)
@@ -341,7 +452,9 @@ def test_phase3_interview_start_writes_session_targets(
         seed=99,
         include_superseded=False,
         ignore_cooldown=False,
+        ignore_reask_cap=False,
         non_interactive=True,
+        strata={"stability_class": "identity"},
     )
     rc = cli.run_phase3_interview_start(args)
     assert rc == 0
@@ -361,7 +474,10 @@ def test_phase3_interview_start_writes_session_targets(
             stability_class,
             conf_band,
             recency_band,
-            belief_status
+            belief_status,
+            active_learning_signal_version,
+            confidence,
+            observed_at
         FROM gold_label_session_targets
         ORDER BY idx
         """
@@ -382,6 +498,9 @@ def test_phase3_interview_start_writes_session_targets(
     assert first[10] == "0.6-0.8"
     assert first[11] == "<30d"
     assert first[12] is None
+    assert first[13] == "rfc0018.reviewer.v1"
+    assert first[14] == 0.7
+    assert first[15] is not None
     # Second row is a belief: extraction columns must be NULL,
     # consolidation columns populated, belief_status preserved.
     belief_row = rows[1]
@@ -391,6 +510,10 @@ def test_phase3_interview_start_writes_session_targets(
     assert belief_row[6] == "cons-prompt-v1"
     assert belief_row[7] == "cons-model-v1"
     assert belief_row[12] == "candidate"
+    assert _StubSampler.captured_kwargs["strata_weights"] == {"stability_class": "identity"}
+    assert _StubSampler.captured_kwargs["active_learning_signal_version"] == (
+        "rfc0018.reviewer.v1"
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -215,6 +215,11 @@ erDiagram
         JSONB raw_payload
         TIMESTAMPTZ created_at
     }
+    gold_label_active_learning_events {
+        UUID id PK
+        TEXT signal_version
+        TIMESTAMPTZ enabled_at
+    }
     gold_label_session_targets {
         UUID session_id PK
         INT idx PK
@@ -231,6 +236,9 @@ erDiagram
         TEXT recency_band
         TEXT belief_status
         TIMESTAMPTZ inserted_at
+        TEXT active_learning_signal_version
+        FLOAT confidence
+        TIMESTAMPTZ observed_at
     }
     gold_label_sessions {
         UUID session_id PK
@@ -686,6 +694,14 @@ erDiagram
 | `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
 | `created_at` | `TIMESTAMPTZ` | NO | `now()` |
 
+## gold_label_active_learning_events
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `signal_version` | `TEXT` | NO | `` |
+| `enabled_at` | `TIMESTAMPTZ` | NO | `now()` |
+
 ## gold_label_session_targets
 
 | Column | Type | Nullable | Default |
@@ -705,6 +721,9 @@ erDiagram
 | `recency_band` | `TEXT` | NO | `` |
 | `belief_status` | `TEXT` | YES | `` |
 | `inserted_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `active_learning_signal_version` | `TEXT` | YES | `` |
+| `confidence` | `FLOAT` | YES | `` |
+| `observed_at` | `TIMESTAMPTZ` | YES | `` |
 
 ## gold_label_sessions
 

@@ -63,19 +63,25 @@ _KNOWN_NON_PERSON_SUBJECTS: dict[str, str] = {
 
 
 def fetch_evidence_excerpts(
-    conn: psycopg.Connection, evidence_ids: list[str]
+    conn: psycopg.Connection,
+    evidence_ids: list[str],
+    *,
+    limit: int | None = EVIDENCE_ROWS_SHOWN,
 ) -> list[dict[str, Any]]:
-    """Fetch up to ``EVIDENCE_ROWS_SHOWN`` messages by id, in chronological order.
+    """Fetch evidence messages by id, in chronological order.
 
     Returns a list of dicts with keys ``id``, ``role``, ``created_at``,
     ``content`` (truncated at ``EVIDENCE_EXCERPT_LIMIT`` with a trailing
     ellipsis), ``source_kind``, and ``conv_title``. Caller decides whether
-    to print or render.
+    to print or render. ``limit=None`` intentionally fetches every cited
+    evidence row for the web UI's "show all evidence" path.
     """
     if not evidence_ids:
         return []
+    limit_clause = "" if limit is None else "LIMIT %s"
+    params: tuple[Any, ...] = (evidence_ids,) if limit is None else (evidence_ids, limit)
     rows = conn.execute(
-        """
+        f"""
         SELECT
             m.id::text,
             m.role,
@@ -87,9 +93,9 @@ def fetch_evidence_excerpts(
         LEFT JOIN conversations c ON c.id = m.conversation_id
         WHERE m.id = ANY(%s)
         ORDER BY m.created_at NULLS LAST, m.sequence_index
-        LIMIT %s
+        {limit_clause}
         """,
-        (evidence_ids, EVIDENCE_ROWS_SHOWN),
+        params,
     ).fetchall()
     excerpts: list[dict[str, Any]] = []
     for row in rows:
@@ -111,7 +117,10 @@ def fetch_evidence_excerpts(
 
 
 def fetch_target_display(
-    conn: psycopg.Connection, target: SampledTarget
+    conn: psycopg.Connection,
+    target: SampledTarget,
+    *,
+    evidence_limit: int | None = EVIDENCE_ROWS_SHOWN,
 ) -> dict[str, Any]:
     """Pull operator-readable summary plus evidence excerpts for a target.
 
@@ -163,7 +172,7 @@ def fetch_target_display(
             ev_max,
         ) = row
         obj = obj_text if obj_text is not None else (str(obj_json) if obj_json else "")
-        excerpts = fetch_evidence_excerpts(conn, list(ev_ids or []))
+        excerpts = fetch_evidence_excerpts(conn, list(ev_ids or []), limit=evidence_limit)
         subject_warning = subject_kind_warning(conn, str(subj or ""), subject_kind_hint)
         return {
             "summary": f"{subj} -[{pred}]-> {obj}",
@@ -222,7 +231,7 @@ def fetch_target_display(
         ev_max,
     ) = row
     obj = obj_text if obj_text is not None else (str(obj_json) if obj_json else "")
-    excerpts = fetch_evidence_excerpts(conn, list(ev_ids or []))
+    excerpts = fetch_evidence_excerpts(conn, list(ev_ids or []), limit=evidence_limit)
     subject_warning = subject_kind_warning(conn, str(subj or ""), subject_kind_hint)
     return {
         "summary": f"{subj} -[{pred}]-> {obj}",

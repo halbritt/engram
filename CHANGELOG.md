@@ -40,33 +40,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loopback bind can reach the UI from another device the operator
   controls. The howto guide gains a "Tailnet access" section.
   Non-loopback bind plus token auth remains the F005 follow-on.
-- RFC 0028 / D082 implementation slice: migration 012 adds nullable
-  `predicate_vocabulary.subject_kind_hint` metadata and seeds the
-  existing vocabulary; the extractor prompt version bumps to
-  `extractor.v9.d082.predicate-intent` and renders predicate
-  descriptions plus subject-kind hints; interview CLI/web rendering now
-  places predicate intent on its own line, adds a local heuristic warning
-  for obvious subject/predicate mismatches, and broadens the `false`
-  rationale prompt beyond "correct value." No claims, beliefs, or
-  gold-label row contracts change, and full-corpus re-extraction remains
-  gated on a bounded bench.
-- RFC 0029 bench triage workbench proposal and Striatum design workflow:
-  a local-only FastAPI/Jinja2/htmx UI proposal for reducing cognitive
-  overhead when validating extraction/re-extraction benchmark deltas.
-  The completed review run includes Claude/Codex/Gemini lanes plus an
-  adversarial usability review; accepted findings tightened segment
-  data-availability semantics, full prior version identity, CLI-only
-  redacted export, RFC 0027-style local web security, promotion readiness,
-  resume state, and UI contract tests.
-- Spec 0029 and Striatum spec workflow for the bench triage workbench:
-  promotes RFC 0029 into a buildable implementation contract covering
-  artifact inputs, data-availability states, classification tags,
-  scratch SQLite review state, CLI commands, loopback-only web routes,
-  redacted exports, and focused acceptance tests.
-- RFC 0029 implementation: `engram phase3 bench-review serve|status|export`,
-  `src/engram/bench_review/` FastAPI/Jinja2 workbench, scratch SQLite review
-  state, deterministic artifact normalization, redacted Markdown exports,
-  loopback/cross-origin guards, and focused loader/storage/export/web/CLI tests.
 - RFC 0024 Phase 4 tiered gate execution artifacts:
   Tier 0 bounded smoke, Tier 1 non-human evidence, Tier 2 bounded
   preflight scaffold, final gate review, and run summary under
@@ -132,6 +105,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - RFC 0015 gap coverage tests.
 
 ### Changed
+- RFC 0032 cleanup quarantines the suspect RFC 0028/RFC 0029 review
+  directories and RFC 0029 Striatum scaffolds, demotes RFC 0028/RFC 0029
+  status claims back to proposal/draft, and removes the unauthorized D082
+  decision row. It also removes the stale root-level Striatum 1.14 guide
+  files. Existing code remains reviewable implementation work, not decision
+  authority.
+- Bench-review workbench host validation now rejects non-loopback configured
+  hosts at app creation, requires explicit
+  `ENGRAM_BENCH_REVIEW_ALLOWED_DNS_SUFFIXES` opt-in for tailnet DNS suffixes,
+  and narrows status/export CLI exception handling to expected storage,
+  artifact, export, and filesystem errors.
+- Phase 3 interview sessions now persist active-learning enablement in local
+  Postgres, stamp the signal onto materialized targets and labels, support
+  `start --strata key=value,...`, enforce the default three-reask cap, honor
+  `history --since`, and let CLI `resume` continue open materialized sessions.
+- The interview web UI now checks all evidence rows on "show all", rejects
+  blank rationales server-side for rationale-required verdicts, preserves
+  materialized target confidence in resumed headers, and prevents message
+  routes from rendering conversations that are not reachable from the session's
+  cited evidence.
+- Added phase-scoped `engram phase3 re-extract` / `make phase3-re-extract`
+  surfaces and marked the top-level `engram re-extract` command as legacy,
+  aligning RFC 0017 re-extraction with the RFC 0025/D078 command naming
+  contract.
+- Phase 4 accept/reject/promote-to-pinned review actions now refresh the
+  `current_beliefs` materialized view before returning, so callers no longer
+  need a separate refresh to observe review-queue changes.
+- `make phase3-interview-serve` now passes `ENGRAM_DATABASE_URL`, matching
+  the other database-aware interview targets.
 - Moved Phase 4 spec review into `striatum/`.
 - Wired Striatum for Phase 4 multi-agent review.
 - Retired operational markers (D074) in favor of Striatum SQLite state.

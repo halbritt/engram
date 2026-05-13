@@ -50,6 +50,7 @@ from engram.interview.render import (
     pick_question,
 )
 from engram.interview.storage import (
+    get_active_learning_signal_version,
     insert_session,
     mark_session_completed,
 )
@@ -130,6 +131,9 @@ _VERDICT_KEY_LETTERS: dict[str, str] = {
     "unsure": "u",
     "skip": "k",
 }
+_RATIONALE_REQUIRED_VERDICTS: frozenset[str] = frozenset(
+    {"false", "stale", "unsupported", "unsure"}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +311,10 @@ def _load_session_target(
             stability_class,
             conf_band,
             recency_band,
-            belief_status
+            belief_status,
+            active_learning_signal_version,
+            confidence,
+            observed_at
         FROM gold_label_session_targets
         WHERE session_id = %s AND idx = %s
         """,
@@ -330,6 +337,9 @@ def _load_session_target(
         "conf_band": row[11],
         "recency_band": row[12],
         "belief_status": row[13],
+        "active_learning_signal_version": row[14],
+        "confidence": float(row[15]) if row[15] is not None else None,
+        "observed_at": row[16],
     }
 
 
@@ -364,13 +374,13 @@ def _session_target_to_sampled(target_row: dict[str, Any]) -> SampledTarget:
         target_kind=target_row["target_kind"],
         target_id=target_row["target_id"],
         stability_class=target_row["stability_class"],
-        confidence=0.0,  # not part of the materialized row; only used for header
-        observed_at=datetime.now(timezone.utc),
+        confidence=target_row["confidence"] if target_row["confidence"] is not None else 0.0,
+        observed_at=target_row["observed_at"] or datetime.now(timezone.utc),
         conf_band=target_row["conf_band"],
         recency_band=target_row["recency_band"],
         belief_status=target_row["belief_status"],
         candidate_pool_snapshot_id=target_row["candidate_pool_snapshot_id"],
-        active_learning_signal_version=None,
+        active_learning_signal_version=target_row["active_learning_signal_version"],
         extraction_prompt_version=target_row["extraction_prompt_version"],
         extraction_model_version=target_row["extraction_model_version"],
         consolidation_prompt_version=target_row["consolidation_prompt_version"],
@@ -423,7 +433,8 @@ def _insert_session_targets(
                 extraction_prompt_version, extraction_model_version,
                 consolidation_prompt_version, consolidation_model_version,
                 request_profile_version,
-                stability_class, conf_band, recency_band, belief_status
+                stability_class, conf_band, recency_band, belief_status,
+                active_learning_signal_version, confidence, observed_at
             )
             VALUES (
                 %s, %s, %s, %s,
@@ -431,7 +442,8 @@ def _insert_session_targets(
                 %s, %s,
                 %s, %s,
                 %s,
-                %s, %s, %s, %s
+                %s, %s, %s, %s,
+                %s, %s, %s
             )
             """,
             (
@@ -449,6 +461,9 @@ def _insert_session_targets(
                 target.conf_band,
                 target.recency_band,
                 target.belief_status,
+                target.active_learning_signal_version,
+                target.confidence,
+                target.observed_at,
             ),
         )
 
@@ -497,7 +512,11 @@ def _render_question_template(
     render every cited message rather than the first ``EVIDENCE_ROWS_SHOWN``.
     """
     sampled = _session_target_to_sampled(target_row)
-    display = fetch_target_display(conn, sampled)
+    display = fetch_target_display(
+        conn,
+        sampled,
+        evidence_limit=None if full_evidence else EVIDENCE_ROWS_SHOWN,
+    )
 
     # Tier 1 ceiling on the "show all" path: any cited message at tier > 1
     # forces a 403, mirroring /messages/{id}'s behaviour.
@@ -564,6 +583,57 @@ def _message_tier(conn: psycopg.Connection, message_id: str) -> int | None:
     return int(row[0])
 
 
+def _session_can_reach_conversation(
+    conn: psycopg.Connection,
+    *,
+    session_id: str,
+    conversation_id: str,
+) -> bool:
+    row = conn.execute(
+        """
+        SELECT
+            EXISTS (
+                SELECT 1
+                FROM gold_label_session_targets t
+                JOIN claims c
+                  ON t.target_kind = 'claim'
+                 AND c.id = t.target_id
+                JOIN messages m
+                  ON m.id = ANY(c.evidence_message_ids)
+                WHERE t.session_id = %s
+                  AND m.conversation_id = %s
+            )
+            OR EXISTS (
+                SELECT 1
+                FROM gold_label_session_targets t
+                JOIN beliefs b
+                  ON t.target_kind = 'belief'
+                 AND b.id = t.target_id
+                JOIN messages m
+                  ON m.id = ANY(b.evidence_ids)
+                WHERE t.session_id = %s
+                  AND m.conversation_id = %s
+            )
+        """,
+        (session_id, conversation_id, session_id, conversation_id),
+    ).fetchone()
+    return bool(row and row[0])
+
+
+def _check_message_reachable(
+    conn: psycopg.Connection,
+    *,
+    session_id: str,
+    conversation_id: str,
+) -> None:
+    if not _session_can_reach_conversation(
+        conn,
+        session_id=session_id,
+        conversation_id=conversation_id,
+    ):
+        raise HTTPException(status_code=404, detail="message not reachable from session")
+
+
 # ---------------------------------------------------------------------------
 # App factory
 # ---------------------------------------------------------------------------
@@ -621,11 +691,13 @@ def create_app() -> FastAPI:
             sampler_version=SAMPLER_VERSION,
             strata_weights={},
         )
+        active_learning_signal = get_active_learning_signal_version(conn)
         sampler = GoldLabelSampler(
             conn,
             seed=actual_seed,
             include_superseded=False,
             ignore_cooldown=False,
+            active_learning_signal_version=active_learning_signal,
         )
         sampled = sampler.sample(n)
         if not sampled:
@@ -741,9 +813,12 @@ def create_app() -> FastAPI:
         if verdict in {"true", "skip"}:
             rationale_value = None
         else:
-            rationale_value = rationale or ""
-            if rationale_value == "" and verdict != "unsure":
-                rationale_value = ""
+            rationale_value = (rationale or "").strip()
+            if verdict in _RATIONALE_REQUIRED_VERDICTS and not rationale_value:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"error": "rationale_required", "verdict": verdict},
+                )
 
         agent = InterviewAgent(
             conn, sampler_id=SAMPLER_ID, sampler_version=SAMPLER_VERSION
@@ -799,6 +874,7 @@ def create_app() -> FastAPI:
                 m.content_text,
                 m.source_kind::text,
                 m.privacy_tier,
+                m.conversation_id::text,
                 c.title
             FROM messages m
             LEFT JOIN conversations c ON c.id = m.conversation_id
@@ -808,7 +884,17 @@ def create_app() -> FastAPI:
         ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="message not found")
-        msg_id, role, created_at, content, source_kind, privacy_tier, conv_title = row
+        (
+            msg_id,
+            role,
+            created_at,
+            content,
+            source_kind,
+            privacy_tier,
+            conv_id,
+            conv_title,
+        ) = row
+        _check_message_reachable(conn, session_id=session_id, conversation_id=conv_id)
         _check_tier_1(int(privacy_tier), message_id=msg_id)
         excerpt = {
             "id": msg_id,
@@ -861,6 +947,7 @@ def create_app() -> FastAPI:
         if anchor is None:
             raise HTTPException(status_code=404, detail="message not found")
         conv_id, anchor_seq, anchor_tier = anchor
+        _check_message_reachable(conn, session_id=session_id, conversation_id=str(conv_id))
         if int(anchor_tier) > TIER_CEILING:
             _check_tier_1(int(anchor_tier), message_id=message_id)
 
@@ -930,7 +1017,7 @@ def create_app() -> FastAPI:
         if target_row is None:
             raise HTTPException(status_code=404, detail="target row missing")
         sampled = _session_target_to_sampled(target_row)
-        display = fetch_target_display(conn, sampled)
+        display = fetch_target_display(conn, sampled, evidence_limit=None)
         # Enforce Tier-1 carry across all rows we are about to render.
         for excerpt in display.get("excerpts") or []:
             tier = _message_tier(conn, excerpt["id"])

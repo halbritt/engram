@@ -22,6 +22,7 @@ def conn():
             DROP MATERIALIZED VIEW IF EXISTS current_beliefs CASCADE;
             DROP TABLE IF EXISTS
                 schema_migrations,
+                gold_label_active_learning_events,
                 gold_labels,
                 gold_label_session_targets,
                 gold_label_sessions,
@@ -76,6 +77,9 @@ def conn():
         admin.execute("DROP FUNCTION IF EXISTS fn_gold_labels_validate_target() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS fn_gold_labels_carry_privacy_tier() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS fn_gold_label_session_targets_append_only() CASCADE")
+        admin.execute(
+            "DROP FUNCTION IF EXISTS fn_gold_label_active_learning_events_append_only() CASCADE"
+        )
         admin.execute("DROP TYPE IF EXISTS source_kind CASCADE")
         admin.execute("DROP TYPE IF EXISTS capture_type CASCADE")
         admin.execute("DROP TYPE IF EXISTS consolidation_status CASCADE")

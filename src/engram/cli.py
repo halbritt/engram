@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -48,9 +49,15 @@ from engram.interview import (
     GoldLabelStorageError,
     GoldLabelVerdictError,
     InterviewAgent,
+    SessionTarget,
+    get_active_learning_signal_version,
+    insert_active_learning_event,
     insert_session,
+    insert_session_targets,
     list_sessions,
     mark_session_completed,
+    session_target_to_sampled,
+    unanswered_session_targets,
 )
 from engram.interview.render import (
     VERDICT_ALIAS,
@@ -97,6 +104,52 @@ def warn_legacy_command(invoked_command: str, replacement: str | None) -> None:
         f"warning: `engram {invoked_command}` is deprecated; use `engram {replacement}`",
         file=sys.stderr,
     )
+
+
+_INTERVIEW_STRATA_KEYS: frozenset[str] = frozenset(
+    {"stability_class", "conf_band", "recency_band", "belief_status"}
+)
+
+
+def parse_interview_strata_expr(value: str | None) -> dict[str, str]:
+    """Parse ``key=value,key=value`` strata filters for interview sampling."""
+    if value is None or value.strip() == "":
+        return {}
+    filters: dict[str, str] = {}
+    for part in value.split(","):
+        item = part.strip()
+        if not item:
+            continue
+        key, sep, raw = item.partition("=")
+        key = key.strip()
+        parsed = raw.strip()
+        if sep != "=" or not key or not parsed:
+            raise argparse.ArgumentTypeError(
+                "strata must use key=value pairs, e.g. stability_class=identity"
+            )
+        if key not in _INTERVIEW_STRATA_KEYS:
+            allowed = ", ".join(sorted(_INTERVIEW_STRATA_KEYS))
+            raise argparse.ArgumentTypeError(
+                f"unknown strata key {key!r}; allowed keys: {allowed}"
+            )
+        filters[key] = parsed
+    return filters
+
+
+def _parse_cli_datetime(value: str) -> datetime:
+    """Parse an RFC3339-ish timestamp for CLI filters."""
+    normalized = value.strip()
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError(
+            "expected RFC3339 timestamp, e.g. 2026-05-13T12:00:00Z"
+        ) from exc
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -179,10 +232,7 @@ def main(argv: list[str] | None = None) -> int:
 
     re_extract_parser = subparsers.add_parser(
         "re-extract",
-        help=(
-            "Re-extract claims under a new prompt version (RFC 0017 Part 2). "
-            "Old rows are preserved for audit; consolidation is not auto-triggered."
-        ),
+        help="Deprecated; use `engram phase3 re-extract`",
     )
     re_extract_parser.add_argument(
         "--version",
@@ -197,6 +247,10 @@ def main(argv: list[str] | None = None) -> int:
     re_extract_parser.add_argument("--source-id")
     re_extract_parser.add_argument("--diff-sample", type=int, default=5)
     re_extract_parser.add_argument("--dry-run", action="store_true")
+    re_extract_parser.set_defaults(
+        invoked_command="re-extract",
+        legacy_replacement="phase3 re-extract",
+    )
 
     consolidate_parser = subparsers.add_parser(
         "consolidate",
@@ -411,6 +465,28 @@ def main(argv: list[str] | None = None) -> int:
     )
     phase3_run_parser.set_defaults(command="pipeline-3")
 
+    phase3_re_extract_parser = phase3_subparsers.add_parser(
+        "re-extract",
+        help=(
+            "Re-extract claims under a new prompt version (RFC 0017 Part 2). "
+            "Old rows are preserved for audit; consolidation is not auto-triggered."
+        ),
+    )
+    phase3_re_extract_parser.add_argument(
+        "--version",
+        required=True,
+        help=(
+            "Target prompt version, e.g. extractor.v9.d065.descriptor. "
+            "Must differ from the live EXTRACTION_PROMPT_VERSION."
+        ),
+    )
+    phase3_re_extract_parser.add_argument("--batch-size", type=int, default=50)
+    phase3_re_extract_parser.add_argument("--limit", type=int)
+    phase3_re_extract_parser.add_argument("--source-id")
+    phase3_re_extract_parser.add_argument("--diff-sample", type=int, default=5)
+    phase3_re_extract_parser.add_argument("--dry-run", action="store_true")
+    phase3_re_extract_parser.set_defaults(command="re-extract")
+
     phase3_interview_parser = phase3_subparsers.add_parser(
         "interview",
         help="Gold-set interview loop (RFC 0021)",
@@ -424,13 +500,24 @@ def main(argv: list[str] | None = None) -> int:
         help="Start a new gold-set interview session",
     )
     phase3_interview_start_parser.add_argument("--n", type=int, default=10)
-    phase3_interview_start_parser.add_argument("--strata", type=str, default=None)
+    phase3_interview_start_parser.add_argument(
+        "--strata",
+        type=parse_interview_strata_expr,
+        default={},
+        help=(
+            "comma-separated sampling filters, e.g. "
+            "stability_class=identity,conf_band=0.6-0.8"
+        ),
+    )
     phase3_interview_start_parser.add_argument("--seed", type=int, default=None)
     phase3_interview_start_parser.add_argument(
         "--include-superseded", action="store_true"
     )
     phase3_interview_start_parser.add_argument(
         "--ignore-cooldown", action="store_true"
+    )
+    phase3_interview_start_parser.add_argument(
+        "--ignore-reask-cap", action="store_true"
     )
     phase3_interview_start_parser.add_argument(
         "--non-interactive",
@@ -1801,6 +1888,76 @@ def _prompt_rationale(verdict: str) -> str | None:
     return raw or None
 
 
+def _run_phase3_interview_prompt_loop(
+    conn,
+    *,
+    session_id: str,
+    targets: list[SessionTarget],
+    total: int,
+) -> tuple[int, dict[str, int], bool]:
+    """Prompt through materialized session targets.
+
+    Returns ``(answered_count, verdict_counts, completed)``. ``completed`` is
+    false when the operator saves/quits or interrupts before exhausting the
+    provided target list.
+    """
+    print("verdicts: t/f/stale/unsupported/unsure/skip   q to save and quit\n")
+    agent = InterviewAgent(
+        conn,
+        sampler_id=INTERVIEW_SAMPLER_ID,
+        sampler_version=INTERVIEW_SAMPLER_VERSION,
+    )
+    counts: dict[str, int] = {}
+    answered = 0
+    try:
+        for target_row in targets:
+            idx = target_row.idx + 1
+            target = session_target_to_sampled(target_row)
+            display = fetch_target_display(conn, target)
+            print(format_header(target, idx, total))
+            print(f"  {format_summary_line(display)}")
+            ev_dates_line = format_evidence_dates(display)
+            if ev_dates_line is not None:
+                print(f"  {ev_dates_line}")
+            excerpts = display.get("excerpts") or []
+            if excerpts:
+                for line in format_evidence_excerpts(
+                    excerpts, display.get("evidence_count", 0)
+                ):
+                    print(line)
+            question = pick_question(target, display)
+            print(f"  {question}")
+            verdict = _prompt_verdict(sys.stdin.isatty())
+            if verdict is None:
+                print(
+                    f"\nsaved-and-quit at [{idx}/{total}]; session "
+                    f"{session_id} stays open. Resume with: "
+                    f"engram phase3 interview resume --session-id {session_id}"
+                )
+                return answered, counts, False
+            rationale = _prompt_rationale(verdict)
+            try:
+                agent.record_verdict(session_id, target, verdict, rationale=rationale)
+                conn.commit()
+            except (GoldLabelStorageError, GoldLabelVerdictError) as exc:
+                conn.rollback()
+                print(f"  record failed: {exc}", file=sys.stderr)
+                print("  (continuing; the target was not labeled.)", file=sys.stderr)
+                continue
+            counts[verdict] = counts.get(verdict, 0) + 1
+            answered += 1
+            print()
+    except KeyboardInterrupt:
+        next_idx = targets[min(answered, len(targets) - 1)].idx + 1 if targets else 1
+        print(
+            f"\n\ninterrupted at [{next_idx}/{total}]; session "
+            f"{session_id} stays open. Resume with: "
+            f"engram phase3 interview resume --session-id {session_id}"
+        )
+        return answered, counts, False
+    return answered, counts, True
+
+
 def run_phase3_interview_start(args) -> int:  # type: ignore[no-untyped-def]
     """RFC 0021 v1 interview loop: open a session, sample n targets, prompt the
     operator one verdict at a time, commit each row as it's answered.
@@ -1812,74 +1969,32 @@ def run_phase3_interview_start(args) -> int:  # type: ignore[no-untyped-def]
     seed = args.seed if args.seed is not None else int.from_bytes(os.urandom(4), "big")
     n = max(0, int(args.n))
     interactive = not bool(getattr(args, "non_interactive", False)) and sys.stdin.isatty()
+    strata_filters = dict(getattr(args, "strata", {}) or {})
     with connect() as conn:
+        active_learning_signal = get_active_learning_signal_version(conn)
         session_id = insert_session(
             conn,
             seed=seed,
             sampler_id=INTERVIEW_SAMPLER_ID,
             sampler_version=INTERVIEW_SAMPLER_VERSION,
-            strata_weights={},
+            strata_weights=strata_filters,
         )
         conn.commit()
         sampler = GoldLabelSampler(
             conn,
             seed=seed,
+            strata_weights=strata_filters,
             include_superseded=bool(args.include_superseded),
             ignore_cooldown=bool(args.ignore_cooldown),
+            active_learning_signal_version=active_learning_signal,
+            ignore_reask_cap=bool(getattr(args, "ignore_reask_cap", False)),
         )
         sampled = sampler.sample(n)
 
         if sampled:
-            # Materialize the sampled order in gold_label_session_targets
-            # (RFC 0027 / Spec 0027 Migration 011) so a CLI-started session
-            # is web-resumable and a Ctrl-C mid-loop preserves the order.
-            # Commit immediately, before the interactive prompt begins.
-            target_rows = [
-                (
-                    session_id,
-                    idx,
-                    target.target_kind,
-                    target.target_id,
-                    target.candidate_pool_snapshot_id,
-                    target.extraction_prompt_version,
-                    target.extraction_model_version,
-                    target.consolidation_prompt_version,
-                    target.consolidation_model_version,
-                    target.request_profile_version,
-                    target.stability_class,
-                    target.conf_band,
-                    target.recency_band,
-                    target.belief_status,
-                )
-                for idx, target in enumerate(sampled)
-            ]
-            with conn.cursor() as cur:
-                cur.executemany(
-                    """
-                    INSERT INTO gold_label_session_targets (
-                        session_id,
-                        idx,
-                        target_kind,
-                        target_id,
-                        candidate_pool_snapshot_id,
-                        extraction_prompt_version,
-                        extraction_model_version,
-                        consolidation_prompt_version,
-                        consolidation_model_version,
-                        request_profile_version,
-                        stability_class,
-                        conf_band,
-                        recency_band,
-                        belief_status
-                    )
-                    VALUES (
-                        %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s
-                    )
-                    """,
-                    target_rows,
-                )
+            # Materialize the sampled order before prompting so CLI and web
+            # resume share the same stable target list.
+            insert_session_targets(conn, session_id=session_id, sampled=sampled)
             conn.commit()
 
         if not interactive:
@@ -1887,7 +2002,10 @@ def run_phase3_interview_start(args) -> int:  # type: ignore[no-untyped-def]
                 "phase3 interview start: "
                 f"session={session_id} seed={seed} "
                 f"sampler={INTERVIEW_SAMPLER_ID}@{INTERVIEW_SAMPLER_VERSION} "
-                f"sampled={len(sampled)} (non-interactive)"
+                f"sampled={len(sampled)} "
+                f"active_learning={active_learning_signal or 'off'} "
+                f"strata={strata_filters or {}} "
+                "(non-interactive)"
             )
             return 0
 
@@ -1904,59 +2022,17 @@ def run_phase3_interview_start(args) -> int:  # type: ignore[no-untyped-def]
         print(
             f"session: {session_id}  seed: {seed}  "
             f"sampler: {INTERVIEW_SAMPLER_ID}@{INTERVIEW_SAMPLER_VERSION}  "
-            f"sampled: {len(sampled)}"
+            f"sampled: {len(sampled)}  "
+            f"active_learning: {active_learning_signal or 'off'}"
         )
-        print("verdicts: t/f/stale/unsupported/unsure/skip   q to save and quit\n")
-
-        agent = InterviewAgent(
+        targets = unanswered_session_targets(conn, session_id=session_id)
+        answered, counts, completed = _run_phase3_interview_prompt_loop(
             conn,
-            sampler_id=INTERVIEW_SAMPLER_ID,
-            sampler_version=INTERVIEW_SAMPLER_VERSION,
+            session_id=session_id,
+            targets=targets,
+            total=len(sampled),
         )
-        counts: dict[str, int] = {}
-        answered = 0
-        try:
-            for idx, target in enumerate(sampled, start=1):
-                display = fetch_target_display(conn, target)
-                print(format_header(target, idx, len(sampled)))
-                print(f"  {format_summary_line(display)}")
-                ev_dates_line = format_evidence_dates(display)
-                if ev_dates_line is not None:
-                    print(f"  {ev_dates_line}")
-                excerpts = display.get("excerpts") or []
-                if excerpts:
-                    for line in format_evidence_excerpts(
-                        excerpts, display.get("evidence_count", 0)
-                    ):
-                        print(line)
-                question = pick_question(target, display)
-                print(f"  {question}")
-                verdict = _prompt_verdict(sys.stdin.isatty())
-                if verdict is None:
-                    print(
-                        f"\nsaved-and-quit at [{idx}/{len(sampled)}]; session "
-                        f"{session_id} stays open. Resume with: "
-                        f"engram phase3 interview resume --session-id {session_id}"
-                    )
-                    return 0
-                rationale = _prompt_rationale(verdict)
-                try:
-                    agent.record_verdict(session_id, target, verdict, rationale=rationale)
-                    conn.commit()
-                except (GoldLabelStorageError, GoldLabelVerdictError) as exc:
-                    conn.rollback()
-                    print(f"  record failed: {exc}", file=sys.stderr)
-                    print("  (continuing; the target was not labeled.)", file=sys.stderr)
-                    continue
-                counts[verdict] = counts.get(verdict, 0) + 1
-                answered += 1
-                print()
-        except KeyboardInterrupt:
-            print(
-                f"\n\ninterrupted at [{answered + 1}/{len(sampled)}]; session "
-                f"{session_id} stays open. Resume with: "
-                f"engram phase3 interview resume --session-id {session_id}"
-            )
+        if not completed:
             return 0
 
         mark_session_completed(conn, session_id)
@@ -1967,7 +2043,7 @@ def run_phase3_interview_start(args) -> int:  # type: ignore[no-untyped-def]
 
 
 def run_phase3_interview_resume(args) -> int:  # type: ignore[no-untyped-def]
-    """RFC 0021 v1 stub: surface that the named session exists and is open."""
+    """Resume an open CLI interview session from materialized targets."""
     if args.session_id is None:
         print(
             "phase3 interview resume: provide --session-id; "
@@ -1986,31 +2062,85 @@ def run_phase3_interview_resume(args) -> int:  # type: ignore[no-untyped-def]
         return 1
     session = matched[0]
     state = "open" if session.completed_at is None else "completed"
-    print(
-        "phase3 interview resume: "
-        f"session={session.session_id} state={state} "
-        f"started_at={session.started_at.isoformat()}"
-    )
+    with connect() as conn:
+        targets = unanswered_session_targets(conn, session_id=args.session_id)
+        total = len(targets) + conn.execute(
+            "SELECT count(*) FROM gold_labels WHERE session_id = %s",
+            (args.session_id,),
+        ).fetchone()[0]
+        if state == "completed":
+            print(
+                "phase3 interview resume: "
+                f"session={session.session_id} state=completed "
+                f"started_at={session.started_at.isoformat()}"
+            )
+            return 0
+        if not targets:
+            mark_session_completed(conn, args.session_id)
+            conn.commit()
+            print(
+                "phase3 interview resume: "
+                f"session={session.session_id} had no unanswered targets; marked completed"
+            )
+            return 0
+        if not sys.stdin.isatty():
+            next_idx = targets[0].idx + 1
+            print(
+                "phase3 interview resume: "
+                f"session={session.session_id} state=open "
+                f"unanswered={len(targets)} next=q/{next_idx} "
+                "(run from a TTY to continue the prompt loop)"
+            )
+            return 0
+        print(
+            "phase3 interview resume: "
+            f"session={session.session_id} state=open "
+            f"unanswered={len(targets)} started_at={session.started_at.isoformat()}"
+        )
+        answered, counts, completed = _run_phase3_interview_prompt_loop(
+            conn,
+            session_id=args.session_id,
+            targets=targets,
+            total=total,
+        )
+        if not completed:
+            return 0
+        mark_session_completed(conn, args.session_id)
+        conn.commit()
+    summary = ", ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "no verdicts"
+    print(f"session {args.session_id} complete: {answered}/{len(targets)} answered ({summary})")
     return 0
 
 
 def run_phase3_interview_history(args) -> int:  # type: ignore[no-untyped-def]
-    """RFC 0021 v1 stub: prints latest verdict for ``--target``."""
+    """Print gold-label verdict history for ``--target``."""
     if args.target is None:
         print(
             "phase3 interview history: provide --target <uuid>",
             file=sys.stderr,
         )
         return 2
+    since: datetime | None = None
+    if args.since is not None:
+        try:
+            since = _parse_cli_datetime(args.since)
+        except ValueError as exc:
+            print(f"phase3 interview history: invalid --since: {exc}", file=sys.stderr)
+            return 2
+    where = "WHERE target_id = %s"
+    params: list[Any] = [args.target]
+    if since is not None:
+        where += " AND answered_at >= %s"
+        params.append(since)
     with connect() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT id::text, target_kind, verdict, answered_at
             FROM gold_labels
-            WHERE target_id = %s
+            {where}
             ORDER BY answered_at DESC
             """,
-            (args.target,),
+            tuple(params),
         ).fetchall()
     if not rows:
         print(f"phase3 interview history: no rows for target {args.target}")
@@ -2123,18 +2253,21 @@ def run_phase3_interview_coverage(args) -> int:  # type: ignore[no-untyped-def]
 
 
 def run_phase3_interview_enable_active_learning(args) -> int:  # type: ignore[no-untyped-def]
-    """RFC 0021 v1 stub: prints the signal version that would be stamped.
-
-    The activation itself is a project-level decision (RFC § Open Questions
-    item 4). v1 surfaces the operator-visible mechanism without altering the
-    sampler's bias selection logic — that lands in v1.1 once real signal
-    data exists.
-    """
-
+    """Persist the active-learning signal version stamped onto new sessions."""
+    signal_version = str(args.signal_version).strip()
+    if not signal_version:
+        print(
+            "phase3 interview enable-active-learning: --signal-version must not be blank",
+            file=sys.stderr,
+        )
+        return 2
+    with connect() as conn:
+        event_id = insert_active_learning_event(conn, signal_version=signal_version)
+        conn.commit()
     print(
         "phase3 interview enable-active-learning: "
-        f"signal_version={args.signal_version} "
-        "(v1 stamps the version onto next-session rows; bias selection is deferred to v1.1)"
+        f"signal_version={signal_version} event_id={event_id} "
+        "(will be stamped onto subsequent session targets)"
     )
     return 0
 
