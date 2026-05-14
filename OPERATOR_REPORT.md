@@ -2,6 +2,50 @@
 
 Last updated: 2026-05-14
 
+## Live Operator Addendum: Striatum Memory RFC Scaffolding
+
+- The Striatum memory roadmap RFCs are now scaffolded as proposal-only files:
+  `docs/rfcs/0045-striatum-corpus-contract-v2.md`,
+  `docs/rfcs/0046-striatum-projection-index-schema.md`,
+  `docs/rfcs/0047-striatum-retrieval-augmentation-boundary.md`,
+  `docs/rfcs/0048-striatum-context-injection-policy.md`, and
+  `docs/rfcs/0049-striatum-evaluation-gates.md`.
+- The RFC index and changelog were updated to reflect the scaffolds. These
+  files do not implement code or settle design decisions; they record the
+  roadmap boundaries, dependencies, review expectations, and open questions.
+- A queued Striatum workflow packet now lives at
+  `striatum/striatum-memory-roadmap-rfcs-2026-05-14/`. It includes author,
+  reviewer, ledger, and synthesizer roles; prompts that instruct future
+  implementor agents to use the maximum useful number of native sub-agents; and
+  a dependency graph from RFC 0044 hardening through RFC 0049 final synthesis.
+- Explorer support completed with no file edits. One explorer confirmed local
+  RFC and Striatum workflow conventions; the other extracted the RFC 0044
+  hardening queue and RFC 0045-0049 downstream lane inventory from the roadmap
+  and RFC 0044 review artifacts.
+- Validation passed for
+  `striatum/striatum-memory-roadmap-rfcs-2026-05-14/workflow.json` with
+  `STRIATUM_DAEMON_REQUIRED=0 STRIATUM_TEST_HARNESS=1 .venv/bin/striatum
+  --repo . workflow validate ... --json`; `workflow plan` also passed and
+  shows RFC 0044 hardening plus RFC 0045 as the first parallel step, RFC 0046
+  and RFC 0047 as the second parallel step, then RFC 0048, RFC 0049, three
+  parallel reviews, findings ledger, and final synthesis.
+- Current local Engram venv reports `striatum 1.48.1`.
+- `make check-refs` passed with `0 error(s), 5 warning(s), 191 check(s) ok`;
+  the warnings are pre-existing subref and prompt-ordinal warnings, not new RFC
+  scaffold failures.
+
+## Live Operator Addendum: Striatum Memory Roadmap
+
+- Added root planning artifact `STRIATUM_MEMORY_ROADMAP.md`, capturing the
+  roadmap for Engram to serve as Striatum's local memory system.
+- The roadmap preserves the current RFC 0044 boundary: Engram ingests
+  Striatum-produced disk bundles, keeps raw evidence immutable, exposes
+  read-only retrieval, and treats Striatum memory as a local application-memory
+  corpus rather than a cloud-backed service.
+- Next recommended queue item: scaffold RFC 0045 for the Striatum Corpus
+  Contract V2, because complete export, derived projections, retrieval quality,
+  and agent-context injection all depend on that contract.
+
 ## Live Operator Addendum: RFC 0044 And Checkpoint Cleanup
 
 - Main worktree: `/home/halbritt/git/engram`, branch `master`. The local

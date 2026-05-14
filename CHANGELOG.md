@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Striatum memory roadmap documenting how Engram should evolve from RFC 0044
+  raw Striatum bundle ingestion into a full local memory system for Striatum
+  operator logs, workflow agents, designs, reports, changelogs, git history,
+  blockers, and generated artifacts.
+- Striatum-first roadmap RFC scaffolds for RFC 0045 through RFC 0049, covering
+  the Striatum Corpus Contract V2, Engram Striatum projections/indexes,
+  retrieval augmentation boundary, context-injection policy, and evaluation /
+  no-egress / retrieval-quality gates, plus a Striatum workflow queue packet
+  that preserves the dependency order and review lanes.
 - RFC 0038 operator UI rework proposal and Striatum implementation workflow
   scaffold, derived from `ENGRAM_UI_REWORK_HANDOFF.md`, covering a three-lane
   UI implementation split plus the normal review cycle augmented with an

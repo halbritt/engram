@@ -1,0 +1,412 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "striatum-memory-roadmap-rfcs-2026-05-14",
+  "workflow_version": "2026-05-14+scaffold",
+  "name": "Striatum Memory Roadmap RFC Queue",
+  "branch": {
+    "mode": "confirm",
+    "allow_dirty": true,
+    "suggested_name": "engram/striatum-memory-roadmap-rfcs"
+  },
+  "coordinator": {
+    "lane_id": "codex",
+    "role_id": "author"
+  },
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 3,
+    "require_disjoint_write_scopes": true
+  },
+  "cycles": [],
+  "lanes": {
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "-"],
+      "capabilities": ["write", "review", "synthesis"],
+      "constraints": {
+        "network": "forbidden",
+        "repo_scope": "local_only",
+        "transcripts": "off"
+      }
+    },
+    "claude": {
+      "adapter": "process",
+      "display_model": "Claude Opus",
+      "command": ["claude", "--model", "opus", "-p"],
+      "capabilities": ["review"],
+      "constraints": {
+        "network": "forbidden",
+        "repo_scope": "local_only",
+        "transcripts": "off"
+      }
+    },
+    "gemini": {
+      "adapter": "process",
+      "display_model": "Gemini 3.1 Pro Preview",
+      "command": ["gemini", "--model", "gemini-3.1-pro-preview"],
+      "capabilities": ["review"],
+      "constraints": {
+        "network": "forbidden",
+        "repo_scope": "local_only",
+        "transcripts": "off"
+      }
+    }
+  },
+  "roles": {
+    "author": {
+      "definition_path": "striatum/striatum-memory-roadmap-rfcs-2026-05-14/roles/author.md"
+    },
+    "reviewer": {
+      "definition_path": "striatum/striatum-memory-roadmap-rfcs-2026-05-14/roles/reviewer.md"
+    },
+    "ledger": {
+      "definition_path": "striatum/striatum-memory-roadmap-rfcs-2026-05-14/roles/ledger.md"
+    },
+    "synthesizer": {
+      "definition_path": "striatum/striatum-memory-roadmap-rfcs-2026-05-14/roles/synthesizer.md"
+    }
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "HUMAN_REQUIREMENTS.md", "required": true},
+    {"path": "DECISION_LOG.md", "required": true},
+    {"path": "BUILD_PHASES.md", "required": true},
+    {"path": "ROADMAP.md", "required": true},
+    {"path": "SPEC.md", "required": true},
+    {"path": "STRIATUM_MEMORY_ROADMAP.md", "required": true},
+    {"path": "docs/schema/README.md", "required": true},
+    {"path": "docs/rfcs/README.md", "required": true},
+    {"path": "docs/process/multi-agent-review-loop.md", "required": true},
+    {"path": "docs/process/project-judgment.md", "required": true},
+    {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/FINAL_SYNTHESIS.md", "required": true},
+    {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/FINDINGS_LEDGER.md", "required": true}
+  ],
+  "jobs": [
+    {
+      "id": "rfc0044_hardening_handoff",
+      "type": "draft",
+      "lane_id": "codex",
+      "role_id": "author",
+      "title": "Prepare RFC 0044 hardening cleanup handoff",
+      "objective": "Turn RFC 0044 accepted follow-ups into an implementation-ready hardening handoff without implementing the fixes.",
+      "task_prompt": {"path": "striatum/striatum-memory-roadmap-rfcs-2026-05-14/prompts/rfc_author.md"},
+      "inputs": [
+        {"kind": "synthesis", "path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/FINAL_SYNTHESIS.md"},
+        {"kind": "ledger", "path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/FINDINGS_LEDGER.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0044-hardening-cleanup-2026-05-14/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "DECISION_LOG.md", "CHANGELOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "rfc0044_hardening_handoff",
+          "kind": "handoff",
+          "path": "docs/reviews/rfc0044-hardening-cleanup-2026-05-14/HARDENING_HANDOFF.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "rfc0045_contract_handoff",
+      "type": "draft",
+      "lane_id": "codex",
+      "role_id": "author",
+      "title": "Author RFC 0045 Striatum Corpus Contract V2 handoff",
+      "objective": "Move RFC 0045 from scaffold to reviewable corpus-contract handoff.",
+      "task_prompt": {"path": "striatum/striatum-memory-roadmap-rfcs-2026-05-14/prompts/rfc_author.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0045-striatum-corpus-contract-v2.md"},
+        {"kind": "roadmap", "path": "STRIATUM_MEMORY_ROADMAP.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/rfcs/0045-striatum-corpus-contract-v2.md", "docs/reviews/rfc0045-striatum-corpus-contract-v2/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "rfc0045_contract_handoff",
+          "kind": "handoff",
+          "path": "docs/reviews/rfc0045-striatum-corpus-contract-v2/SPEC_HANDOFF.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "rfc0046_projection_schema_handoff",
+      "type": "draft",
+      "lane_id": "codex",
+      "role_id": "author",
+      "title": "Author RFC 0046 projection and index schema handoff",
+      "objective": "Move RFC 0046 from scaffold to reviewable Engram projection/index schema handoff.",
+      "task_prompt": {"path": "striatum/striatum-memory-roadmap-rfcs-2026-05-14/prompts/rfc_author.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0046-striatum-projection-index-schema.md"},
+        {"kind": "upstream_rfc", "path": "docs/rfcs/0045-striatum-corpus-contract-v2.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/rfcs/0046-striatum-projection-index-schema.md", "docs/reviews/rfc0046-striatum-projection-index-schema/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "rfc0046_projection_schema_handoff",
+          "kind": "handoff",
+          "path": "docs/reviews/rfc0046-striatum-projection-index-schema/SPEC_HANDOFF.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "rfc0047_augmentation_boundary_handoff",
+      "type": "draft",
+      "lane_id": "codex",
+      "role_id": "author",
+      "title": "Author RFC 0047 retrieval augmentation boundary handoff",
+      "objective": "Move RFC 0047 from scaffold to reviewable Striatum/Engram boundary handoff.",
+      "task_prompt": {"path": "striatum/striatum-memory-roadmap-rfcs-2026-05-14/prompts/rfc_author.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0047-striatum-retrieval-augmentation-boundary.md"},
+        {"kind": "upstream_rfc", "path": "docs/rfcs/0045-striatum-corpus-contract-v2.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/rfcs/0047-striatum-retrieval-augmentation-boundary.md", "docs/reviews/rfc0047-striatum-retrieval-augmentation-boundary/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "rfc0047_augmentation_boundary_handoff",
+          "kind": "handoff",
+          "path": "docs/reviews/rfc0047-striatum-retrieval-augmentation-boundary/SPEC_HANDOFF.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "rfc0048_context_policy_handoff",
+      "type": "draft",
+      "lane_id": "codex",
+      "role_id": "author",
+      "title": "Author RFC 0048 context injection policy handoff",
+      "objective": "Move RFC 0048 from scaffold to reviewable context-injection policy handoff.",
+      "task_prompt": {"path": "striatum/striatum-memory-roadmap-rfcs-2026-05-14/prompts/rfc_author.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0048-striatum-context-injection-policy.md"},
+        {"kind": "upstream_rfc", "path": "docs/rfcs/0047-striatum-retrieval-augmentation-boundary.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/rfcs/0048-striatum-context-injection-policy.md", "docs/reviews/rfc0048-striatum-context-injection-policy/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "rfc0048_context_policy_handoff",
+          "kind": "handoff",
+          "path": "docs/reviews/rfc0048-striatum-context-injection-policy/SPEC_HANDOFF.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "rfc0049_evaluation_gates_handoff",
+      "type": "draft",
+      "lane_id": "codex",
+      "role_id": "author",
+      "title": "Author RFC 0049 evaluation gates handoff",
+      "objective": "Move RFC 0049 from scaffold to reviewable evaluation/no-egress/retrieval-quality gates handoff.",
+      "task_prompt": {"path": "striatum/striatum-memory-roadmap-rfcs-2026-05-14/prompts/rfc_author.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0049-striatum-evaluation-gates.md"},
+        {"kind": "upstream_rfc", "path": "docs/rfcs/0045-striatum-corpus-contract-v2.md"},
+        {"kind": "upstream_rfc", "path": "docs/rfcs/0046-striatum-projection-index-schema.md"},
+        {"kind": "upstream_rfc", "path": "docs/rfcs/0047-striatum-retrieval-augmentation-boundary.md"},
+        {"kind": "upstream_rfc", "path": "docs/rfcs/0048-striatum-context-injection-policy.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/rfcs/0049-striatum-evaluation-gates.md", "docs/reviews/rfc0049-striatum-evaluation-gates/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "rfc0049_evaluation_gates_handoff",
+          "kind": "handoff",
+          "path": "docs/reviews/rfc0049-striatum-evaluation-gates/SPEC_HANDOFF.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_privacy_boundary",
+      "type": "review",
+      "lane_id": "claude",
+      "role_id": "reviewer",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "title": "Review Striatum memory RFC package for privacy and boundary safety",
+      "objective": "Review local-only constraints, tenant/corpus isolation, personal-memory deferral, and no-egress posture.",
+      "task_prompt": {"path": "striatum/striatum-memory-roadmap-rfcs-2026-05-14/prompts/review.md"},
+      "inputs": [
+        {"kind": "handoff", "path": "docs/reviews/rfc0045-striatum-corpus-contract-v2/SPEC_HANDOFF.md"},
+        {"kind": "handoff", "path": "docs/reviews/rfc0047-striatum-retrieval-augmentation-boundary/SPEC_HANDOFF.md"},
+        {"kind": "handoff", "path": "docs/reviews/rfc0049-striatum-evaluation-gates/SPEC_HANDOFF.md"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "privacy_boundary_review",
+          "kind": "finding",
+          "path": "docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/REVIEW_privacy_boundary.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_contract_coherence",
+      "type": "review",
+      "lane_id": "codex",
+      "role_id": "reviewer",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "title": "Review Striatum memory RFC package for contract coherence",
+      "objective": "Review dependency order, contract completeness, projection readiness, and evaluation traceability.",
+      "task_prompt": {"path": "striatum/striatum-memory-roadmap-rfcs-2026-05-14/prompts/review.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0045-striatum-corpus-contract-v2.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0046-striatum-projection-index-schema.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0049-striatum-evaluation-gates.md"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "contract_coherence_review",
+          "kind": "finding",
+          "path": "docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/REVIEW_contract_coherence.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_operator_ergonomics",
+      "type": "review",
+      "lane_id": "gemini",
+      "role_id": "reviewer",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "title": "Review Striatum memory RFC package for operator ergonomics",
+      "objective": "Review context quality, citation visibility, graceful degradation, and operator decision cost.",
+      "task_prompt": {"path": "striatum/striatum-memory-roadmap-rfcs-2026-05-14/prompts/review.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0047-striatum-retrieval-augmentation-boundary.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0048-striatum-context-injection-policy.md"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "operator_ergonomics_review",
+          "kind": "finding",
+          "path": "docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/REVIEW_operator_ergonomics.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "findings_ledger",
+      "type": "ledger",
+      "lane_id": "codex",
+      "role_id": "ledger",
+      "fresh_session_required": true,
+      "title": "Record Striatum memory roadmap RFC findings ledger",
+      "objective": "Normalize independent RFC package reviews into one findings ledger.",
+      "task_prompt": {"path": "striatum/striatum-memory-roadmap-rfcs-2026-05-14/prompts/findings_ledger.md"},
+      "inputs": [
+        {"kind": "review", "path": "docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/REVIEW_privacy_boundary.md"},
+        {"kind": "review", "path": "docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/REVIEW_contract_coherence.md"},
+        {"kind": "review", "path": "docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/REVIEW_operator_ergonomics.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "findings_ledger",
+          "kind": "findings_ledger",
+          "path": "docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/FINDINGS_LEDGER.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "final_synthesis",
+      "type": "synthesis",
+      "lane_id": "codex",
+      "role_id": "synthesizer",
+      "fresh_session_required": true,
+      "title": "Synthesize Striatum memory roadmap RFC package",
+      "objective": "Classify findings and produce operator-ready next actions for the Striatum memory roadmap.",
+      "task_prompt": {"path": "striatum/striatum-memory-roadmap-rfcs-2026-05-14/prompts/synthesis.md"},
+      "inputs": [
+        {"kind": "ledger", "path": "docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/FINDINGS_LEDGER.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "final_synthesis",
+          "kind": "synthesis",
+          "path": "docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/FINAL_SYNTHESIS.md",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {"from": "rfc0045_contract_handoff", "on": "completed", "to": "rfc0046_projection_schema_handoff"},
+    {"from": "rfc0045_contract_handoff", "on": "completed", "to": "rfc0047_augmentation_boundary_handoff"},
+    {"from": "rfc0047_augmentation_boundary_handoff", "on": "completed", "to": "rfc0048_context_policy_handoff"},
+    {"from": "rfc0046_projection_schema_handoff", "on": "completed", "to": "rfc0049_evaluation_gates_handoff"},
+    {"from": "rfc0048_context_policy_handoff", "on": "completed", "to": "rfc0049_evaluation_gates_handoff"},
+    {"from": "rfc0049_evaluation_gates_handoff", "on": "completed", "to": "review_privacy_boundary"},
+    {"from": "rfc0049_evaluation_gates_handoff", "on": "completed", "to": "review_contract_coherence"},
+    {"from": "rfc0049_evaluation_gates_handoff", "on": "completed", "to": "review_operator_ergonomics"},
+    {"from": "review_privacy_boundary", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_contract_coherence", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_operator_ergonomics", "on": "completed", "to": "findings_ledger"},
+    {"from": "findings_ledger", "on": "completed", "to": "final_synthesis"}
+  ]
+}

@@ -56,6 +56,11 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0036](0036-daily-biography-compiler.md) | proposal | none | Daily biography compiler |
 | [0037](0037-outputguard-segmentation-structured-output.md) | proposal | none | OutputGuard for segmentation structured output |
 | [0038](0038-operator-ui-rework.md) | proposal | none | Operator UI rework for interview and bench-review surfaces |
+| [0045](0045-striatum-corpus-contract-v2.md) | proposal | none | Striatum Corpus Contract V2 |
+| [0046](0046-striatum-projection-index-schema.md) | proposal | none | Engram Striatum projection and index schema |
+| [0047](0047-striatum-retrieval-augmentation-boundary.md) | proposal | none | Striatum retrieval augmentation boundary |
+| [0048](0048-striatum-context-injection-policy.md) | proposal | none | Striatum context-injection policy |
+| [0049](0049-striatum-evaluation-gates.md) | proposal | none | Striatum evaluation, no-egress, and retrieval-quality gates |
 
 ## Implementation notes (2026-05-07 sweep)
 
