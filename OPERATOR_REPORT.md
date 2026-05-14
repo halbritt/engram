@@ -2,6 +2,95 @@
 
 Last updated: 2026-05-14
 
+## Live Operator Addendum: Striatum Memory RFC Execution
+
+- Latest pushed main commit before execution:
+  `6654f10 Document Striatum memory roadmap and RFC scaffolds`.
+- Active Striatum execution run:
+  `run_500d0f049ea04038b0e19d6045daf918` on branch
+  `engram/striatum-memory-roadmap-rfcs`.
+- Initial Striatum adapter attempts for the first two author jobs exited
+  cleanly without producing their required artifacts. The operator recorded
+  and recovered blockers `blk_a35cfd5772fd4783b93eb4775c2bc739`
+  (`rfc0044_hardening_handoff`) and
+  `blk_d69411f7929f4eaf98a4bc747ef591dc`
+  (`rfc0045_contract_handoff`) by launching bounded replacement Codex workers
+  and publishing their declared artifacts with override rationale.
+- Completed author/run jobs:
+  `rfc0044_hardening_handoff` produced
+  `docs/reviews/rfc0044-hardening-cleanup-2026-05-14/HARDENING_HANDOFF.md`;
+  `rfc0045_contract_handoff` expanded
+  `docs/rfcs/0045-striatum-corpus-contract-v2.md` and produced
+  `docs/reviews/rfc0045-striatum-corpus-contract-v2/SPEC_HANDOFF.md`;
+  `rfc0046_projection_schema_handoff` expanded
+  `docs/rfcs/0046-striatum-projection-index-schema.md` and produced
+  `docs/reviews/rfc0046-striatum-projection-index-schema/SPEC_HANDOFF.md`;
+  `rfc0047_augmentation_boundary_handoff` expanded
+  `docs/rfcs/0047-striatum-retrieval-augmentation-boundary.md` and produced
+  `docs/reviews/rfc0047-striatum-retrieval-augmentation-boundary/SPEC_HANDOFF.md`;
+  `rfc0048_context_policy_handoff` expanded
+  `docs/rfcs/0048-striatum-context-injection-policy.md` and produced
+  `docs/reviews/rfc0048-striatum-context-injection-policy/SPEC_HANDOFF.md`;
+  `rfc0049_evaluation_gates_handoff` expanded
+  `docs/rfcs/0049-striatum-evaluation-gates.md` and produced
+  `docs/reviews/rfc0049-striatum-evaluation-gates/SPEC_HANDOFF.md`.
+- All direct worker prompts explicitly require the maximum useful number of
+  native sub-agents, confine writes to their assigned RFC and handoff
+  directory, forbid source/test/migration/decision-log changes, and preserve
+  Engram's local-only/no-cloud/no-telemetry boundary.
+- Initial review fan-out completed:
+  operator ergonomics returned `accept_with_findings`
+  (`art_41ebc997167648958959ada4fbb16ec2`,
+  `verdict_6e871d08f51d4672800c47805d380ec1`);
+  privacy boundary returned `accept_with_findings`
+  (`art_f8f0ef2c4e61474e84eab6bf53ecec4e`,
+  `verdict_0e6bf83b47f8439ca1d5c8d6d179a3f1`);
+  contract coherence returned `needs_revision`
+  (`art_b024fff85e7643f1bf5cf6fc3f3e97fd`,
+  `verdict_f1f39af89c1f42268f6ab79ee603ada9`) and opened
+  human checkpoint/blocker `blk_c1ec4a8c0b8c4b0f8a3d9820a5059d45`.
+- Operator decision `dec_ebb9faef92ac4e39b1a5f7f7c8d3773c` routed the
+  contract-coherence `needs_revision` result to a bounded repair cycle instead
+  of overriding it. The decision artifact is
+  `docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/OPERATOR_DECISION_CONTRACT_REPAIR.md`.
+- Completed repair fan-out:
+  RFC 0045 repair added row-level tenant/corpus, bundle/lifecycle,
+  closed-vocabulary, path, dirty-tree, and withheld-content contract language
+  plus `REPAIR_RFC0045_CONTRACT.md`;
+  RFC 0046 repair added RFC 0044/EG-000 prerequisites, generation-scoped keys,
+  full-snapshot active serving, embedding-skip, and path/reference privacy
+  language plus `REPAIR_RFC0046_PROJECTIONS.md`;
+  RFC 0049 repair added upstream `blocked_upstream` behavior, Level 2 failure
+  actions, transitive no-egress, golden-query, candidate-audit, conflict, and
+  generated-product gate language plus `REPAIR_RFC0049_GATES.md`.
+- Operator validation after the repair fan-out:
+  `git diff --check` passed for the repaired RFCs and handoff files, and
+  `make check-refs` passed with `0 error(s), 5 warning(s), 191 check(s) ok`
+  using the same pre-existing warnings.
+- Fresh contract-coherence repair re-review completed in direct Codex session
+  `23895`; it produced
+  `docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/REVIEW_contract_coherence_repair.md`
+  with `accept_with_findings`, no remaining blockers, and only follow-up
+  alignment findings.
+- Operator decision `dec_b80a6ee51cda43efb76d877d71684863` accepted the late
+  repair re-review path. The original contract-coherence review was overridden
+  to `accept_with_findings` as verdict
+  `verdict_079b70fc16e646899c503f71fefdceed`, resolving blocker
+  `blk_c1ec4a8c0b8c4b0f8a3d9820a5059d45`.
+- The findings ledger job completed and published
+  `docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/FINDINGS_LEDGER.md`
+  as artifact `art_3e945d0319794e97833e0752e4d81a99`.
+- The final synthesis job completed and published
+  `docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/FINAL_SYNTHESIS.md`
+  as artifact `art_cabbdbedfc414f88a078000a87339d5f`. The synthesis closes
+  the workflow as proposal evidence with follow-up; it does not promote RFC
+  0045-RFC 0049, authorize implementation, or enable default-on Striatum
+  memory.
+- Final Striatum status for `run_500d0f049ea04038b0e19d6045daf918`:
+  11 jobs completed, run state `completed`, no claimable jobs, no open
+  blockers, no human checkpoints, and no lost, stale, timed-out, or running
+  processes.
+
 ## Live Operator Addendum: Striatum Memory RFC Scaffolding
 
 - The Striatum memory roadmap RFCs are now scaffolded as proposal-only files:

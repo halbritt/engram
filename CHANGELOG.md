@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retrieval augmentation boundary, context-injection policy, and evaluation /
   no-egress / retrieval-quality gates, plus a Striatum workflow queue packet
   that preserves the dependency order and review lanes.
+- Striatum memory roadmap execution handoffs for RFC 0044 hardening cleanup,
+  RFC 0045 Corpus Contract V2, RFC 0046 projection/index schema, RFC 0047
+  retrieval augmentation boundary, RFC 0048 context-injection policy, and RFC
+  0049 evaluation gates. The workflow completed multi-lane reviews, a bounded
+  contract-coherence repair and re-review, a findings ledger, and final
+  synthesis; the artifacts remain proposal evidence and keep Striatum memory as
+  optional, local-only augmentation rather than authoritative workflow state.
 - RFC 0038 operator UI rework proposal and Striatum implementation workflow
   scaffold, derived from `ENGRAM_UI_REWORK_HANDOFF.md`, covering a three-lane
   UI implementation split plus the normal review cycle augmented with an
