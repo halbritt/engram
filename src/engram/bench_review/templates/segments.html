@@ -1,23 +1,39 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Segments</h2>
+<h2 tabindex="-1">Segments · {{ active_queue_label }}</h2>
+<nav class="tabs" aria-label="Bench review queues">
+  {% for tab in queue_tabs %}
+  <a href="{{ tab.href }}" {% if tab.active %}aria-current="page"{% endif %}>{{ tab.label }}</a>
+  {% endfor %}
+</nav>
+
+<section class="panel panel-muted">
+  <label for="queue-filter">Filter visible rows</label>
+  <input id="queue-filter" type="search" placeholder="segment id, state, tag, decision">
+</section>
+
 {% if filters.reviewable %}
 <div class="panel">Showing reviewable rows with prior/candidate comparison data.</div>
 {% endif %}
+{% if items %}
 <table>
   <thead><tr><th>Segment</th><th>State</th><th>Tags</th><th>Prior</th><th>Candidate</th><th>Decision</th></tr></thead>
   <tbody>
   {% for item in items %}
   {% set row = item.row %}
+  {% set state_info = data_state_display(row.data_state) %}
   <tr>
     <td><a href="/segments/{{ row.segment_id }}{{ query_suffix }}"><code>{{ row.segment_id }}</code></a></td>
-    <td>{{ row.data_state }}</td>
-    <td>{% for tag in item.tags %}<span class="badge">{{ tag }}</span>{% endfor %}</td>
+    <td><span class="chip" data-status="{{ state_info.token }}" title="{{ state_info['copy'] }}">{{ state_info.label }}</span><br><code>{{ row.data_state }}</code></td>
+    <td>{% for tag in item.tags %}<span class="badge">{{ tag_label(tag) }}</span>{% endfor %}</td>
     <td>{{ row.prior_claim_count if row.prior_claim_count is not none else "n/a" }}</td>
     <td>{{ row.candidate_claim_count if row.candidate_claim_count is not none else "n/a" }}</td>
-    <td>{{ row.decision or "undecided" }}</td>
+    <td>{{ decision_label(row.decision) }}</td>
   </tr>
   {% endfor %}
   </tbody>
 </table>
+{% else %}
+<p class="muted">No segments in {{ active_queue_label }}.</p>
+{% endif %}
 {% endblock %}

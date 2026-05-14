@@ -1,51 +1,222 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ title or "Engram bench review" }}</title>
-  <script src="/static/htmx.min.js"></script>
+{% extends "_app_shell.html" %}
+
+{% block title %}{{ title or "Engram bench review" }}{% endblock %}
+
+{% block head_extra %}
+  <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/queue_filter.js" defer></script>
   <style>
-    :root { color-scheme: light; font-family: system-ui, sans-serif; }
-    body { margin: 0; background: #f7f7f4; color: #20211f; }
-    header, main { max-width: 1120px; margin: 0 auto; padding: 20px; }
-    header { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
-    nav a { margin-left: 12px; color: #24516b; }
-    h1 { font-size: 24px; margin: 0; }
-    h2 { font-size: 18px; margin: 24px 0 8px; }
-    table { width: 100%; border-collapse: collapse; background: white; }
-    th, td { padding: 8px; border-bottom: 1px solid #ddd; text-align: left; vertical-align: top; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
-    .metric, .panel { background: white; border: 1px solid #ddd; border-radius: 6px; padding: 12px; }
-    .stack { display: grid; gap: 12px; }
-    .claim { background: white; border: 1px solid #ddd; border-radius: 6px; padding: 12px; }
-    .claim h3 { font-size: 15px; margin: 0 0 8px; }
-    .claim dl { display: grid; grid-template-columns: minmax(96px, 160px) 1fr; gap: 6px 10px; margin: 0; }
-    .claim dt { color: #5c6258; }
-    .claim dd { margin: 0; overflow-wrap: anywhere; }
-    .metric strong { display: block; font-size: 24px; }
-    .badge { display: inline-block; padding: 2px 7px; border: 1px solid #aaa; border-radius: 999px; margin: 1px; font-size: 12px; }
-    .warning { background: #fff3d6; border: 1px solid #d9a441; padding: 10px; border-radius: 6px; }
-    .error { background: #ffe5e5; border: 1px solid #c95c5c; padding: 10px; border-radius: 6px; }
-    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-    button, .button { border: 1px solid #7b8176; border-radius: 6px; background: white; color: #20211f; padding: 8px 10px; cursor: pointer; text-decoration: none; }
-    button:disabled { opacity: 0.45; cursor: not-allowed; }
-    textarea { width: 100%; min-height: 72px; }
-    code { white-space: nowrap; }
-    pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+    h2 {
+      font-size: var(--type-heading);
+      line-height: 1.3;
+      margin: var(--space-5) 0 var(--space-2);
+    }
+    h3 {
+      font-size: var(--type-subheading);
+      line-height: 1.3;
+      margin: 0 0 var(--space-2);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--color-surface);
+    }
+    th,
+    td {
+      padding: var(--space-2);
+      border-bottom: 1px solid var(--color-border);
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      border-bottom-width: 2px;
+      font-weight: 600;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: var(--space-3);
+    }
+    .metadata-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: var(--space-3);
+    }
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: var(--space-4);
+    }
+    .metric,
+    .panel,
+    .claim {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      padding: var(--space-3);
+    }
+    .panel-muted {
+      background: var(--color-surface-muted);
+    }
+    .claim {
+      border-left: 3px solid var(--color-border);
+    }
+    .claim dl,
+    .metadata-list {
+      display: grid;
+      grid-template-columns: minmax(112px, 170px) minmax(0, 1fr);
+      gap: 6px var(--space-3);
+      margin: 0;
+    }
+    .claim dt,
+    .metadata-list dt,
+    .metric span {
+      color: var(--color-fg-muted);
+    }
+    .claim dd,
+    .metadata-list dd {
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+    .metric strong {
+      display: block;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+    .badge,
+    .chip {
+      display: inline-block;
+      padding: 2px 7px;
+      border: 1px solid var(--color-border-strong);
+      border-radius: 999px;
+      margin: 1px;
+      font-size: var(--type-meta);
+      color: var(--color-fg-muted);
+      background: var(--color-surface);
+    }
+    .chip[data-status="complete"] {
+      color: var(--color-info);
+      background: var(--color-info-soft);
+    }
+    .chip[data-status="candidate-zero"] {
+      color: var(--color-warn);
+      background: var(--color-warn-soft);
+    }
+    .chip[data-status="redacted"] {
+      color: var(--color-fg-muted);
+      background: repeating-linear-gradient(
+        135deg,
+        var(--color-surface-muted),
+        var(--color-surface-muted) 4px,
+        var(--color-surface) 4px,
+        var(--color-surface) 8px
+      );
+    }
+    .chip[data-status="unavailable"] {
+      color: var(--color-fg-muted);
+      background: repeating-linear-gradient(
+        45deg,
+        var(--color-surface-sunken),
+        var(--color-surface-sunken) 5px,
+        var(--color-surface) 5px,
+        var(--color-surface) 10px
+      );
+    }
+    .chip[data-status="failed"],
+    .readiness-blocked {
+      color: var(--color-danger);
+      background: var(--color-danger-soft);
+      border-color: var(--color-danger);
+    }
+    .readiness-incomplete {
+      color: var(--color-warn);
+      background: var(--color-warn-soft);
+      border-color: var(--color-warn);
+    }
+    .readiness-ready,
+    .readiness-proposed {
+      color: var(--color-warn);
+      background: var(--color-warn-soft);
+      border-color: var(--color-warn-muted);
+    }
+    .warning {
+      background: var(--color-warn-soft);
+      border: 1px solid var(--color-warn-muted);
+      padding: var(--space-3);
+      border-radius: 6px;
+    }
+    .banner-error {
+      background: var(--color-danger-soft);
+      border: 1px solid var(--color-danger);
+      padding: var(--space-3);
+      border-radius: 6px;
+    }
+    .actions,
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+    }
+    .tabs a {
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      padding: 5px 9px;
+      text-decoration: none;
+    }
+    .tabs a[aria-current="page"] {
+      background: var(--color-accent-soft);
+      border-color: var(--color-accent);
+      color: var(--color-accent);
+    }
+    .button {
+      display: inline-flex;
+      gap: var(--space-1);
+      min-width: 9rem;
+      text-decoration: none;
+      justify-content: center;
+      align-items: center;
+    }
+    .button-disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    input[type="search"] {
+      width: 100%;
+    }
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      margin: 0;
+    }
+    code {
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    td code,
+    dd code,
+    .metadata-list code {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .icon {
+      font-weight: 600;
+    }
+    @media (max-width: 900px) {
+      .comparison-grid {
+        grid-template-columns: 1fr;
+      }
+      .claim dl,
+      .metadata-list {
+        grid-template-columns: 1fr;
+      }
+      button,
+      .button {
+        width: 100%;
+      }
+    }
   </style>
-</head>
-<body>
-  <header>
-    <h1>Engram bench review</h1>
-    <nav>
-      <a href="/">Run</a>
-      <a href="/segments?remaining=1&reviewable=1">Queue</a>
-      <a href="/summary">Summary</a>
-    </nav>
-  </header>
-  <main>
-    {% block content %}{% endblock %}
-  </main>
-</body>
-</html>
+{% endblock %}
+
+{% block main %}
+  {% block content %}{% endblock %}
+{% endblock %}

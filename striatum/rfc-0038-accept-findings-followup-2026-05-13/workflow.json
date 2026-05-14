@@ -1,0 +1,307 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "rfc-0038-accept-findings-followup-2026-05-13",
+  "workflow_version": "2026-05-13+accept-findings-followup",
+  "name": "RFC 0038 Accept-with-Findings Follow-up",
+  "branch": {
+    "mode": "confirm",
+    "suggested_name": "engram/rfc0038-ui-rework",
+    "allow_dirty": true
+  },
+  "coordinator": {
+    "role_id": "implementer",
+    "lane_id": "codex_interview"
+  },
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 3,
+    "require_disjoint_write_scopes": true
+  },
+  "lanes": {
+    "codex_interview": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--dangerously-bypass-approvals-and-sandbox", "-"],
+      "capabilities": ["write"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_bench": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--dangerously-bypass-approvals-and-sandbox", "-"],
+      "capabilities": ["write"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_shared": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--dangerously-bypass-approvals-and-sandbox", "-"],
+      "capabilities": ["write"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_review": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--dangerously-bypass-approvals-and-sandbox", "-"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "claude_security": {
+      "adapter": "process",
+      "display_model": "Claude Opus",
+      "command": ["claude", "--model", "opus", "--dangerously-skip-permissions", "-p"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "claude_ergonomics": {
+      "adapter": "process",
+      "display_model": "Claude Opus",
+      "command": ["claude", "--model", "opus", "--dangerously-skip-permissions", "-p"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    }
+  },
+  "roles": {
+    "implementer": {
+      "definition_path": "striatum/rfc-0038-operator-ui-rework-2026-05-13/roles/implementer.md"
+    },
+    "tester": {
+      "definition_path": "striatum/rfc-0038-operator-ui-rework-2026-05-13/roles/tester.md"
+    },
+    "reviewer": {
+      "definition_path": "striatum/rfc-0038-operator-ui-rework-2026-05-13/roles/reviewer.md"
+    }
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "ENGRAM_UI_REWORK_HANDOFF.md", "required": true},
+    {"path": "docs/rfcs/0038-operator-ui-rework.md", "required": true},
+    {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_corrected_correctness_codex.md", "required": true},
+    {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_corrected_security_claude.md", "required": true},
+    {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_corrected_ergonomics_claude.md", "required": true},
+    {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REPAIR_FOLLOWUP_EVIDENCE.md", "required": true},
+    {"path": "docs/process/multi-agent-review-loop.md", "required": true},
+    {"path": "docs/process/project-judgment.md", "required": true},
+    {"path": "CHANGELOG.md", "required": true}
+  ],
+  "cycles": [],
+  "edges": [
+    {"from": "implement_interview_followups", "on": "completed", "to": "accept_findings_evidence"},
+    {"from": "implement_bench_followups", "on": "completed", "to": "accept_findings_evidence"},
+    {"from": "implement_shared_cleanup", "on": "completed", "to": "accept_findings_evidence"},
+    {"from": "accept_findings_evidence", "on": "completed", "to": "review_accept_findings_correctness"},
+    {"from": "accept_findings_evidence", "on": "completed", "to": "review_accept_findings_security"},
+    {"from": "accept_findings_evidence", "on": "completed", "to": "review_accept_findings_ergonomics"}
+  ],
+  "jobs": [
+    {
+      "id": "implement_interview_followups",
+      "type": "build",
+      "title": "Implement RFC 0038 interview accept-with-findings follow-ups",
+      "role_id": "implementer",
+      "lane_id": "codex_interview",
+      "parallel_group": "accept_findings_repairs",
+      "objective": "Address interview-owned corrected-review findings: interview-to-bench cross-surface link, interview origin/tier shared-helper adoption where feasible, audit-footer bind-source truthfulness, interview banner partial use, and duplicate copy-command handler removal.",
+      "task_prompt": {"path": "striatum/rfc-0038-accept-findings-followup-2026-05-13/prompts/implement_interview_followups.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_corrected_security_claude.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_corrected_ergonomics_claude.md", "kind": "review"},
+        {"path": "src/engram/interview", "kind": "implementation_surface"},
+        {"path": "tests/test_interview_web.py", "kind": "test_surface"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/interview/",
+          "tests/test_interview_web.py",
+          "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/ACCEPT_FINDINGS_INTERVIEW_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/engram/bench_review/", "src/engram/web/", "migrations/", "README.md", "SPEC.md", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "accept_findings_interview_handoff", "kind": "handoff", "path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/ACCEPT_FINDINGS_INTERVIEW_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "implement_bench_followups",
+      "type": "build",
+      "title": "Implement RFC 0038 bench accept-with-findings follow-ups",
+      "role_id": "implementer",
+      "lane_id": "codex_bench",
+      "parallel_group": "accept_findings_repairs",
+      "objective": "Address bench-owned corrected-review findings: consolidate bench keyboard behavior onto the shared dispatcher with a small bench enhancement, and adopt shared tier helper where feasible without changing behavior.",
+      "task_prompt": {"path": "striatum/rfc-0038-accept-findings-followup-2026-05-13/prompts/implement_bench_followups.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_corrected_security_claude.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_corrected_ergonomics_claude.md", "kind": "review"},
+        {"path": "src/engram/bench_review", "kind": "implementation_surface"},
+        {"path": "tests/test_bench_review.py", "kind": "test_surface"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/bench_review/",
+          "tests/test_bench_review.py",
+          "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/ACCEPT_FINDINGS_BENCH_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/engram/interview/", "src/engram/web/", "migrations/", "README.md", "SPEC.md", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "accept_findings_bench_handoff", "kind": "handoff", "path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/ACCEPT_FINDINGS_BENCH_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "implement_shared_cleanup",
+      "type": "build",
+      "title": "Implement RFC 0038 shared chrome cleanup",
+      "role_id": "implementer",
+      "lane_id": "codex_shared",
+      "parallel_group": "accept_findings_repairs",
+      "objective": "Address shared-owned corrected-review cleanup, especially DEFAULT_SURFACE_TABS drift/dead-code risk, without touching interview or bench surface files.",
+      "task_prompt": {"path": "striatum/rfc-0038-accept-findings-followup-2026-05-13/prompts/implement_shared_cleanup.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_corrected_ergonomics_claude.md", "kind": "review"},
+        {"path": "src/engram/web", "kind": "implementation_surface"},
+        {"path": "tests/test_web_ui_shared.py", "kind": "test_surface"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/web/",
+          "tests/test_web_ui_shared.py",
+          "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/ACCEPT_FINDINGS_SHARED_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/engram/interview/", "src/engram/bench_review/", "migrations/", "README.md", "SPEC.md", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "accept_findings_shared_handoff", "kind": "handoff", "path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/ACCEPT_FINDINGS_SHARED_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "accept_findings_evidence",
+      "type": "test",
+      "title": "Run RFC 0038 accept-with-findings evidence",
+      "role_id": "tester",
+      "lane_id": "codex_review",
+      "objective": "Run focused evidence after accept-with-findings follow-ups and publish results.",
+      "task_prompt": {"path": "striatum/rfc-0038-accept-findings-followup-2026-05-13/prompts/evidence.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/ACCEPT_FINDINGS_INTERVIEW_HANDOFF.md", "kind": "handoff"},
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/ACCEPT_FINDINGS_BENCH_HANDOFF.md", "kind": "handoff"},
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/ACCEPT_FINDINGS_SHARED_HANDOFF.md", "kind": "handoff"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0038-operator-ui-rework-2026-05-13/ACCEPT_FINDINGS_EVIDENCE.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "README.md", "SPEC.md", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "accept_findings_evidence", "kind": "test_report", "path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/ACCEPT_FINDINGS_EVIDENCE.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_accept_findings_correctness",
+      "type": "review",
+      "title": "Review RFC 0038 accept-with-findings correctness",
+      "role_id": "reviewer",
+      "lane_id": "codex_review",
+      "parallel_group": "accept_findings_reviews",
+      "fresh_session_required": true,
+      "reviewer_access_scope": "repo_level",
+      "reviewer_context_policy": "fresh",
+      "review_posture": "custom:correctness",
+      "objective": "Freshly review the accept-with-findings follow-ups for correctness regressions and residual blockers.",
+      "task_prompt": {"path": "striatum/rfc-0038-accept-findings-followup-2026-05-13/prompts/review_correctness.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_corrected_correctness_codex.md", "kind": "prior_review"},
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/ACCEPT_FINDINGS_EVIDENCE.md", "kind": "test_report"},
+        {"path": "src/engram/web", "kind": "implementation_surface"},
+        {"path": "src/engram/interview", "kind": "implementation_surface"},
+        {"path": "src/engram/bench_review", "kind": "implementation_surface"},
+        {"path": "tests/test_web_ui_shared.py", "kind": "test_surface"},
+        {"path": "tests/test_interview_web.py", "kind": "test_surface"},
+        {"path": "tests/test_bench_review.py", "kind": "test_surface"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_accept_findings_correctness_codex.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "README.md", "SPEC.md", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review_accept_findings_correctness", "kind": "finding", "path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_accept_findings_correctness_codex.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_accept_findings_security",
+      "type": "review",
+      "title": "Review RFC 0038 accept-with-findings security",
+      "role_id": "reviewer",
+      "lane_id": "claude_security",
+      "parallel_group": "accept_findings_reviews",
+      "fresh_session_required": true,
+      "reviewer_access_scope": "repo_level",
+      "reviewer_context_policy": "fresh",
+      "review_posture": "security",
+      "objective": "Freshly review the accept-with-findings follow-ups for local-first/security regressions and residual blockers.",
+      "task_prompt": {"path": "striatum/rfc-0038-accept-findings-followup-2026-05-13/prompts/review_security.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_corrected_security_claude.md", "kind": "prior_review"},
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/ACCEPT_FINDINGS_EVIDENCE.md", "kind": "test_report"},
+        {"path": "src/engram/web", "kind": "implementation_surface"},
+        {"path": "src/engram/interview", "kind": "implementation_surface"},
+        {"path": "src/engram/bench_review", "kind": "implementation_surface"},
+        {"path": "tests/test_interview_web.py", "kind": "test_surface"},
+        {"path": "tests/test_bench_review.py", "kind": "test_surface"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_accept_findings_security_claude.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "README.md", "SPEC.md", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review_accept_findings_security", "kind": "finding", "path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_accept_findings_security_claude.md", "required": true}
+      ]
+    },
+    {
+      "id": "review_accept_findings_ergonomics",
+      "type": "review",
+      "title": "Review RFC 0038 accept-with-findings ergonomics",
+      "role_id": "reviewer",
+      "lane_id": "claude_ergonomics",
+      "parallel_group": "accept_findings_reviews",
+      "fresh_session_required": true,
+      "reviewer_access_scope": "repo_level",
+      "reviewer_context_policy": "fresh",
+      "review_posture": "ergonomics_dx",
+      "objective": "Freshly review the accept-with-findings follow-ups for ergonomics/design regressions and residual blockers.",
+      "task_prompt": {"path": "striatum/rfc-0038-accept-findings-followup-2026-05-13/prompts/review_ergonomics.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_corrected_ergonomics_claude.md", "kind": "prior_review"},
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/ACCEPT_FINDINGS_EVIDENCE.md", "kind": "test_report"},
+        {"path": "src/engram/web", "kind": "implementation_surface"},
+        {"path": "src/engram/interview/templates", "kind": "template_surface"},
+        {"path": "src/engram/interview/static", "kind": "static_surface"},
+        {"path": "src/engram/bench_review/templates", "kind": "template_surface"},
+        {"path": "src/engram/bench_review/static", "kind": "static_surface"},
+        {"path": "tests/test_web_ui_shared.py", "kind": "test_surface"},
+        {"path": "tests/test_interview_web.py", "kind": "test_surface"},
+        {"path": "tests/test_bench_review.py", "kind": "test_surface"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_accept_findings_ergonomics_claude.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "README.md", "SPEC.md", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review_accept_findings_ergonomics", "kind": "finding", "path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_accept_findings_ergonomics_claude.md", "required": true}
+      ]
+    }
+  ]
+}

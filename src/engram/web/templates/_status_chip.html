@@ -1,0 +1,7 @@
+<span class="status-chip"
+      data-status="{{ data_status|default(status_token) }}"
+      title="{{ long_copy|default(status_label|default(status_token)) }}">
+  {% if icon %}<span aria-hidden="true">{{ icon }}</span>{% endif %}
+  {{ status_label|default(status_token) }}
+</span>
+

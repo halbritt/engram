@@ -1,0 +1,183 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "rfc-0038-operator-ui-rework-repair-2026-05-13",
+  "workflow_version": "2026-05-13+review-repair",
+  "name": "RFC 0038 Operator UI Rework Review Repair",
+  "branch": {
+    "mode": "confirm",
+    "suggested_name": "engram/rfc0038-ui-rework",
+    "allow_dirty": true
+  },
+  "coordinator": {
+    "role_id": "implementer",
+    "lane_id": "codex_shared"
+  },
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 3,
+    "require_disjoint_write_scopes": true
+  },
+  "lanes": {
+    "codex_shared": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--dangerously-bypass-approvals-and-sandbox", "-"],
+      "capabilities": ["write"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_interview": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--dangerously-bypass-approvals-and-sandbox", "-"],
+      "capabilities": ["write"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_bench": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--dangerously-bypass-approvals-and-sandbox", "-"],
+      "capabilities": ["write"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_review": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--dangerously-bypass-approvals-and-sandbox", "-"],
+      "capabilities": ["review", "synthesis"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    }
+  },
+  "roles": {
+    "implementer": {
+      "definition_path": "striatum/rfc-0038-operator-ui-rework-2026-05-13/roles/implementer.md"
+    },
+    "tester": {
+      "definition_path": "striatum/rfc-0038-operator-ui-rework-2026-05-13/roles/tester.md"
+    }
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "ENGRAM_UI_REWORK_HANDOFF.md", "required": true},
+    {"path": "docs/rfcs/0038-operator-ui-rework.md", "required": true},
+    {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_correctness_codex.md", "required": true},
+    {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_ergonomics_claude.md", "required": true},
+    {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/INTEGRATION_EVIDENCE.md", "required": true},
+    {"path": "docs/process/multi-agent-review-loop.md", "required": true},
+    {"path": "docs/process/project-judgment.md", "required": true},
+    {"path": "CHANGELOG.md", "required": true}
+  ],
+  "cycles": [],
+  "edges": [
+    {"from": "repair_shared_and_tests", "on": "completed", "to": "repair_evidence"},
+    {"from": "repair_interview_surface", "on": "completed", "to": "repair_evidence"},
+    {"from": "repair_bench_surface", "on": "completed", "to": "repair_evidence"}
+  ],
+  "jobs": [
+    {
+      "id": "repair_shared_and_tests",
+      "type": "build",
+      "title": "Repair RFC 0038 shared substrate and test dependencies",
+      "role_id": "implementer",
+      "lane_id": "codex_shared",
+      "objective": "Resolve shared/test findings without touching interview or bench surface implementation: add missing dev test dependency, keep shared substrate package-local, update shared tests, and format the shared touched files.",
+      "task_prompt": {"path": "striatum/rfc-0038-operator-ui-rework-repair-2026-05-13/prompts/repair_shared_and_tests.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_correctness_codex.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_ergonomics_claude.md", "kind": "review"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "pyproject.toml",
+          "src/engram/web/",
+          "tests/test_web_ui_shared.py",
+          "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REPAIR_SHARED_TESTS_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/engram/interview/", "src/engram/bench_review/", "migrations/", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "repair_shared_tests_handoff", "kind": "handoff", "path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REPAIR_SHARED_TESTS_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "repair_interview_surface",
+      "type": "build",
+      "title": "Repair RFC 0038 interview shared-chrome integration",
+      "role_id": "implementer",
+      "lane_id": "codex_interview",
+      "objective": "Wire the interview surface into the shared chrome/keyboard/help/future-slot contract while preserving existing CSRF, Tier 1, rationale, htmx, and session guards.",
+      "task_prompt": {"path": "striatum/rfc-0038-operator-ui-rework-repair-2026-05-13/prompts/repair_interview.md"},
+      "inputs": [
+        {"path": "ENGRAM_UI_REWORK_HANDOFF.md", "kind": "design_handoff"},
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_ergonomics_claude.md", "kind": "review"},
+        {"path": "src/engram/interview/templates", "kind": "surface"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/interview/",
+          "tests/test_interview_web.py",
+          "tests/test_interview_render.py",
+          "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REPAIR_INTERVIEW_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/engram/bench_review/", "migrations/", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "repair_interview_handoff", "kind": "handoff", "path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REPAIR_INTERVIEW_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "repair_bench_surface",
+      "type": "build",
+      "title": "Repair RFC 0038 bench-review route and ergonomics findings",
+      "role_id": "implementer",
+      "lane_id": "codex_bench",
+      "objective": "Fix bench app startup, route tests, origin enforcement, shared chrome/help/keyboard/copy/future-slot integration, and segment mutation disclaimer behavior.",
+      "task_prompt": {"path": "striatum/rfc-0038-operator-ui-rework-repair-2026-05-13/prompts/repair_bench.md"},
+      "inputs": [
+        {"path": "ENGRAM_UI_REWORK_HANDOFF.md", "kind": "design_handoff"},
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_correctness_codex.md", "kind": "review"},
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REVIEW_ergonomics_claude.md", "kind": "review"},
+        {"path": "src/engram/bench_review", "kind": "surface"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/bench_review/",
+          "tests/test_bench_review.py",
+          "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REPAIR_BENCH_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/engram/interview/", "migrations/", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "repair_bench_handoff", "kind": "handoff", "path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REPAIR_BENCH_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "repair_evidence",
+      "type": "test",
+      "title": "Run RFC 0038 repair evidence",
+      "role_id": "tester",
+      "lane_id": "codex_review",
+      "objective": "Run focused route/template/static/format checks after the repair lanes and publish evidence for follow-up re-review.",
+      "task_prompt": {"path": "striatum/rfc-0038-operator-ui-rework-repair-2026-05-13/prompts/repair_evidence.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REPAIR_SHARED_TESTS_HANDOFF.md", "kind": "handoff"},
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REPAIR_INTERVIEW_HANDOFF.md", "kind": "handoff"},
+        {"path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REPAIR_BENCH_HANDOFF.md", "kind": "handoff"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REPAIR_EVIDENCE.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "README.md", "SPEC.md", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "repair_evidence", "kind": "test_report", "path": "docs/reviews/rfc0038-operator-ui-rework-2026-05-13/REPAIR_EVIDENCE.md", "required": true}
+      ]
+    }
+  ]
+}

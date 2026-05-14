@@ -13,7 +13,12 @@
   </header>
   <pre>{{ excerpt.content }}</pre>
   {% if not full %}
-    <a href="#" hx-get="/sessions/{{ session_id }}/messages/{{ excerpt.id }}"
-       hx-target="closest .evidence-row" hx-swap="outerHTML">show full message</a>
+    <div class="evidence-actions">
+      <a href="#" hx-get="/sessions/{{ session_id }}/messages/{{ excerpt.id }}"
+         hx-target="closest .evidence-row" hx-swap="outerHTML">show full message</a>
+      <a href="#"
+         hx-get="/sessions/{{ session_id }}/messages/{{ excerpt.id }}/context?before=2&after=2"
+         hx-target="#context-panel" hx-swap="innerHTML">show conversation context</a>
+    </div>
   {% endif %}
 </article>

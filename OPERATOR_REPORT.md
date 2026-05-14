@@ -2,6 +2,162 @@
 
 Last updated: 2026-05-13
 
+## Live Operator Addendum: RFC 0038 UI Rework
+
+- Worktree: `/home/halbritt/git/engram-worktrees/ui-rework-rfc`
+- Branch: `engram/rfc0038-ui-rework`
+- Scaffold commit: `19651c8` (`Scaffold RFC 0038 UI rework workflow`)
+- Source handoff: `ENGRAM_UI_REWORK_HANDOFF.md`
+- RFC scaffold: `docs/rfcs/0038-operator-ui-rework.md`
+- Workflow scaffold:
+  `striatum/rfc-0038-operator-ui-rework-2026-05-13/workflow.json`
+- Striatum version used: `1.37.0`
+- Validation:
+  - `workflow validate` passed.
+  - `git diff --check` passed.
+  - `make check-refs` passed with 0 errors and the repository's 5 existing
+    warnings after adding the standard `rfc-0038` anchor.
+- Run: `run_468b22aff5e54a9280a867d3c81314e6`, state `running`.
+- Completed implementation lanes:
+  - Shared substrate: session `sess_699349c08fd548a08f575a2095603600`,
+    lease `lease_b808ef8a167a46a180889c84828c94f4`, adapter PTY `91046`,
+    exited cleanly.
+  - Interview UI: session `sess_92950903e9c04c8cacde58bc935fa061`,
+    lease `lease_a25463c3f57d42bb89258650f2201a0f`, adapter PTY `63126`,
+    exited cleanly.
+  - Bench-review UI: session `sess_5c68c5939f664f488a636009aa85c030`,
+    lease `lease_a876cbf4a23c448e92807f3d587f7dd4`, adapter PTY `53330`,
+    exited cleanly.
+- Completed RFC 0038 integration evidence lane: session
+  `sess_7ddcec9d456040a98ac7ea9e89df63de`, lease
+  `lease_575a6137b7164f5ab917b319882a6d80`, adapter PTY `21973`,
+  exited cleanly.
+- Active RFC 0038 review lanes:
+  - Ergonomics design review: session
+    `sess_005afad28a9444f4b66421e921d8bd08`, lease
+    `lease_994521563935486293fba9602dfa7816`, adapter PTY `39392`.
+  - Local-first/security review: session
+    `sess_909725e511d0445782496d2e9dd2cf39`, lease
+    `lease_3b572adeb39342808a51273cd3e8b29c`, adapter PTY `37250`.
+  - Correctness review: session `sess_af6e44a62f8d4b2ba52e08ce8d9c2a54`,
+    lease `lease_8768022de40d4e138f0c05fedf08573a`, adapter PTY `33225`.
+  - Operator contract review first attempt: session
+    `sess_c588367b37e5498fa1df895101da8b6c`, lease
+    `lease_852f1873edee420fb4d0da766323f3cd`, adapter PTY `93521`, failed
+    because `gemini-3.1-pro-preview` quota was exhausted for about 15 hours.
+    The job was retried with `gemini-2.5-flash`.
+  - Operator contract review retry: session
+    `sess_5fdd40f164a34165860301feba345fac`, lease
+    `lease_2b283eeac36748488185310fa48131ea`, adapter PTY `42484`.
+- Next planned RFC 0038 jobs after all reviews complete: findings ledger and
+  final synthesis.
+- RFC 0038 review outcome: correctness and ergonomics returned
+  `needs_revision`; the Gemini operator-review retry exited without a recorded
+  verdict/artifact, so the original run is blocked. Repair workflow
+  `run_90da3a4eae2449f6bb394ff6612064ad` is active from
+  `striatum/rfc-0038-operator-ui-rework-repair-2026-05-13/workflow.json`.
+- Active RFC 0038 repair lanes:
+  - Shared/test dependency repair: session
+    `sess_2065a99cf9b94969a2d18fc4bde17549`, lease
+    `lease_6b266aa870c54121b2faead7c1217425`, adapter PTY `37927`.
+  - Interview repair: session `sess_296b50fb90ab4e7493a76d2a77980416`,
+    lease `lease_429e142e095c4ab7989494fd45974079`, adapter PTY `28603`.
+  - Bench repair: session `sess_550d9a10237049cda1faf6b18ea021d1`, lease
+    `lease_cc7070b51db34f1a8de634224218ac95`, adapter PTY `22311`.
+- Resume checkpoint: after context compaction, all three RFC 0038 repair
+  lanes were still running and quiet. A later status check showed
+  `repair_shared_and_tests` completed; `repair_evidence` remains blocked on
+  the interview and bench repair lanes.
+- Repair progress update: the interview and bench repair adapters later exited
+  cleanly and Striatum made `repair_evidence` claimable. The evidence lane is
+  running as session `sess_5bd74654738b48a5a566747630a38c6e`, lease
+  `lease_d80297364e984240a192380f391fc6d6`, adapter PTY `93733`.
+- Repair evidence outcome: `run_90da3a4eae2449f6bb394ff6612064ad`
+  completed, but `REPAIR_EVIDENCE.md` reported a remaining DB-backed
+  interview route test failure caused by a predicate/stability seed rejection.
+  Follow-up workflow `run_4b77214f5dc8478ca8e46073804d55d2` is active from
+  `striatum/rfc-0038-operator-ui-rework-followup-2026-05-13/workflow.json`.
+  The first follow-up implementer lane is running as session
+  `sess_8dc6ed47a7aa4466b57835ea3c42784c`, lease
+  `lease_15e6d5d702dc42a086684f726ff1394d`, adapter PTY `55322`.
+- Follow-up progress update: the DB-route repair implementer exited cleanly.
+  Follow-up evidence is running as session
+  `sess_7b81c95c0598459a9a133dca6694bbc1`, lease
+  `lease_982c403f72444dcbb1da3f051c2f0a7e`, adapter PTY `43522`.
+- Follow-up evidence outcome: `REPAIR_FOLLOWUP_EVIDENCE.md` reports `pass`;
+  DB-backed interview route tests, focused interview/bench route tests,
+  shared tests, no-CDN/static checks, Ruff checks, `git diff --check`, and
+  `make check-refs` passed. Three follow-up review lanes are active:
+  correctness session `sess_e64874a3a638469ea23d60ba1dbdf875` / PTY `9219`,
+  security session `sess_d3b8ae49d447451497379d31dac344d5` / PTY `86412`,
+  and ergonomics session `sess_5aad5e73b02948a080a9e2a459e1c548` / PTY
+  `25007`.
+- Follow-up review workflow defect: the three first follow-up review packets
+  omitted `REPAIR_FOLLOWUP_EVIDENCE.md` and `REPAIR_DB_ROUTE_HANDOFF.md`,
+  causing stale-evidence `needs_revision` reviews. Corrected review-only
+  workflow `striatum/rfc-0038-corrected-followup-review-2026-05-13/workflow.json`
+  was scaffolded with repo-level review access and explicit current evidence
+  inputs.
+- Corrected review pass: run `run_3151de7bf05f46fca0ff4398764ae9bf` is
+  active. Corrected correctness review session
+  `sess_0d9f97c4f3ad40079cd899a3e9622689` runs on PTY `9191`; corrected
+  security review session `sess_5b0f4fe95b164d5fb2e70bc7428562da` runs on
+  PTY `56098`; corrected ergonomics review session
+  `sess_7c545cdd96bd4826ab0e0c96cfefd24b` runs on PTY `59694`.
+- Corrected review outcome: run `run_3151de7bf05f46fca0ff4398764ae9bf`
+  completed with three `accept_with_findings` verdicts. Correctness carries
+  only the stale active-venv `httpx` environment gap; security carries minor
+  follow-ups for interview shared origin/tier helper unification and audit
+  footer bind-source truthfulness; ergonomics carries the interview-to-bench
+  cross-surface link plus minor polish follow-ups.
+- Accept-with-findings follow-up workflow
+  `striatum/rfc-0038-accept-findings-followup-2026-05-13/workflow.json`
+  was scaffolded to drive the remaining corrected-review findings as three
+  disjoint implementation lanes plus evidence and re-review.
+- Accept-with-findings run `run_fc8fa866026748408cb70809ec7e5129` is active.
+  Interview follow-up session `sess_7025aeef44104da095feaf2d442fb284` runs
+  on PTY `8533`; bench follow-up session
+  `sess_80ca96389efb4e3182b51df4a5bb0202` runs on PTY `14235`; shared cleanup
+  session `sess_9ca9e0986e50449ab198fa8a071b3636` runs on PTY `51487`.
+- Accept-with-findings implementation progress: bench and shared cleanup lanes
+  exited cleanly first, then interview exited cleanly. `accept_findings_evidence`
+  is now claimable.
+- Accept-with-findings evidence is running as session
+  `sess_f3d1d09e288e43b99675754577562ace`, lease
+  `lease_70a7a92227d546b59cf1687c074c9ef8`, adapter PTY `88399`.
+- Accept-with-findings evidence completed with `pass`, then three review lanes
+  completed. Security and ergonomics returned `accept`; correctness returned
+  `needs_revision` for two blockers: bench still exposed FastAPI-generated
+  `/docs`, `/redoc`, and `/openapi.json` routes with CDN-backed assets, and
+  interview accepted `::1` as a bind host while rejecting same-origin IPv6
+  loopback POSTs. Striatum opened human checkpoint
+  `blk_d0f5b81301da4f52b60a31d2695c20d1` because that workflow had no matching
+  revision cycle.
+- Second repair workflow
+  `striatum/rfc-0038-accept-findings-second-repair-2026-05-13/workflow.json`
+  was scaffolded and validated. It queues two disjoint implementation lanes for
+  the AC001/AC002 blockers, followed by evidence and parallel correctness,
+  security, and ergonomics re-review.
+- Second repair outcome: run `run_73e7e77f8e8d4880b5e222210707b646`
+  completed all six jobs with no open blockers. Bench FastAPI-generated
+  `/docs`, `/redoc`, and `/openapi.json` routes are disabled; configured
+  interview IPv6 loopback POSTs are accepted without widening the default
+  Origin allowlist. `SECOND_REPAIR_EVIDENCE.md` passed; correctness, security,
+  and ergonomics reviews all returned `accept`.
+- Second repair residuals: the active `.venv` still lacks `httpx`, so route
+  tests use the already-local
+  `/home/halbritt/.local/lib/python3.12/site-packages` workaround. Reviews also
+  carry non-blocking IPv6 display polish for unbracketed `::1:8765` style
+  expected-origin/bind-address text and previously tracked UI polish items.
+- Concurrent background work in `/home/halbritt/git/engram`: RFC 0044 repair
+  workflow `run_1aadc5c6bc00434497bc6d9754358a62` completed with focused
+  correctness verdict `accept`; focused RFC 0044 tests passed with 11 tests.
+- Workflow repair during active runs: Striatum SQLite migration v16 left
+  `runs_new` behind in both active repo-local DBs. The local editable Striatum
+  checkout was patched to use the existing FK-safe `rebuild_table` helper, both
+  DBs migrated successfully afterward, and the issue was filed as
+  https://github.com/halbritt/striatum/issues/8.
+
 ## Current State
 
 - Repo: `/home/halbritt/git/engram`

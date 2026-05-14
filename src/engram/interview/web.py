@@ -24,7 +24,7 @@ from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote
 
 import psycopg
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
@@ -59,12 +59,18 @@ from engram.interview.storage import (
     mark_session_completed,
     unanswered_session_targets,
 )
+from engram.web.origin import require_origin
+from engram.web.tier import require_tier_ceiling
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 _DEFAULT_ALLOWED_ORIGIN_HOSTS: tuple[str, ...] = ("127.0.0.1", "localhost")
+_DEFAULT_BIND_HOST: str = "127.0.0.1"
+_DEFAULT_BIND_PORT: int = 8765
+_DEFAULT_BENCH_REVIEW_URL: str = "http://127.0.0.1:8770/segments?remaining=1&reviewable=1"
+_LOOPBACK_BIND_HOSTS: frozenset[str] = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 def _resolve_allowed_origin_hosts() -> tuple[str, ...]:
@@ -100,7 +106,41 @@ ALLOWED_ORIGIN_HOSTS: tuple[str, ...] = _resolve_allowed_origin_hosts()
 Defaults to the loopback set ``("127.0.0.1", "localhost")``; extended at
 module load by the comma-separated ``ENGRAM_INTERVIEW_ALLOWED_ORIGINS``
 env var. Origin checks compare scheme=http, host membership, and the bound
-request port from the Host header; no upgrade to https in v1.
+request port from the Host header; no upgrade to https in v1. App instances
+created with a configured IPv6 loopback bind append ``::1`` to this tuple for
+that process-local Origin check.
+"""
+
+
+def _allowed_origin_hosts_for_bind(host: str) -> tuple[str, ...]:
+    """Return Origin hosts for a validated loopback bind host."""
+    if host not in _LOOPBACK_BIND_HOSTS or host in ALLOWED_ORIGIN_HOSTS:
+        return ALLOWED_ORIGIN_HOSTS
+    return (*ALLOWED_ORIGIN_HOSTS, host)
+
+
+def _allowed_origin_hosts_for_request(request: Request) -> tuple[str, ...]:
+    """Return the app-configured Origin host allowlist for this request."""
+    state = getattr(getattr(request, "app", None), "state", None)
+    configured = getattr(state, "engram_allowed_origin_hosts", None)
+    if isinstance(configured, tuple) and all(isinstance(host, str) for host in configured):
+        return configured
+    return ALLOWED_ORIGIN_HOSTS
+
+
+def _resolve_bench_review_url() -> str:
+    """Return the configured bench-review cross-surface URL."""
+    configured = os.environ.get("ENGRAM_INTERVIEW_BENCH_URL")
+    if configured is None:
+        return _DEFAULT_BENCH_REVIEW_URL
+    return configured.strip() or _DEFAULT_BENCH_REVIEW_URL
+
+
+BENCH_REVIEW_URL: str = _resolve_bench_review_url()
+"""Cross-surface tab target for the bench-review operator UI.
+
+Defaults to the local bench-review serve port. Operators can override it via
+``ENGRAM_INTERVIEW_BENCH_URL`` when the bench surface is reachable elsewhere.
 """
 
 CONTEXT_BEFORE_AFTER_CAP: int = 20
@@ -134,9 +174,7 @@ _VERDICT_KEY_LETTERS: dict[str, str] = {
     "unsure": "u",
     "skip": "k",
 }
-_RATIONALE_REQUIRED_VERDICTS: frozenset[str] = frozenset(
-    {"false", "stale", "unsupported", "unsure"}
-)
+_RATIONALE_REQUIRED_VERDICTS: frozenset[str] = frozenset({"false", "stale", "unsupported"})
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +194,12 @@ def _resource_dir(name: str) -> Path:
     # Jinja2 / StaticFiles. ``as_file`` would copy on egg-zip installs but
     # Engram ships unpacked source / wheel installs only (no zip imports),
     # so str-coercion is safe.
+    return Path(str(pkg))
+
+
+def _shared_resource_dir(name: str) -> Path:
+    """Return a shared ``engram.web`` resource directory."""
+    pkg = resources.files("engram.web") / name
     return Path(str(pkg))
 
 
@@ -194,68 +238,12 @@ def _origin_check(request: Request) -> None:
     ``http://<allowed-host>:<bound-port>`` match and ``Sec-Fetch-Site`` must
     be ``same-origin``.
     """
-    expected = [f"http://{h}:<bound-port>" for h in ALLOWED_ORIGIN_HOSTS]
-    origin = request.headers.get("origin")
-    if origin is None:
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "origin_mismatch", "expected": expected},
-        )
-
-    try:
-        parsed_origin = urlsplit(origin)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "origin_mismatch", "expected": expected},
-        ) from exc
-
-    host_port = _request_host_port(request)
-    if (
-        parsed_origin.scheme != "http"
-        or parsed_origin.hostname not in ALLOWED_ORIGIN_HOSTS
-        or host_port is None
-        or parsed_origin.port != host_port
-        or parsed_origin.path not in ("", "/")
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail={"error": "origin_mismatch", "expected": expected},
-        )
-
-    sec_fetch_site = request.headers.get("sec-fetch-site")
-    if sec_fetch_site != "same-origin":
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "error": "origin_mismatch",
-                "expected": ["sec-fetch-site=same-origin"],
-            },
-        )
-
-
-def _request_host_port(request: Request) -> int | None:
-    """Return the numeric port from the request Host header."""
-    host_header = request.headers.get("host", "")
-    if not host_header:
-        return None
-    try:
-        return urlsplit(f"//{host_header}").port
-    except ValueError:
-        return None
+    require_origin(request, allowed_hosts=_allowed_origin_hosts_for_request(request))
 
 
 def _check_tier_1(privacy_tier: int, message_id: str | None = None) -> None:
     """Raise 403 with the privacy-tier-ceiling envelope if tier > 1."""
-    if privacy_tier > TIER_CEILING:
-        detail: dict[str, Any] = {
-            "error": "privacy_tier_ceiling",
-            "tier": int(privacy_tier),
-            "ceiling": TIER_CEILING,
-        }
-        if message_id is not None:
-            detail["message_id"] = message_id
-        raise HTTPException(status_code=403, detail=detail)
+    require_tier_ceiling(privacy_tier, ceiling=TIER_CEILING, message_id=message_id)
 
 
 # ---------------------------------------------------------------------------
@@ -266,15 +254,74 @@ def _check_tier_1(privacy_tier: int, message_id: str | None = None) -> None:
 def _load_verdict_glosses(conn: psycopg.Connection) -> dict[str, str]:
     """Load ``gold_label_verdict_vocabulary`` rows; fall back to hard-coded map."""
     try:
-        rows = conn.execute(
-            "SELECT verdict, gloss FROM gold_label_verdict_vocabulary"
-        ).fetchall()
+        rows = conn.execute("SELECT verdict, gloss FROM gold_label_verdict_vocabulary").fetchall()
     except psycopg.Error:
         return dict(_FALLBACK_VERDICT_GLOSSES)
     glosses = dict(_FALLBACK_VERDICT_GLOSSES)
     for v, g in rows:
         glosses[v] = g
     return glosses
+
+
+def _format_bind_address(host: str, port: int) -> str:
+    """Return the normalized loopback bind address for audit footer copy."""
+    display_host = "127.0.0.1" if host == "localhost" else host
+    return f"{display_host}:{port}"
+
+
+def _scope_bind_address(request: Request) -> str | None:
+    """Return Uvicorn's actual socket bind address when available."""
+    server = request.scope.get("server")
+    if not isinstance(server, (list, tuple)) or len(server) < 2:
+        return None
+    host, port = server[0], server[1]
+    if not isinstance(host, str) or not isinstance(port, int):
+        return None
+    if host not in _LOOPBACK_BIND_HOSTS:
+        return None
+    return _format_bind_address(host, port)
+
+
+def _bind_address_for_request(request: Request) -> str:
+    """Return footer bind text from server/app configuration, not Host."""
+    scope_bind_address = _scope_bind_address(request)
+    if scope_bind_address is not None:
+        return scope_bind_address
+    configured = getattr(request.app.state, "engram_bind_address", None)
+    if isinstance(configured, str) and configured:
+        return configured
+    raise RuntimeError("interview bind address is not configured")
+
+
+def _base_context(request: Request, conn: psycopg.Connection) -> dict[str, Any]:
+    glosses = _load_verdict_glosses(conn)
+    return {
+        "bind_address": _bind_address_for_request(request),
+        "bench_url": request.app.state.engram_bench_url,
+        "surface": "interview",
+        "surface_label": "Interview",
+        "keyboard_static_url": "/shared-static/keyboard.js",
+        "help_title": "Engram interview - help",
+        "verdict_help_rows": [
+            (v, glosses.get(v, ""), _VERDICT_KEY_LETTERS[v])
+            for v in ("true", "false", "stale", "unsupported", "unsure", "skip")
+        ],
+        "shortcut_rows": [
+            ("?", "Open help"),
+            ("Esc", "Close help"),
+            ("q", "Save and quit"),
+        ],
+        "disclosure_lines": [
+            (
+                "Verdicts are an advisory eval input. They do not flip belief "
+                "status (D044) or gate extraction or consolidation (D069)."
+            ),
+            (
+                "Promotion, acceptance, and entity canonicalization arrive in "
+                "Phase 4. The interview surface never flips a belief status."
+            ),
+        ],
+    }
 
 
 def _load_open_sessions(conn: psycopg.Connection) -> list[dict[str, Any]]:
@@ -450,9 +497,7 @@ def _session_target_to_sampled(target_row: dict[str, Any]) -> SampledTarget:
     )
 
 
-def _strata_rows(
-    conn: psycopg.Connection, session_id: str
-) -> list[tuple[str, int]]:
+def _strata_rows(conn: psycopg.Connection, session_id: str) -> list[tuple[str, int]]:
     rows = conn.execute(
         """
         SELECT stability_class, count(*)
@@ -496,10 +541,7 @@ def _n_answered(conn: psycopg.Connection, session_id: str) -> int:
 
 def _unanswered_table_indices(conn: psycopg.Connection, session_id: str) -> list[int]:
     """Return unanswered materialized target indices using the storage predicate."""
-    return [
-        target.idx
-        for target in unanswered_session_targets(conn, session_id=session_id)
-    ]
+    return [target.idx for target in unanswered_session_targets(conn, session_id=session_id)]
 
 
 def _insert_session_targets(
@@ -515,9 +557,7 @@ def _insert_session_targets(
     insert_session_targets(conn, session_id=session_id, sampled=sampled)
 
 
-def _abandon_session(
-    conn: psycopg.Connection, session_id: str, *, operator_note: str
-) -> None:
+def _abandon_session(conn: psycopg.Connection, session_id: str, *, operator_note: str) -> None:
     """Mark the session completed and stamp ``operator_note``.
 
     Storage helper ``mark_session_completed`` does not accept an
@@ -587,6 +627,7 @@ def _render_question_template(
     strata = _strata_rows(conn, session_id)
 
     context = {
+        **_base_context(request, conn),
         "session_id": session_id,
         "idx": url_idx,
         "total": n_targets,
@@ -613,7 +654,10 @@ def _render_question_template(
         "strata_rows": strata,
         "error_banner": error_banner,
     }
-    return templates.TemplateResponse(request, "question.html", context)
+    template_name = (
+        "_question_main.html" if request.headers.get("hx-request") == "true" else "question.html"
+    )
+    return templates.TemplateResponse(request, template_name, context)
 
 
 def _message_tier(conn: psycopg.Connection, message_id: str) -> int | None:
@@ -707,21 +751,39 @@ def _check_message_reachable(
 # ---------------------------------------------------------------------------
 
 
-def create_app() -> FastAPI:
+def create_app(
+    *,
+    host: str = _DEFAULT_BIND_HOST,
+    port: int = _DEFAULT_BIND_PORT,
+    bench_url: str = BENCH_REVIEW_URL,
+) -> FastAPI:
     """Build the FastAPI app with all routes registered."""
+    if host not in _LOOPBACK_BIND_HOSTS:
+        raise ValueError(f"interview host must be loopback, got {host!r}")
     app = FastAPI(
         title="Engram interview",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
     )
+    app.state.engram_bind_address = _format_bind_address(host, int(port))
+    app.state.engram_allowed_origin_hosts = _allowed_origin_hosts_for_bind(host)
+    app.state.engram_bench_url = bench_url
 
     static_dir = _resource_dir("static")
     templates_dir = _resource_dir("templates")
-    templates = Jinja2Templates(directory=str(templates_dir))
+    shared_static_dir = _shared_resource_dir("static")
+    shared_templates_dir = _shared_resource_dir("templates")
+    templates = Jinja2Templates(directory=[str(templates_dir), str(shared_templates_dir)])
 
     if static_dir.exists():
         app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    if shared_static_dir.exists():
+        app.mount(
+            "/shared-static",
+            StaticFiles(directory=str(shared_static_dir)),
+            name="shared-static",
+        )
 
     # ----- GET / -----
     @app.get("/", response_class=HTMLResponse)
@@ -734,6 +796,7 @@ def create_app() -> FastAPI:
             request,
             "index.html",
             {
+                **_base_context(request, conn),
                 "open_sessions": sessions,
                 "empty_corpus_banner": None,
                 "save_and_quit_banner": request.query_params.get("banner"),
@@ -779,10 +842,12 @@ def create_app() -> FastAPI:
                 request,
                 "index.html",
                 {
+                    **_base_context(request, conn),
                     "open_sessions": sessions,
                     "empty_corpus_banner": (
-                        "no targets matched (empty corpus, all on cooldown, "
-                        "or current_beliefs not refreshed)"
+                        "No targets matched. The candidate pool may be empty, "
+                        "every target may be on cooldown, or current_beliefs "
+                        "has not been refreshed."
                     ),
                     "save_and_quit_banner": None,
                 },
@@ -790,9 +855,7 @@ def create_app() -> FastAPI:
             )
         _insert_session_targets(conn, session_id, sampled)
         conn.commit()
-        return RedirectResponse(
-            url=f"/sessions/{session_id}/q/1", status_code=303
-        )
+        return RedirectResponse(url=f"/sessions/{session_id}/q/1", status_code=303)
 
     # ----- GET /sessions/{id} (resume) -----
     @app.get("/sessions/{session_id}")
@@ -860,9 +923,7 @@ def create_app() -> FastAPI:
         _origin: None = _ORIGIN_CHECK_DEPENDENCY,
     ) -> Response:
         if verdict not in VERDICT_VALID:
-            raise HTTPException(
-                status_code=422, detail={"error": "unknown verdict"}
-            )
+            raise HTTPException(status_code=422, detail={"error": "unknown verdict"})
         _require_open_session(conn, session_id)
         n_targets = _session_n_targets(conn, session_id)
         if n_targets is None or n_targets == 0:
@@ -874,26 +935,23 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="target row missing")
         sampled = _session_target_to_sampled(target_row)
         # Single-click verdicts (true / skip) commit with rationale=None even
-        # if a stray empty string came in. Two-click verdicts pass the
-        # rationale verbatim (empty string is allowed for ``unsure``).
+        # if a stray empty string came in. Two-click verdicts normalize blank
+        # text to None; only false/stale/unsupported require non-empty text.
         rationale_value: str | None
         if verdict in {"true", "skip"}:
             rationale_value = None
         else:
-            rationale_value = (rationale or "").strip()
+            rationale_text = (rationale or "").strip()
+            rationale_value = rationale_text or None
             if verdict in _RATIONALE_REQUIRED_VERDICTS and not rationale_value:
                 raise HTTPException(
                     status_code=422,
                     detail={"error": "rationale_required", "verdict": verdict},
                 )
 
-        agent = InterviewAgent(
-            conn, sampler_id=SAMPLER_ID, sampler_version=SAMPLER_VERSION
-        )
+        agent = InterviewAgent(conn, sampler_id=SAMPLER_ID, sampler_version=SAMPLER_VERSION)
         try:
-            agent.record_verdict(
-                session_id, sampled, verdict, rationale=rationale_value
-            )
+            agent.record_verdict(session_id, sampled, verdict, rationale=rationale_value)
             unanswered = _unanswered_table_indices(conn, session_id)
             if not unanswered:
                 mark_session_completed(conn, session_id)
@@ -904,7 +962,7 @@ def create_app() -> FastAPI:
         except (GoldLabelStorageError, GoldLabelVerdictError) as exc:
             with suppress(psycopg.Error):
                 conn.rollback()
-            return _render_question_template(
+            response = _render_question_template(
                 request,
                 templates,
                 conn=conn,
@@ -914,6 +972,8 @@ def create_app() -> FastAPI:
                 n_targets=n_targets,
                 error_banner=str(exc),
             )
+            response.headers["HX-Reswap"] = "outerHTML"
+            return response
 
         # Empty body + HX-Redirect tells htmx to follow. We also set Location
         # so direct (non-htmx) form posts work.
@@ -1119,10 +1179,9 @@ def create_app() -> FastAPI:
         _require_open_session(conn, session_id)
         # No verdict commit. Discard any in-progress rationale text.
         banner = (
-            f"Saved and quit. Resume with: engram phase3 interview resume "
-            f"--session-id {session_id}"
+            f"Saved and quit. Resume with: engram phase3 interview resume --session-id {session_id}"
         )
-        url = f"/?banner={banner}"
+        url = f"/?banner={quote(banner)}"
         return RedirectResponse(url=url, status_code=303)
 
     # ----- POST /sessions/{id}/complete -----
@@ -1167,6 +1226,7 @@ app = create_app()
 
 __all__ = [
     "ALLOWED_ORIGIN_HOSTS",
+    "BENCH_REVIEW_URL",
     "CONTEXT_BEFORE_AFTER_CAP",
     "TIER_CEILING",
     "app",

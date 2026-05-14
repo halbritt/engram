@@ -14,6 +14,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "httpx>=0.27,<0.29",
     "pytest>=8,<9",
     "ruff>=0.6,<1",
     "pyright>=1.1.380,<2",
@@ -35,6 +36,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 "engram.interview" = ["templates/*.html", "templates/*", "static/*"]
 "engram.bench_review" = ["templates/*.html", "templates/*", "static/*"]
+"engram.web" = ["templates/*.html", "templates/*", "static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

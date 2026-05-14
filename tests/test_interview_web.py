@@ -66,10 +66,18 @@ BELIEF_VERSION_TRIPLE = {
 }
 
 
-def _seed_claim(conn: Any, *, message_tier: int = 1) -> tuple[str, list[str]]:
+def _seed_claim(
+    conn: Any,
+    *,
+    message_tier: int = 1,
+    subject_text: str = "user",
+    predicate: str = "drives",
+    object_text: str = "Subaru",
+) -> tuple[str, list[str]]:
     """Return ``(claim_id, message_ids)``."""
+    stability_class = _stability_class_for_predicate(conn, predicate)
     conv_id, msg_ids = insert_conversation(
-        conn, [("user", "I drive a Subaru", message_tier)]
+        conn, [("user", f"{subject_text} {predicate} {object_text}", message_tier)]
     )
     gen_id = insert_generation(conn, conv_id)
     seg_id = insert_segment_row(conn, gen_id, conv_id, msg_ids, active=True)
@@ -79,10 +87,23 @@ def _seed_claim(conn: Any, *, message_tier: int = 1) -> tuple[str, list[str]]:
         generation_id=gen_id,
         conversation_id=conv_id,
         evidence_ids=msg_ids,
-        predicate="drives",
-        object_text="Subaru",
+        predicate=predicate,
+        object_text=object_text,
+        subject_text=subject_text,
+        stability_class=stability_class,
     )
     return claim_id, msg_ids
+
+
+def _stability_class_for_predicate(conn: Any, predicate: str) -> str:
+    """Return the canonical stability class for a seeded predicate."""
+    row = conn.execute(
+        "SELECT stability_class FROM predicate_vocabulary WHERE predicate = %s",
+        (predicate,),
+    ).fetchone()
+    if row is None:
+        raise AssertionError(f"test predicate {predicate!r} is not in predicate_vocabulary")
+    return row[0]
 
 
 def _seed_belief(conn: Any, *, privacy_tier: int = 1) -> str:
@@ -116,20 +137,36 @@ def _seed_belief(conn: Any, *, privacy_tier: int = 1) -> str:
         privacy_tier=privacy_tier,
         raw_payload={"source": "rfc0027-web-test"},
         score_breakdown={
-            "mean": 0.7, "max": 0.7, "min": 0.7, "count": 1, "stddev": 0,
+            "mean": 0.7,
+            "max": 0.7,
+            "min": 0.7,
+            "count": 1,
+            "stddev": 0,
         },
     )
     return insert_belief(conn, payload)
 
 
 def _create_session_with_one_claim(
-    conn: Any, *, n: int = 3, message_tier: int = 1
+    conn: Any,
+    *,
+    n: int = 3,
+    message_tier: int = 1,
+    subject_text: str = "user",
+    predicate: str = "drives",
+    object_text: str = "Subaru",
 ) -> tuple[str, str, list[str]]:
     """Create a fresh session row + one materialized claim target at idx=0.
 
     Returns ``(session_id, claim_id, message_ids)``.
     """
-    claim_id, msg_ids = _seed_claim(conn, message_tier=message_tier)
+    claim_id, msg_ids = _seed_claim(
+        conn,
+        message_tier=message_tier,
+        subject_text=subject_text,
+        predicate=predicate,
+        object_text=object_text,
+    )
     session_id = insert_session(
         conn,
         seed=42,
@@ -144,8 +181,8 @@ def _create_session_with_one_claim(
         rows.append((extra_claim, extra_msg_ids))
     snapshot_id = str(uuid.uuid4())
     for idx, (cid, _) in enumerate(rows):
-        confidence, observed_at = conn.execute(
-            "SELECT confidence, extracted_at FROM claims WHERE id = %s",
+        confidence, observed_at, stability_class = conn.execute(
+            "SELECT confidence, extracted_at, stability_class FROM claims WHERE id = %s",
             (cid,),
         ).fetchone()
         conn.execute(
@@ -165,15 +202,19 @@ def _create_session_with_one_claim(
                 %s, %s,
                 NULL, NULL,
                 %s,
-                'preference', '0.6-0.8', '<7d', NULL,
+                %s, '0.6-0.8', '<7d', NULL,
                 %s, %s
             )
             """,
             (
-                session_id, idx, cid, snapshot_id,
+                session_id,
+                idx,
+                cid,
+                snapshot_id,
                 CLAIM_VERSION_TRIPLE["extraction_prompt_version"],
                 CLAIM_VERSION_TRIPLE["extraction_model_version"],
                 CLAIM_VERSION_TRIPLE["request_profile_version"],
+                stability_class,
                 confidence,
                 observed_at,
             ),
@@ -181,9 +222,7 @@ def _create_session_with_one_claim(
     return session_id, claim_id, msg_ids
 
 
-def _create_session_with_one_belief(
-    conn: Any, *, belief_tier: int = 1
-) -> tuple[str, str]:
+def _create_session_with_one_belief(conn: Any, *, belief_tier: int = 1) -> tuple[str, str]:
     """Create a fresh session row + one materialized belief target at idx=0."""
     belief_id = _seed_belief(conn, privacy_tier=belief_tier)
     session_id = insert_session(
@@ -257,10 +296,18 @@ def client(monkeypatch: pytest.MonkeyPatch, conn: Any) -> Iterator[TestClient]:
         web_module.app.dependency_overrides.pop(web_module._get_conn, None)
 
 
+def _format_origin_host(host: str) -> str:
+    """Return a URL/Host-header-safe loopback host literal."""
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]"
+    return host
+
+
 def _origin_headers(host: str = "127.0.0.1", port: int = 8765) -> dict[str, str]:
+    origin_host = _format_origin_host(host)
     return {
-        "host": f"{host}:{port}",
-        "origin": f"http://{host}:{port}",
+        "host": f"{origin_host}:{port}",
+        "origin": f"http://{origin_host}:{port}",
         "sec-fetch-site": "same-origin",
     }
 
@@ -276,11 +323,66 @@ def test_index_renders_no_open_sessions(client: TestClient) -> None:
     body = resp.text
     assert "Engram interview — open sessions" in body
     assert "No open sessions" in body
+    assert "Start session" in body
+    assert 'data-future="true"' in body
+    assert "Entities (future)" in body
+    assert '<span class="brand-name">Engram local</span>' in body
+    assert 'class="surface-tab is-active"' in body
+    assert (
+        'href="http://127.0.0.1:8770/segments?remaining=1&amp;reviewable=1">Bench review</a>'
+    ) in body
+    assert '<script src="/shared-static/keyboard.js" defer></script>' in body
+    assert "local-only · loopback bind: 127.0.0.1:8765 · no network egress." in body
+    assert "Engram runs entirely on your machine. No cloud service. No telemetry. No CDN." in body
+    assert (
+        "Promotion, acceptance, and entity canonicalization arrive in Phase 4. "
+        "The interview surface never flips a belief status."
+    ) in body
+    assert "banner-status" not in body
 
 
-def test_index_renders_open_sessions_with_progress(
-    client: TestClient, conn: Any
-) -> None:
+def test_index_uses_configured_bench_url(conn: Any) -> None:
+    def _override_get_conn() -> Iterator[Any]:
+        yield conn
+
+    app = web_module.create_app(bench_url="http://127.0.0.1:9999/review")
+    app.dependency_overrides[web_module._get_conn] = _override_get_conn
+    try:
+        with TestClient(app) as local_client:
+            resp = local_client.get("/")
+    finally:
+        app.dependency_overrides.pop(web_module._get_conn, None)
+
+    assert resp.status_code == 200
+    assert 'href="http://127.0.0.1:9999/review">Bench review</a>' in resp.text
+
+
+def test_create_app_uses_configured_bind_address(conn: Any) -> None:
+    def _override_get_conn() -> Iterator[Any]:
+        yield conn
+
+    app = web_module.create_app(port=9876)
+    app.dependency_overrides[web_module._get_conn] = _override_get_conn
+    try:
+        with TestClient(app) as local_client:
+            resp = local_client.get("/")
+    finally:
+        app.dependency_overrides.pop(web_module._get_conn, None)
+
+    assert resp.status_code == 200
+    assert "local-only · loopback bind: 127.0.0.1:9876 · no network egress." in resp.text
+
+
+def test_index_renders_shared_future_slot(client: TestClient) -> None:
+    resp = client.get("/")
+    assert resp.status_code == 200
+    body = resp.text
+    assert '<section class="future-slot" data-future="true" aria-disabled="true">' in body
+    assert "Future / backlog" in body
+    assert "Phase 4 work is not yet built. Tracked in RFC 0021 / D044 / D069 / D079." in body
+
+
+def test_index_renders_open_sessions_with_progress(client: TestClient, conn: Any) -> None:
     session_id, claim_id, _ = _create_session_with_one_claim(conn, n=3)
     # Insert one verdict so K=1, N=3.
     insert_label(
@@ -312,9 +414,7 @@ def test_index_renders_open_sessions_with_progress(
     assert session_id in body
 
 
-def test_get_session_resume_uses_frozen_version_triple(
-    client: TestClient, conn: Any
-) -> None:
+def test_get_session_resume_uses_frozen_version_triple(client: TestClient, conn: Any) -> None:
     session_id, claim_id, _ = _create_session_with_one_claim(conn, n=1)
     asked = datetime.now(UTC)
     conn.execute(
@@ -416,9 +516,7 @@ def test_post_sessions_redirects_to_q1(
     assert rows[0] == 1
 
 
-def test_post_sessions_empty_corpus_renders_diagnostic(
-    client: TestClient, conn: Any
-) -> None:
+def test_post_sessions_empty_corpus_renders_diagnostic(client: TestClient, conn: Any) -> None:
     # No claims/beliefs seeded, so sampler returns [].
     resp = client.post(
         "/sessions",
@@ -428,7 +526,15 @@ def test_post_sessions_empty_corpus_renders_diagnostic(
     )
     assert resp.status_code == 200, resp.text
     body = resp.text
-    assert "no targets matched" in body
+    assert (
+        "No targets matched. The candidate pool may be empty, every target may be "
+        "on cooldown, or current_beliefs has not been refreshed."
+    ) in body
+    assert "engram phase4 refresh-current-beliefs" in body
+    assert 'data-copy-command="engram phase4 refresh-current-beliefs"' in body
+    assert 'class="banner banner-warn"' in body
+    assert "banner-status" not in body
+    assert "querySelectorAll('[data-copy-command]')" not in body
     # Session row exists but is marked completed (or absent — implementation
     # choice). The spec recommends mark_session_completed, which keeps it out
     # of the open-sessions list.
@@ -447,26 +553,30 @@ def test_get_question_renders(client: TestClient, conn: Any) -> None:
     assert "[1/2]" in body
     assert "conf=0.90" in body
     assert "conf=0.00" not in body
+    assert (
+        "Verdict is an advisory eval input. It does not flip belief status "
+        "(D044) or gate extraction / consolidation (D069)."
+    ) in body
+    assert "※ Advisory" in body
+    assert "extraction=" in body
+    assert "consolidation=" in body
+    assert "profile=" in body
+    assert "show conversation context" in body
     # Six verdict buttons present.
     for v in ("true", "false", "stale", "unsupported", "unsure", "skip"):
         assert f'data-verdict="{v}"' in body
     # Accesskeys: t, f, s, n, u, k.
     for letter in ("t", "f", "s", "n", "u", "k"):
         assert f'accesskey="{letter}"' in body
+        assert f'data-key="{letter}"' in body
     # aria-label carries verdict gloss verbatim from the vocabulary table.
-    rows = conn.execute(
-        "SELECT verdict, gloss FROM gold_label_verdict_vocabulary"
-    ).fetchall()
+    rows = conn.execute("SELECT verdict, gloss FROM gold_label_verdict_vocabulary").fetchall()
     for verdict, gloss in rows:
         assert gloss in body, f"missing gloss for {verdict}"
 
 
-def test_get_question_enforces_tier_1_evidence(
-    client: TestClient, conn: Any
-) -> None:
-    session_id, _claim_id, _msg_ids = _create_session_with_one_claim(
-        conn, n=1, message_tier=2
-    )
+def test_get_question_enforces_tier_1_evidence(client: TestClient, conn: Any) -> None:
+    session_id, _claim_id, _msg_ids = _create_session_with_one_claim(conn, n=1, message_tier=2)
     resp = client.get(f"/sessions/{session_id}/q/1")
     assert resp.status_code == 403
     body = resp.json()
@@ -474,9 +584,24 @@ def test_get_question_enforces_tier_1_evidence(
     assert body.get("tier") == 2
 
 
-def test_post_verdict_true_single_click_commit(
-    client: TestClient, conn: Any
-) -> None:
+def test_question_renders_predicate_intent_and_warning(client: TestClient, conn: Any) -> None:
+    session_id, _claim_id, _ = _create_session_with_one_claim(
+        conn,
+        n=1,
+        subject_text="Hobnob",
+        predicate="has_name",
+        object_text="Hobnob",
+    )
+    resp = client.get(f"/sessions/{session_id}/q/1")
+    assert resp.status_code == 200, resp.text
+    body = resp.text
+    assert "intent: legal or preferred name (persons only)" in body
+    assert "[warning]" in body
+    assert "looks like a place/business" in body
+    assert 'class="banner-warn"' in body
+
+
+def test_post_verdict_true_single_click_commit(client: TestClient, conn: Any) -> None:
     session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=3)
     resp = client.post(
         f"/sessions/{session_id}/q/1/verdict",
@@ -486,8 +611,7 @@ def test_post_verdict_true_single_click_commit(
     assert resp.status_code == 200, resp.text
     assert resp.headers.get("hx-redirect") == f"/sessions/{session_id}/q/2"
     rows = conn.execute(
-        "SELECT verdict, rationale, evidence_excerpt FROM gold_labels "
-        "WHERE session_id = %s",
+        "SELECT verdict, rationale, evidence_excerpt FROM gold_labels WHERE session_id = %s",
         (session_id,),
     ).fetchall()
     assert len(rows) == 1
@@ -496,9 +620,7 @@ def test_post_verdict_true_single_click_commit(
     assert rows[0][2] is None
 
 
-def test_post_verdict_skip_single_click_commit(
-    client: TestClient, conn: Any
-) -> None:
+def test_post_verdict_skip_single_click_commit(client: TestClient, conn: Any) -> None:
     session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=2)
     resp = client.post(
         f"/sessions/{session_id}/q/1/verdict",
@@ -514,9 +636,7 @@ def test_post_verdict_skip_single_click_commit(
     assert row == ("skip", None)
 
 
-def test_post_verdict_false_two_click_flow(
-    client: TestClient, conn: Any
-) -> None:
+def test_post_verdict_false_two_click_flow(client: TestClient, conn: Any) -> None:
     session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=3)
     resp = client.post(
         f"/sessions/{session_id}/q/1/verdict",
@@ -532,9 +652,7 @@ def test_post_verdict_false_two_click_flow(
     assert row == ("false", "correct value text")
 
 
-def test_post_verdict_blank_rationale_rejected_server_side(
-    client: TestClient, conn: Any
-) -> None:
+def test_post_verdict_blank_rationale_rejected_server_side(client: TestClient, conn: Any) -> None:
     session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=3)
     resp = client.post(
         f"/sessions/{session_id}/q/1/verdict",
@@ -550,9 +668,23 @@ def test_post_verdict_blank_rationale_rejected_server_side(
     assert rows[0] == 0
 
 
-def test_post_verdict_trigger_rejection_renders_banner(
-    client: TestClient, conn: Any
-) -> None:
+def test_post_verdict_unsure_allows_blank_rationale(client: TestClient, conn: Any) -> None:
+    session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=2)
+    resp = client.post(
+        f"/sessions/{session_id}/q/1/verdict",
+        data={"verdict": "unsure", "rationale": "   "},
+        headers=_origin_headers(),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.headers.get("hx-redirect") == f"/sessions/{session_id}/q/2"
+    row = conn.execute(
+        "SELECT verdict, rationale FROM gold_labels WHERE session_id = %s",
+        (session_id,),
+    ).fetchone()
+    assert row == ("unsure", None)
+
+
+def test_post_verdict_trigger_rejection_renders_banner(client: TestClient, conn: Any) -> None:
     session_id = insert_session(
         conn,
         seed=1,
@@ -579,7 +711,9 @@ def test_post_verdict_trigger_rejection_renders_banner(
                 'preference', '0.6-0.8', '<7d', NULL)
         """,
         (
-            session_id, bogus_target_id, snapshot_id,
+            session_id,
+            bogus_target_id,
+            snapshot_id,
             CLAIM_VERSION_TRIPLE["extraction_prompt_version"],
             CLAIM_VERSION_TRIPLE["extraction_model_version"],
             CLAIM_VERSION_TRIPLE["request_profile_version"],
@@ -593,6 +727,7 @@ def test_post_verdict_trigger_rejection_renders_banner(
     assert resp.status_code == 200, resp.text
     body = resp.text
     assert "target was not labeled" in body
+    assert resp.headers.get("hx-reswap") == "outerHTML"
     # No HX-Redirect: route re-rendered the question with the banner.
     assert resp.headers.get("hx-redirect") is None
     # No gold_labels row was committed.
@@ -613,9 +748,7 @@ def test_post_verdict_404_unknown_session(client: TestClient) -> None:
     assert resp.status_code == 404
 
 
-def test_post_verdict_404_out_of_range_idx(
-    client: TestClient, conn: Any
-) -> None:
+def test_post_verdict_404_out_of_range_idx(client: TestClient, conn: Any) -> None:
     session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=3)
     resp = client.post(
         f"/sessions/{session_id}/q/99/verdict",
@@ -625,9 +758,7 @@ def test_post_verdict_404_out_of_range_idx(
     assert resp.status_code == 404
 
 
-def test_post_verdict_422_unknown_verdict(
-    client: TestClient, conn: Any
-) -> None:
+def test_post_verdict_422_unknown_verdict(client: TestClient, conn: Any) -> None:
     session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=2)
     resp = client.post(
         f"/sessions/{session_id}/q/1/verdict",
@@ -639,9 +770,7 @@ def test_post_verdict_422_unknown_verdict(
     assert body.get("error") == "unknown verdict"
 
 
-def test_question_page_uses_shared_false_rationale_prompt(
-    client: TestClient, conn: Any
-) -> None:
+def test_question_page_uses_shared_false_rationale_prompt(client: TestClient, conn: Any) -> None:
     session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=1)
     resp = client.get(f"/sessions/{session_id}/q/1")
     assert resp.status_code == 200
@@ -649,18 +778,30 @@ def test_question_page_uses_shared_false_rationale_prompt(
     assert "correct value > " not in resp.text
 
 
-def test_question_page_preserves_summary_line_whitespace(
-    client: TestClient, conn: Any
-) -> None:
+def test_question_page_preserves_summary_line_whitespace(client: TestClient, conn: Any) -> None:
     session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=1)
     resp = client.get(f"/sessions/{session_id}/q/1")
     assert resp.status_code == 200
-    assert ".summary-line { white-space: pre-wrap; }" in resp.text
+    assert "white-space: pre-wrap" in resp.text
 
 
-def test_post_verdict_403_origin_mismatch(
-    client: TestClient, conn: Any
-) -> None:
+def test_question_hx_request_returns_main_fragment(client: TestClient, conn: Any) -> None:
+    session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=1)
+    resp = client.get(
+        f"/sessions/{session_id}/q/1",
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 200
+    body = resp.text.strip()
+    assert body.startswith('<main id="main">')
+    assert "<html" not in body
+    assert "</body>" not in body
+    assert "Engram local" not in body
+    assert "local-only · loopback bind" not in body
+    assert "help-modal" not in body
+
+
+def test_post_verdict_403_origin_mismatch(client: TestClient, conn: Any) -> None:
     session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=2)
     resp = client.post(
         f"/sessions/{session_id}/q/1/verdict",
@@ -676,9 +817,7 @@ def test_post_verdict_403_origin_mismatch(
     assert body.get("error") == "origin_mismatch"
 
 
-def test_post_verdict_requires_origin_header(
-    client: TestClient, conn: Any
-) -> None:
+def test_post_verdict_requires_origin_header(client: TestClient, conn: Any) -> None:
     session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=2)
     resp = client.post(
         f"/sessions/{session_id}/q/1/verdict",
@@ -689,9 +828,7 @@ def test_post_verdict_requires_origin_header(
     assert resp.json().get("error") == "origin_mismatch"
 
 
-def test_post_verdict_requires_same_origin_sec_fetch(
-    client: TestClient, conn: Any
-) -> None:
+def test_post_verdict_requires_same_origin_sec_fetch(client: TestClient, conn: Any) -> None:
     session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=2)
     headers = _origin_headers()
     headers.pop("sec-fetch-site")
@@ -704,9 +841,7 @@ def test_post_verdict_requires_same_origin_sec_fetch(
     assert resp.json().get("error") == "origin_mismatch"
 
 
-def test_post_verdict_rejects_allowed_host_on_wrong_port(
-    client: TestClient, conn: Any
-) -> None:
+def test_post_verdict_rejects_allowed_host_on_wrong_port(client: TestClient, conn: Any) -> None:
     session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=2)
     resp = client.post(
         f"/sessions/{session_id}/q/1/verdict",
@@ -719,6 +854,93 @@ def test_post_verdict_rejects_allowed_host_on_wrong_port(
     )
     assert resp.status_code == 403
     assert resp.json().get("error") == "origin_mismatch"
+
+
+def test_post_verdict_accepts_ipv6_loopback_origin_for_ipv6_bind(conn: Any) -> None:
+    app = web_module.create_app(host="::1")
+
+    def _override_get_conn() -> Iterator[Any]:
+        yield conn
+
+    app.dependency_overrides[web_module._get_conn] = _override_get_conn
+    try:
+        with TestClient(app) as ipv6_client:
+            session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=2)
+            resp = ipv6_client.post(
+                f"/sessions/{session_id}/q/1/verdict",
+                data={"verdict": "true", "rationale": ""},
+                headers=_origin_headers(host="::1"),
+            )
+    finally:
+        app.dependency_overrides.pop(web_module._get_conn, None)
+
+    assert resp.status_code == 200
+    assert resp.headers["HX-Redirect"] == f"/sessions/{session_id}/q/2"
+
+
+def test_post_verdict_rejects_ipv6_origin_when_not_ipv6_bound(
+    client: TestClient, conn: Any
+) -> None:
+    session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=2)
+    resp = client.post(
+        f"/sessions/{session_id}/q/1/verdict",
+        data={"verdict": "true", "rationale": ""},
+        headers=_origin_headers(host="::1"),
+    )
+    assert resp.status_code == 403
+    assert resp.json().get("error") == "origin_mismatch"
+
+
+def test_origin_mismatch_blocks_all_post_routes(client: TestClient, conn: Any) -> None:
+    session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=1)
+    bad_headers = {
+        "host": "127.0.0.1:8765",
+        "origin": "http://evil.example:8765",
+        "sec-fetch-site": "same-origin",
+    }
+    checks = [
+        ("post", "/sessions", {"n": "1", "seed": "3"}),
+        ("post", f"/sessions/{session_id}/save-and-quit", {}),
+        ("post", f"/sessions/{session_id}/complete", {}),
+        ("post", f"/sessions/{session_id}/abandon", {}),
+    ]
+    for method, path, data in checks:
+        resp = getattr(client, method)(path, data=data, headers=bad_headers)
+        assert resp.status_code == 403, path
+        assert resp.json().get("error") == "origin_mismatch"
+
+
+def test_origin_check_delegates_to_shared_helper(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[object, tuple[str, ...]]] = []
+
+    class RequestStub:
+        def __init__(self) -> None:
+            self.headers: dict[str, str] = {}
+
+    def _fake_require_origin(request: object, *, allowed_hosts: tuple[str, ...]) -> None:
+        calls.append((request, allowed_hosts))
+
+    monkeypatch.setattr(web_module, "require_origin", _fake_require_origin)
+    request: Any = RequestStub()
+
+    web_module._origin_check(request)
+
+    assert calls == [(request, web_module.ALLOWED_ORIGIN_HOSTS)]
+
+
+def test_tier_check_delegates_to_shared_helper(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[int, int, str | None]] = []
+
+    def _fake_require_tier_ceiling(
+        tier: int, *, ceiling: int, message_id: str | None = None
+    ) -> None:
+        calls.append((tier, ceiling, message_id))
+
+    monkeypatch.setattr(web_module, "require_tier_ceiling", _fake_require_tier_ceiling)
+
+    web_module._check_tier_1(2, message_id="message-1")
+
+    assert calls == [(2, web_module.TIER_CEILING, "message-1")]
 
 
 def test_allowed_origin_hosts_default_is_loopback_only() -> None:
@@ -756,9 +978,28 @@ def test_allowed_origin_hosts_env_var_extends_default(monkeypatch) -> None:
     )
 
 
-def test_post_verdict_completes_session_at_n(
-    client: TestClient, conn: Any
+def test_allowed_origin_hosts_for_ipv6_bind_adds_ipv6_loopback() -> None:
+    hosts = web_module._allowed_origin_hosts_for_bind("::1")
+
+    assert hosts[: len(web_module.ALLOWED_ORIGIN_HOSTS)] == web_module.ALLOWED_ORIGIN_HOSTS
+    assert "::1" in hosts
+    assert web_module._allowed_origin_hosts_for_bind("127.0.0.1") == web_module.ALLOWED_ORIGIN_HOSTS
+
+
+def test_interview_bench_url_resolver_defaults_and_overrides(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.delenv("ENGRAM_INTERVIEW_BENCH_URL", raising=False)
+    assert (
+        web_module._resolve_bench_review_url()
+        == "http://127.0.0.1:8770/segments?remaining=1&reviewable=1"
+    )
+
+    monkeypatch.setenv("ENGRAM_INTERVIEW_BENCH_URL", "http://127.0.0.1:9900/segments")
+    assert web_module._resolve_bench_review_url() == "http://127.0.0.1:9900/segments"
+
+
+def test_post_verdict_completes_session_at_n(client: TestClient, conn: Any) -> None:
     session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=2)
     # Answer Q1.
     resp1 = client.post(
@@ -879,9 +1120,7 @@ def test_abandoned_session_rejects_question_verdict_complete_and_reabandon(
     assert reabandon_resp.status_code == 409
 
 
-def test_get_complete_is_not_a_mutating_route(
-    client: TestClient, conn: Any
-) -> None:
+def test_get_complete_is_not_a_mutating_route(client: TestClient, conn: Any) -> None:
     session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=1)
     resp = client.get(f"/sessions/{session_id}/complete", follow_redirects=False)
     assert resp.status_code == 405
@@ -894,9 +1133,7 @@ def test_get_complete_is_not_a_mutating_route(
 
 def test_get_messages_tier_1_enforced(client: TestClient, conn: Any) -> None:
     # Seed a reachable tier-2 evidence message and try to render it.
-    session_id, _claim_id, msg_ids = _create_session_with_one_claim(
-        conn, n=1, message_tier=2
-    )
+    session_id, _claim_id, msg_ids = _create_session_with_one_claim(conn, n=1, message_tier=2)
     resp = client.get(f"/sessions/{session_id}/messages/{msg_ids[0]}")
     assert resp.status_code == 403
     body = resp.json()
@@ -905,9 +1142,7 @@ def test_get_messages_tier_1_enforced(client: TestClient, conn: Any) -> None:
     assert body.get("ceiling") == 1
 
 
-def test_get_messages_context_max_tier_carry(
-    client: TestClient, conn: Any
-) -> None:
+def test_get_messages_context_max_tier_carry(client: TestClient, conn: Any) -> None:
     # Conversation with one tier-2 row in the window.
     conv_id, msg_ids = insert_conversation(
         conn,
@@ -969,17 +1204,13 @@ def test_get_messages_context_max_tier_carry(
     # Anchor on msg_ids[1] (tier 1) but the +1 window pulls in msg_ids[2]
     # (tier 2). Context route MUST 403.
     anchor = msg_ids[1]
-    resp = client.get(
-        f"/sessions/{session_id}/messages/{anchor}/context?before=0&after=2"
-    )
+    resp = client.get(f"/sessions/{session_id}/messages/{anchor}/context?before=0&after=2")
     assert resp.status_code == 403
     body = resp.json()
     assert body.get("error") == "privacy_tier_ceiling"
 
 
-def test_get_message_unreachable_from_session_returns_404(
-    client: TestClient, conn: Any
-) -> None:
+def test_get_message_unreachable_from_session_returns_404(client: TestClient, conn: Any) -> None:
     session_id, _claim_id, _session_msg_ids = _create_session_with_one_claim(conn, n=1)
     _conv_id, other_msg_ids = insert_conversation(
         conn, [("user", "unrelated tier 1", 1)], conversation_tier=1
@@ -1049,18 +1280,12 @@ def test_get_message_same_conversation_non_evidence_returns_404(
 
     full_resp = client.get(f"/sessions/{session_id}/messages/{msg_ids[1]}")
     assert full_resp.status_code == 404
-    context_resp = client.get(
-        f"/sessions/{session_id}/messages/{msg_ids[1]}/context"
-    )
+    context_resp = client.get(f"/sessions/{session_id}/messages/{msg_ids[1]}/context")
     assert context_resp.status_code == 404
 
 
-def test_get_messages_context_caps(
-    client: TestClient, conn: Any
-) -> None:
-    _conv_id, msg_ids = insert_conversation(
-        conn, [("user", "x", 1)], conversation_tier=1
-    )
+def test_get_messages_context_caps(client: TestClient, conn: Any) -> None:
+    _conv_id, msg_ids = insert_conversation(conn, [("user", "x", 1)], conversation_tier=1)
     session_id = insert_session(
         conn,
         seed=1,
@@ -1068,28 +1293,20 @@ def test_get_messages_context_caps(
         sampler_version="stratified.v1.d079.initial",
         strata_weights={},
     )
-    resp = client.get(
-        f"/sessions/{session_id}/messages/{msg_ids[0]}/context?before=15&after=15"
-    )
+    resp = client.get(f"/sessions/{session_id}/messages/{msg_ids[0]}/context?before=15&after=15")
     assert resp.status_code == 422
 
 
-def test_get_evidence_all_tier_1_enforced(
-    client: TestClient, conn: Any
-) -> None:
+def test_get_evidence_all_tier_1_enforced(client: TestClient, conn: Any) -> None:
     # Seed a session whose target's evidence is tier 2.
-    session_id, _claim_id, _ = _create_session_with_one_claim(
-        conn, n=1, message_tier=2
-    )
+    session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=1, message_tier=2)
     resp = client.get(f"/sessions/{session_id}/q/1/evidence/all")
     assert resp.status_code == 403
     body = resp.json()
     assert body.get("error") == "privacy_tier_ceiling"
 
 
-def test_get_evidence_all_enforces_parent_target_tier(
-    client: TestClient, conn: Any
-) -> None:
+def test_get_evidence_all_enforces_parent_target_tier(client: TestClient, conn: Any) -> None:
     # Parent belief is Tier 2 while its cited message remains Tier 1.
     session_id, _belief_id = _create_session_with_one_belief(conn, belief_tier=2)
     resp = client.get(f"/sessions/{session_id}/q/1/evidence/all")
@@ -1099,9 +1316,7 @@ def test_get_evidence_all_enforces_parent_target_tier(
     assert body.get("tier") == 2
 
 
-def test_get_evidence_all_checks_rows_beyond_preview_limit(
-    client: TestClient, conn: Any
-) -> None:
+def test_get_evidence_all_checks_rows_beyond_preview_limit(client: TestClient, conn: Any) -> None:
     conv_id, msg_ids = insert_conversation(
         conn,
         [
@@ -1165,9 +1380,7 @@ def test_get_evidence_all_checks_rows_beyond_preview_limit(
     assert body.get("error") == "privacy_tier_ceiling"
 
 
-def test_post_save_and_quit_discards_in_progress(
-    client: TestClient, conn: Any
-) -> None:
+def test_post_save_and_quit_discards_in_progress(client: TestClient, conn: Any) -> None:
     session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=3)
     resp = client.post(
         f"/sessions/{session_id}/save-and-quit",
@@ -1177,8 +1390,13 @@ def test_post_save_and_quit_discards_in_progress(
     assert resp.status_code == 303
     # Banner survives in the redirect URL (URL-encoded).
     from urllib.parse import unquote
+
     location = unquote(resp.headers["location"])
     assert "Resume with: engram phase3 interview resume" in location
+    banner_resp = client.get(resp.headers["location"])
+    assert banner_resp.status_code == 200
+    assert 'class="banner banner-warn"' in banner_resp.text
+    assert "banner-status" not in banner_resp.text
     # No gold_labels row was committed.
     n_labels = conn.execute(
         "SELECT count(*) FROM gold_labels WHERE session_id = %s",
@@ -1196,8 +1414,7 @@ def test_post_abandon_marks_completed(client: TestClient, conn: Any) -> None:
     )
     assert resp.status_code == 303
     row = conn.execute(
-        "SELECT completed_at, operator_note FROM gold_label_sessions "
-        "WHERE session_id = %s",
+        "SELECT completed_at, operator_note FROM gold_label_sessions WHERE session_id = %s",
         (session_id,),
     ).fetchone()
     assert row[0] is not None
@@ -1224,24 +1441,63 @@ def test_consolidator_transitions_unimportable_from_web() -> None:
 
 def test_htmx_loaded_from_static_not_cdn(client: TestClient, conn: Any) -> None:
     """The base layout must reference ``/static/htmx.min.js``, not a CDN."""
-    static_path = (
-        Path(web_module.__file__).resolve().parent / "static" / "htmx.min.js"
-    )
+    static_path = Path(web_module.__file__).resolve().parent / "static" / "htmx.min.js"
     if not static_path.exists() or static_path.stat().st_size == 0:
-        pytest.skip(
-            "static/htmx.min.js missing or empty; operator must drop in a copy"
-        )
+        pytest.skip("static/htmx.min.js missing or empty; operator must drop in a copy")
     resp = client.get("/")
     assert resp.status_code == 200
     body = resp.text
     assert '<script src="/static/htmx.min.js"' in body
+    assert '<script src="/shared-static/keyboard.js" defer></script>' in body
     assert "unpkg.com" not in body
     assert "cdn.jsdelivr.net" not in body
     assert "cdnjs.cloudflare.com" not in body
+    assert "googleapis.com" not in body
+    assert "googletagmanager.com" not in body
+    assert "@import" not in body
     # Static asset is actually served.
     asset = client.get("/static/htmx.min.js")
     assert asset.status_code == 200
     assert asset.text.strip() != ""
+    keyboard = client.get("/shared-static/keyboard.js")
+    assert keyboard.status_code == 200
+    assert "data-help-open" in keyboard.text
+
+
+def test_question_local_only_no_external_assets(client: TestClient, conn: Any) -> None:
+    session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=1)
+    resp = client.get(f"/sessions/{session_id}/q/1")
+    assert resp.status_code == 200
+    body = resp.text
+    assert "local-only · loopback bind: 127.0.0.1:8765 · no network egress." in body
+    for forbidden in (
+        "unpkg.com",
+        "cdn.jsdelivr.net",
+        "cdnjs.cloudflare.com",
+        "googleapis.com",
+        "googletagmanager.com",
+        "@import",
+    ):
+        assert forbidden not in body
+
+
+def test_interview_page_has_no_promotion_affordance_buttons(client: TestClient, conn: Any) -> None:
+    session_id, _claim_id, _ = _create_session_with_one_claim(conn, n=1)
+    for path in ("/", f"/sessions/{session_id}/q/1"):
+        resp = client.get(path)
+        assert resp.status_code == 200
+        body = resp.text.lower()
+        for button_word in (
+            ">accept<",
+            ">promote<",
+            ">reject<",
+            ">pin<",
+            'data-action="accept"',
+            'data-action="promote"',
+            'data-action="reject"',
+            'data-action="pin"',
+        ):
+            assert button_word not in body
 
 
 def test_aria_live_region_present(client: TestClient, conn: Any) -> None:

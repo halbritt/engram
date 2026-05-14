@@ -1,0 +1,31 @@
+<script>
+  (function () {
+    var rationalePrompts = {{ rationale_prompts | tojson }};
+    var twoClick = ["false", "stale", "unsupported", "unsure"];
+    var verdictInput = document.getElementById("verdict-input");
+    var rationaleArea = document.getElementById("rationale-area");
+    var rationalePromptEl = document.getElementById("rationale-prompt");
+    var rationaleField = document.getElementById("rationale");
+    var verdictRow = document.getElementById("verdict-row");
+    if (!verdictRow) return;
+    verdictRow.addEventListener("click", function (ev) {
+      var btn = ev.target.closest("button[data-verdict]");
+      if (!btn) return;
+      var v = btn.getAttribute("data-verdict");
+      verdictInput.value = v;
+      if (twoClick.indexOf(v) >= 0) {
+        rationaleArea.hidden = false;
+        rationalePromptEl.textContent = rationalePrompts[v];
+        rationaleField.focus();
+      }
+    });
+    if (rationaleField) {
+      rationaleField.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" && ev.shiftKey) {
+          ev.preventDefault();
+          document.getElementById("verdict-form").requestSubmit();
+        }
+      });
+    }
+  })();
+</script>

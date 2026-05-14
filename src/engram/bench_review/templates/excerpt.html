@@ -1,9 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
+{% set state_info = data_state_display(row.data_state) %}
 <h2><code>{{ row.segment_id }}</code></h2>
-<div class="warning">{{ row.data_state }}: {{ instruction }}</div>
+<div class="banner">
+  <span class="chip" data-status="{{ state_info.token }}" title="{{ state_info['copy'] }}">{{ state_info.label }}</span>
+  <strong>{{ row.data_state }}</strong>: {{ instruction }}
+</div>
 {% if detail.error %}
-<div class="error">Detail load failed: {{ detail.error }}</div>
+<div class="banner-error">Detail load failed: {{ detail.error }}</div>
 {% endif %}
 {% if detail.summary_text %}
 <div class="panel"><strong>Summary</strong><br>{{ detail.summary_text }}</div>

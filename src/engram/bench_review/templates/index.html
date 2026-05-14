@@ -1,5 +1,15 @@
 {% extends "base.html" %}
 {% block content %}
+{% with kind="warn", message=bench_disclaimer %}
+  {% include "_status_banner.html" %}
+{% endwith %}
+
+{% if metadata_only %}
+<section class="warning">
+  Metadata-only session — segment verdict controls are disabled until candidate segment records are provided.
+</section>
+{% endif %}
+
 <section class="grid">
   <div class="metric"><span>Decided</span><strong>{{ summary.decided }}/{{ summary.total }}</strong></div>
   <div class="metric"><span>Remaining</span><strong>{{ summary.remaining }}</strong></div>
@@ -8,29 +18,70 @@
   <div class="metric"><span>Excluded</span><strong>{{ summary.by_decision.get("exclude_from_review", 0) }}</strong></div>
 </section>
 
-<h2>Review queues</h2>
-<section class="grid">
-  <a class="panel" href="/segments?state=candidate_zero&remaining=1">Zeroed segments<br><strong>{{ summary.by_state.get("candidate_zero", 0) }}</strong></a>
-  <a class="panel" href="/segments?remaining=1&reviewable=1">All reviewable remaining<br><strong>Start</strong></a>
+<h2>Run readiness</h2>
+<section class="metadata-grid">
+  <div class="panel">
+    <span class="chip {{ readiness.class }}" data-readiness="{{ readiness.state }}" title="{{ readiness['copy'] }}">{{ readiness.label }}</span>
+    <p>{{ readiness["copy"] }}</p>
+    {% if resume_target.disabled %}
+    <span class="button button-disabled" aria-disabled="true">{{ resume_target.label }}</span>
+    <p class="muted">No segments loaded. Start the workbench with --run/--slice/--segments.</p>
+    {% else %}
+    <a class="button" href="{{ resume_target.href }}">{{ resume_target.label }}</a>
+    {% endif %}
+  </div>
+  <div class="panel">
+    <h3>Run decision</h3>
+    {% if summary.run_decision_label %}
+    <p><span class="chip readiness-proposed" data-status="proposed" title="Operator recorded a non-authoritative recommendation.">Proposed</span></p>
+    <p>{{ summary.run_decision_label }}</p>
+    {% else %}
+    <p class="muted">No run-level recommendation recorded.</p>
+    {% endif %}
+    <p class="muted">Run recommendations are scratch-local review evidence.</p>
+  </div>
 </section>
+
+{% with title="Entities review", subtitle="Canonical entity review, promotion, and Phase 4 gates are not available from this scratch workbench.", references="RFC 0021 / D044 / D069 / D079" %}
+  {% include "_future_slot.html" %}
+{% endwith %}
+
+<h2>Run metadata</h2>
+<section class="panel">
+  <dl class="metadata-list">
+    <dt>Run ID</dt><dd><code>{{ session.run_id }}</code></dd>
+    <dt>Candidate artifact</dt><dd><code>{{ run_metadata.public_candidate_artifact_id }}</code></dd>
+    <dt>Candidate version</dt><dd><code>{{ run_metadata.candidate_triple }}</code></dd>
+    <dt>Prior version</dt><dd><code>{{ run_metadata.prior_triple }}</code></dd>
+    <dt>Prior comparison</dt><dd>{{ run_metadata.prior_comparison_mode }}</dd>
+    <dt>Queue fingerprint</dt><dd><code>{{ run_metadata.queue_fingerprint }}</code></dd>
+    <dt>Reviewer label</dt><dd>{{ run_metadata.reviewer_label }}</dd>
+  </dl>
+</section>
+
+<h2>Review queues</h2>
+<nav class="tabs" aria-label="Bench review queues">
+  {% for tab in queue_tabs %}
+  <a href="{{ tab.href }}">{{ tab.label }}</a>
+  {% endfor %}
+</nav>
+
+<h2>States</h2>
 <section class="grid">
   {% for state, count in summary.by_state.items() %}
-  <a class="panel" href="/segments?state={{ state }}&remaining=1">{{ state }}<br><strong>{{ count }}</strong></a>
+  {% set state_info = data_state_display(state) %}
+  <a class="panel" href="/segments?state={{ state }}&remaining=1">
+    <span class="chip" data-status="{{ state_info.token }}" title="{{ state_info['copy'] }}">{{ state_info.label }}</span><br>
+    <code>{{ state }}</code><br>
+    <strong>{{ count }}</strong>
+  </a>
   {% endfor %}
 </section>
 
 <h2>Tags</h2>
 <section class="grid">
   {% for tag, count in summary.by_tag.items() %}
-  <a class="panel" href="/segments?tag={{ tag }}&remaining=1&reviewable=1">{{ tag }}<br><strong>{{ count }}</strong></a>
+  <a class="panel" href="/segments?tag={{ tag }}&remaining=1&reviewable=1">{{ tag_label(tag) }}<br><code>{{ tag }}</code><br><strong>{{ count }}</strong></a>
   {% endfor %}
 </section>
-
-<h2>Run</h2>
-<div class="panel">
-  <p><strong>{{ session.run_id }}</strong></p>
-  <p>candidate={{ session.candidate_prompt_version or "unknown" }}/{{ session.candidate_model_version or "unknown" }}/{{ session.candidate_request_profile_version or "unknown" }}</p>
-  <p>prior={{ session.prior_prompt_version }}/{{ session.prior_model_version }}/{{ session.prior_request_profile_version }}</p>
-  {% if summary.run_decision_label %}<p>Decision: {{ summary.run_decision_label }}</p>{% endif %}
-</div>
 {% endblock %}

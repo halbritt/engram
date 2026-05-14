@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import sqlite3
 from argparse import Namespace
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from engram.bench_review import cli as bench_cli
@@ -14,6 +16,7 @@ from engram.bench_review import web as bench_web
 from engram.bench_review.artifacts import (
     BenchReviewArtifactError,
     PriorSegmentResult,
+    SegmentComparison,
     build_segment_comparisons,
     load_candidate_run,
     load_segment_records,
@@ -101,9 +104,12 @@ def test_artifact_loader_aliases_jsonl_and_duplicate_state(tmp_path: Path) -> No
     )
     candidate_run = load_candidate_run(run_path)
     assert candidate_run.model_version == "candidate-model"
-    assert resolve_segment_records_path(
-        run_path=run_path, candidate_run=candidate_run, explicit_path=None
-    ) == segments_path
+    assert (
+        resolve_segment_records_path(
+            run_path=run_path, candidate_run=candidate_run, explicit_path=None
+        )
+        == segments_path
+    )
     loaded = load_segment_records(segments_path)
     rows = build_segment_comparisons(
         segment_ids=load_slice_segment_ids(slice_path),
@@ -201,10 +207,7 @@ def test_storage_status_and_export_are_redacted(tmp_path: Path) -> None:
     assert "private-subject" not in text
 
     with sqlite3.connect(db_path) as conn:
-        columns = [
-            row[1]
-            for row in conn.execute("PRAGMA table_info(segment_reviews)").fetchall()
-        ]
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(segment_reviews)").fetchall()]
     assert "claim_text" not in columns
     assert "segment_text" not in columns
 
@@ -247,6 +250,282 @@ def _fake_detail(segment_id: str) -> SegmentDetail:
     )
 
 
+def _web_client_for_rows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    rows: tuple[SegmentComparison, ...],
+    *,
+    config: ReviewSessionConfig | None = None,
+) -> TestClient:
+    db_path = tmp_path / "review.sqlite3"
+    initialize_review_db(db_path, config=config or _session_config(tmp_path), rows=rows)
+    monkeypatch.setattr(
+        detail_module,
+        "fetch_segment_detail",
+        lambda _db_path, segment_id: _fake_detail(segment_id),
+    )
+    return TestClient(create_app(review_db_path=db_path))
+
+
+def _same_origin_headers(origin: str = "http://testserver:8770") -> dict[str, str]:
+    return {"origin": origin, "sec-fetch-site": "same-origin"}
+
+
+def _complete_row(tmp_path: Path) -> SegmentComparison:
+    records_path = tmp_path / "segments.jsonl"
+    records_path.write_text(
+        json.dumps(
+            {
+                "segment_id": "seg-a",
+                "claim_count": 1,
+                "predicates": ["has_name"],
+                "provenance_count": 1,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return build_segment_comparisons(
+        segment_ids=("seg-a",),
+        candidate_records=load_segment_records(records_path),
+        prior_summaries={"seg-a": PriorSegmentResult("seg-a", 1, 0, ("has_name",), 1)},
+    )[0]
+
+
+def _malformed_row(tmp_path: Path) -> SegmentComparison:
+    records_path = tmp_path / "segments.jsonl"
+    records_path.write_text(
+        json.dumps({"segment_id": "seg-a", "claim_count": "not-an-int"}) + "\n",
+        encoding="utf-8",
+    )
+    return build_segment_comparisons(
+        segment_ids=("seg-a",),
+        candidate_records=load_segment_records(records_path),
+        prior_summaries={"seg-a": PriorSegmentResult("seg-a", 1, 0, ("has_name",), 1)},
+    )[0]
+
+
+def test_index_renders_run_metadata_readiness_and_truth_banner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    row = build_segment_comparisons(
+        segment_ids=("seg-a",),
+        candidate_records=load_segment_records(None),
+        prior_summaries={},
+    )[0]
+    client = _web_client_for_rows(tmp_path, monkeypatch, (row,))
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert (
+        "Bench review decisions do not mutate production data or bypass Phase 4 gates."
+        in response.text
+    )
+    assert "run-a" in response.text
+    assert "candidate-prompt/candidate-model/candidate-profile" in response.text
+    assert "prior-prompt/prior-model/prior-profile" in response.text
+    assert "Queue fingerprint" in response.text
+    assert 'data-readiness="blocked"' in response.text
+    assert "Engram local" in response.text
+    assert 'data-future="true"' in response.text
+    assert "Entities review" in response.text
+    assert "Bench review help" in response.text
+    assert "Accept candidate change" in response.text
+    assert "local-only · loopback bind: 127.0.0.1:8770 · no network egress." in response.text
+    assert '<script src="/shared-static/keyboard.js" defer></script>' in response.text
+    assert '<script src="/static/queue_filter.js" defer></script>' in response.text
+    assert '<script src="/static/keyboard.js" defer></script>' not in response.text
+
+
+def test_create_app_registers_bench_routes(tmp_path: Path) -> None:
+    app = create_app(review_db_path=tmp_path / "review.sqlite3")
+
+    routes = {
+        (next(iter(route.methods)), route.path) for route in app.routes if hasattr(route, "methods")
+    }
+
+    assert ("POST", "/segments/{segment_id}/decision") in routes
+    assert ("POST", "/run-decision") in routes
+
+
+@pytest.mark.parametrize("path", ("/docs", "/redoc", "/openapi.json"))
+def test_create_app_disables_generated_docs_and_openapi_routes(tmp_path: Path, path: str) -> None:
+    client = TestClient(create_app(review_db_path=tmp_path / "review.sqlite3"))
+
+    response = client.get(path)
+
+    assert response.status_code == 404
+
+
+def test_bench_loads_shared_keyboard_and_queue_filter_enhancement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    row = _complete_row(tmp_path)
+    client = _web_client_for_rows(tmp_path, monkeypatch, (row,))
+
+    shared_response = client.get("/shared-static/keyboard.js")
+    queue_filter_response = client.get("/static/queue_filter.js")
+
+    assert shared_response.status_code == 200
+    assert queue_filter_response.status_code == 200
+    assert "[data-copy-command]" in shared_response.text
+    assert "data-help-open" in shared_response.text
+    assert "queue-filter" in queue_filter_response.text
+    assert "tbody tr" in queue_filter_response.text
+    assert "[data-copy-command]" not in queue_filter_response.text
+    assert "data-help-open" not in queue_filter_response.text
+
+
+def test_index_readiness_ready_state_is_recommendation_not_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = tmp_path / "review.sqlite3"
+    row = _complete_row(tmp_path)
+    initialize_review_db(db_path, config=_session_config(tmp_path), rows=(row,))
+    record_segment_decision(
+        db_path,
+        segment_id="seg-a",
+        decision="accept_candidate_change",
+        rationale="count-only change accepted",
+    )
+    monkeypatch.setattr(
+        detail_module,
+        "fetch_segment_detail",
+        lambda _db_path, segment_id: _fake_detail(segment_id),
+    )
+    client = TestClient(create_app(review_db_path=db_path))
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'data-readiness="ready_for_owner_gate_recommendation"' in response.text
+    assert "Ready (recommendation, not gate)" in response.text
+    assert "Scratch-local recommendation; not a gate." in response.text
+    assert "readiness-ok" not in response.text
+
+
+def test_segments_list_renders_queue_filter_tabs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _web_client_for_rows(tmp_path, monkeypatch, (_complete_row(tmp_path),))
+
+    response = client.get("/segments")
+
+    assert response.status_code == 200
+    assert 'href="/segments?remaining=1&amp;reviewable=1"' in response.text
+    assert 'href="/segments?state=candidate_zero&amp;remaining=1"' in response.text
+    assert (
+        'href="/segments?tag=predicate_mix_changed&amp;remaining=1&amp;reviewable=1"'
+        in response.text
+    )
+    assert 'href="/segments?decision=flag_candidate_regression"' in response.text
+    assert 'href="/segments?tag=unchanged"' in response.text
+
+
+def test_segment_strong_decision_disabled_for_malformed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _web_client_for_rows(tmp_path, monkeypatch, (_malformed_row(tmp_path),))
+
+    response = client.get("/segments/seg-a")
+
+    assert response.status_code == 200
+    assert (
+        "Bench review decisions do not mutate production data or bypass Phase 4 gates."
+        in response.text
+    )
+    assert "Failed" in response.text
+    assert "Strong decisions disabled while candidate_malformed." in response.text
+    assert 'name="decision" value="accept_candidate_change" data-key="a" disabled' in response.text
+    assert (
+        'name="decision" value="flag_candidate_regression" data-key="r" disabled' in response.text
+    )
+    assert "Accept candidate change" in response.text
+    assert "Flag candidate regression" in response.text
+
+
+def test_post_segment_decision_strong_rejected_for_malformed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _web_client_for_rows(tmp_path, monkeypatch, (_malformed_row(tmp_path),))
+
+    response = client.post(
+        "/segments/seg-a/decision",
+        data={"decision": "accept_candidate_change", "rationale": "ok"},
+        headers=_same_origin_headers(),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"error": "strong decision disabled for state"}
+
+
+def test_post_segment_decision_rationale_too_long_400(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _web_client_for_rows(tmp_path, monkeypatch, (_complete_row(tmp_path),))
+
+    response = client.post(
+        "/segments/seg-a/decision",
+        data={"decision": "needs_followup", "rationale": "x" * 501},
+        headers=_same_origin_headers(),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "rationale exceeds 500 characters"
+
+
+def test_bench_summary_carries_cli_export_command_card(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _web_client_for_rows(tmp_path, monkeypatch, (_complete_row(tmp_path),))
+
+    response = client.get("/summary")
+
+    assert response.status_code == 200
+    assert "engram phase3 bench-review export" in response.text
+    assert 'data-copy-command="engram phase3 bench-review export' in response.text
+    assert "Copy command" in response.text
+    assert (
+        "Bench review decisions do not mutate production data or bypass Phase 4 gates."
+        in response.text
+    )
+
+
+def test_excerpt_privacy_tier_above_one_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = tmp_path / "review.sqlite3"
+    row = _complete_row(tmp_path)
+    initialize_review_db(db_path, config=_session_config(tmp_path), rows=(row,))
+
+    def private_detail(_db_path: Path, segment_id: str) -> SegmentDetail:
+        return replace(_fake_detail(segment_id), privacy_tier=2, segment_excerpt=None)
+
+    tier_calls: list[tuple[int, int, str | None]] = []
+
+    def require_tier(tier: int, *, ceiling: int = 1, message_id: str | None = None) -> None:
+        tier_calls.append((tier, ceiling, message_id))
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "privacy_tier_ceiling",
+                "tier": tier,
+                "ceiling": ceiling,
+            },
+        )
+
+    monkeypatch.setattr(bench_web, "require_tier_ceiling", require_tier)
+    monkeypatch.setattr(detail_module, "fetch_segment_detail", private_detail)
+    client = TestClient(create_app(review_db_path=db_path))
+
+    response = client.get("/segments/seg-a/excerpt")
+
+    assert response.status_code == 403
+    assert tier_calls == [(2, 1, None)]
+    assert response.json()["detail"] == {"error": "privacy_tier_ceiling", "privacy_tier": 2}
+
+
 def test_web_rejects_cross_site_and_disables_missing_candidate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -270,19 +549,34 @@ def test_web_rejects_cross_site_and_disables_missing_candidate(
     assert "segment private excerpt" in response.text
     assert "private subject" in response.text
     assert "uses_tool" in response.text
-    assert 'value="accept_candidate_change" disabled' in response.text
+    assert 'name="decision" value="accept_candidate_change" data-key="a" disabled' in response.text
 
     response = client.post(
         "/segments/seg-a/decision",
         data={"decision": "needs_followup", "rationale": "ok"},
-        headers={"origin": "http://evil.example"},
+        headers=_same_origin_headers(origin="http://evil.example:8770"),
     )
     assert response.status_code == 403
 
     response = client.post(
         "/segments/seg-a/decision",
         data={"decision": "needs_followup", "rationale": "ok"},
-        headers={"origin": "http://testserver"},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"]["error"] == "origin_mismatch"
+
+    response = client.post(
+        "/segments/seg-a/decision",
+        data={"decision": "needs_followup", "rationale": "ok"},
+        headers={"origin": "http://testserver:8770"},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"]["expected"] == ["sec-fetch-site=same-origin"]
+
+    response = client.post(
+        "/segments/seg-a/decision",
+        data={"decision": "needs_followup", "rationale": "ok"},
+        headers=_same_origin_headers(),
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -311,7 +605,7 @@ def test_web_rejects_same_origin_tailscale_posts_without_opt_in(
     response = client.post(
         "/segments/seg-a/decision",
         data={"decision": "needs_followup", "rationale": "ok"},
-        headers={"origin": "https://proximal.tail0ecc2e.ts.net:8766"},
+        headers=_same_origin_headers(origin="http://proximal.tail0ecc2e.ts.net:8766"),
         follow_redirects=False,
     )
     assert response.status_code == 403
@@ -340,7 +634,7 @@ def test_web_accepts_same_origin_tailscale_posts_with_suffix_opt_in(
     response = client.post(
         "/segments/seg-a/decision",
         data={"decision": "needs_followup", "rationale": "ok"},
-        headers={"origin": "https://proximal.tail0ecc2e.ts.net:8766"},
+        headers=_same_origin_headers(origin="http://proximal.tail0ecc2e.ts.net:8766"),
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -410,7 +704,7 @@ def test_segment_decision_advances_within_current_review_queue(
             "next_state": "candidate_zero",
             "next_remaining": "1",
         },
-        headers={"origin": "http://testserver"},
+        headers=_same_origin_headers(),
         follow_redirects=False,
     )
     assert response.status_code == 303

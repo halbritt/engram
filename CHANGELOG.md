@@ -12,6 +12,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scaffold, derived from `ENGRAM_UI_REWORK_HANDOFF.md`, covering a three-lane
   UI implementation split plus the normal review cycle augmented with an
   ergonomics design review.
+- RFC 0038 repair workflows were queued after correctness and ergonomics review
+  findings, including a follow-up workflow for the DB-backed interview route
+  evidence blocker, parallel correctness, security, and ergonomics re-reviews,
+  and a corrected review-only pass after the first follow-up review packets
+  omitted the current evidence artifacts.
+- RFC 0038 accept-with-findings follow-up workflow was queued to address the
+  corrected review residuals across three implementation lanes: interview
+  navigation/security/audit behavior, bench keyboard/tier cleanup, and shared
+  chrome drift cleanup.
+- RFC 0038 second repair workflow was queued after the accept-with-findings
+  correctness review found two remaining blockers: bench FastAPI-generated
+  docs/openapi routes still exposed CDN-backed assets, and interview IPv6
+  loopback bind support did not yet align with same-origin POST validation.
+- RFC 0038 second repair workflow completed: bench generated docs/openapi
+  routes are disabled, configured interview IPv6 loopback POSTs are accepted
+  without widening the default Origin allowlist, evidence passed, and fresh
+  correctness, security, and ergonomics reviews all returned `accept`.
 - RFC 0028 predicate-intent surfacing implementation is now present in the
   fresh 2026-05-13 author pass: migration 012 adds nullable
   `predicate_vocabulary.subject_kind_hint`, the extractor prompt version is

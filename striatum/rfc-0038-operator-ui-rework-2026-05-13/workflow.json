@@ -55,8 +55,8 @@
     },
     "gemini_operator": {
       "adapter": "process",
-      "display_model": "Gemini 3.1 Pro Preview",
-      "command": ["gemini", "--model", "gemini-3.1-pro-preview", "--skip-trust", "--yolo", "--prompt", "Execute the Striatum work packet from stdin. Follow the packet exactly, edit only allowed paths, publish required artifacts, and record required Striatum completions or verdicts."],
+      "display_model": "Gemini 2.5 Flash",
+      "command": ["gemini", "--model", "gemini-2.5-flash", "--skip-trust", "--yolo", "--prompt", "Execute the Striatum work packet from stdin. Follow the packet exactly, edit only allowed paths, publish required artifacts, and record required Striatum completions or verdicts."],
       "capabilities": ["review"],
       "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
     },
