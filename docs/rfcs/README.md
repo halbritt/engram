@@ -12,7 +12,7 @@ the implementation contract.
 The **Status** column tracks document state (proposal / specified / accepted /
 promoted / superseded). The **Implementation** column tracks whether the
 proposal's deliverables exist in the codebase as of the last index sweep
-(2026-05-13): `implemented`, `partial`, `none`, or `n/a` for idea-capture docs
+(2026-05-14): `implemented`, `partial`, `none`, or `n/a` for idea-capture docs
 without a concrete code deliverable. Implementation status is descriptive, not
 prescriptive — a `none` here is not a TODO unless promoted via
 `BUILD_PHASES.md` or `DECISION_LOG.md`.
@@ -62,7 +62,13 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0048](0048-striatum-context-injection-policy.md) | proposal | none | Striatum context-injection policy |
 | [0049](0049-striatum-evaluation-gates.md) | proposal | none | Striatum evaluation, no-egress, and retrieval-quality gates |
 
-## Implementation notes (2026-05-07 sweep)
+Index note: RFC 0045-RFC 0049 are 2026-05-14 Striatum memory roadmap
+proposals and review provenance only. They do not authorize implementation,
+migrations, runtime behavior, or default-on Striatum memory. Current follow-up
+is RFC alignment for RFC 0047, RFC 0046, RFC 0048, and RFC 0049 plus RFC 0044
+hardening and EG-000 evidence.
+
+## Implementation notes
 
 - **0007** — promoted via D068 to spec at `docs/process/artifact-id-conventions.md`.
   RFC headers, file-level anchors, `D###` row anchors in `DECISION_LOG.md`,

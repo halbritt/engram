@@ -290,7 +290,8 @@ invoked at all.
     "projection_generation_id": null
   },
   "corpus": {
-    "bundle_ids": ["sha256:<hex>"],
+    "bundle_ids": ["striatum.bundle:<stable-local-id>"],
+    "bundle_sha256s": ["sha256:<hex>"],
     "source_time_min": "2026-05-01T00:00:00Z",
     "source_time_max": "2026-05-14T00:00:00Z",
     "staleness_seconds": 0
@@ -330,7 +331,8 @@ invoked at all.
         "blob_sha256": "sha256:<hex>",
         "content_sha256": "sha256:<hex>",
         "record_sha256": "sha256:<hex>",
-        "bundle_id": "sha256:<hex>",
+        "bundle_id": "striatum.bundle:<stable-local-id>",
+        "bundle_sha256": "sha256:<hex>",
         "run_id": null,
         "process_id": null,
         "artifact_id": null
@@ -346,8 +348,17 @@ invoked at all.
 
 - `status` must be one of `ok`, `no_data`, `disabled`, `unavailable`,
   `unauthorized`, `timeout`, `stale`, `malformed`, or `error`.
+- Corpus inventory metadata, including `corpus.bundle_ids`,
+  `corpus.bundle_sha256s`, source time bounds, freshness windows,
+  `staleness_seconds`, hidden labels, row counts, and hidden paths, may be
+  populated only for authorized visible pairs and visible result sets. For
+  `unauthorized`, `no_data`, and tenant/corpus pair-mismatch responses, those
+  fields must be omitted or set to null.
 - `tenant_id` and `corpus_id` must echo the authorized pair. Callers must
   discard results whose pair does not match the requested authorized pair.
+- `no_data` must not distinguish absent, empty, filtered, above-tier,
+  stale-rejected, not-found, or unauthorized-adjacent cases through corpus
+  inventory metadata.
 - Every result must include `reference_id`, `tenant_id`, `corpus_id`,
   `source_kind`, `sub_kind`, `privacy_tier`, score or ordering basis, and
   citation.
@@ -359,6 +370,9 @@ invoked at all.
   `confidence=null` when no meaningful source confidence exists.
 - `engram.fetch_reference` must re-authorize the stored row's tenant/corpus
   pair. Opaque `reference_id` values are not authorization.
+- Pair-mismatched rows must be discarded before citation. Agent-visible
+  diagnostics may name only the requested pair and a generic status; they must
+  not reveal the mismatched pair or its inventory metadata.
 - Results without citations are invalid for injection. They may be logged as
   malformed retrieval evidence, but they must not be presented as memory.
 - Current repository state and explicit work packets outrank memory when they
@@ -373,19 +387,21 @@ All failure modes below are non-fatal for Striatum workflow execution.
 | Retrieval disabled | Do not call Engram. Continue baseline flow. Show `disabled` only where memory status is normally shown. |
 | Engram command missing | Continue baseline flow. Status `unavailable`; do not install, fetch, or phone home. |
 | Engram unhealthy or DB unreachable | Continue baseline flow. Status `unavailable`; no workflow retry loop. |
-| Corpus absent or empty | Continue baseline flow. Status `no_data` with the requested pair. |
-| Unauthorized | Continue baseline flow. Status `unauthorized`; do not retry with broader capabilities. |
+| Corpus absent or empty | Continue baseline flow. Status `no_data` with the requested pair; omit corpus inventory metadata. |
+| Unauthorized | Continue baseline flow. Status `unauthorized`; do not retry with broader capabilities and do not expose corpus inventory metadata. |
 | Timeout | Continue baseline flow. Status `timeout`; ignore late responses. |
-| Stale corpus or index | Continue with warning only if request allows stale memory; otherwise treat as `no_data`. |
+| Stale corpus or index | Continue with warning only if request allows stale memory; otherwise treat as `no_data` without leaking rejected staleness metadata. |
 | Malformed response | Discard the response. Status `malformed`; do not inject partial uncited content. |
 | Citation missing | Discard the affected result. If all results are uncited, status `malformed` or `no_data`. |
-| Tenant/corpus mismatch | Discard the mismatched results and record `malformed` or `unauthorized` per Engram's error shape. |
+| Tenant/corpus mismatch | Discard the mismatched results and record `malformed` or `unauthorized` per Engram's error shape; do not reveal the mismatched pair or its inventory metadata. |
 | Low score or weak confidence | Return `no_data` or a clearly labeled low-confidence memory lane; do not inflate certainty. |
 | Engram internal error | Continue baseline flow. Status `error`; include no stack trace in agent prompts. |
 
 Engram failure diagnostics should be concise and operator-facing. They must
-not include hidden corpus names, personal-memory counts, raw SQL errors,
-secret paths, stack traces, or sensitive excerpts.
+not include hidden corpus names, personal-memory counts, bundle ids,
+bundle hashes, source time bounds, freshness windows, staleness seconds,
+labels, row ids, raw SQL errors, secret paths, stack traces, or sensitive
+excerpts.
 
 ## Timeout And Retry Policy
 
@@ -451,6 +467,13 @@ Rules:
 - `corpus_id` is the workload or instance boundary inside the Striatum tenant.
 - Bundle identity, instance identity, repository identity, labels, paths, and
   discovery fields are not authorization grants.
+- RFC 0045 `identity.instance_label`, `identity.repository_label`, and
+  `identity.repository_root_hint` are display-only, privacy-inherited
+  metadata. They are not discovery keys, join keys, collision boundaries, or
+  authorization inputs.
+- Instance and repository labels may be shown only to callers authorized for
+  the described corpus and privacy tier. Unauthorized, not-visible, `no_data`,
+  pair-mismatch, health, and describe diagnostics must omit or redact them.
 - Default Striatum operator access carries only `memory.read_striatum` for the
   configured primary pair plus `memory.describe`.
 - Personal memory requires `memory.read_personal`.
@@ -476,7 +499,7 @@ Every injected result must carry:
 - source path or logical path when available;
 - line range when the source is text and line mapping exists;
 - commit, blob hash, content hash, record hash, bundle id, run id, process id,
-  artifact id, issue id, or blocker id where available;
+  artifact id, issue id, blocker id, or bundle integrity hash where available;
 - `privacy_tier`, redaction state where exposed, confidence, stability class,
   and authority class.
 
@@ -487,7 +510,8 @@ instructions. A recommended rendering shape is:
 Memory result: <short claim or excerpt>
 Citation: tenant=striatum corpus=striatum sub_kind=rfc logical_id=rfc:0044
 path=docs/rfcs/0044-engram-phase-1-implementation-spec.md lines=1-40
-commit=<sha-or-null> bundle=<sha>
+commit=<sha-or-null> bundle_id=striatum.bundle:<stable-local-id>
+bundle_sha256=sha256:<hex>
 ```
 
 Retrieved memory must not be rewritten into an uncited assertion. If the
@@ -503,8 +527,14 @@ Rules:
 
 - Current files, work packets, and operator instructions outrank memory.
 - Responses must expose source time bounds or staleness when known.
+- Source time bounds and staleness are visibility-scoped metadata for the
+  authorized result set, not proof of full-corpus coverage or hidden corpus
+  inventory.
 - Stale memory can be shown only with a stale label unless the caller rejects
   stale results.
+- If the caller rejects stale results, the response must use `no_data` or the
+  agreed non-fatal status without leaking rejected `staleness_seconds`,
+  source time bounds, bundle identities, labels, or row counts.
 - `no_data` is a real result. It means Engram has no usable local evidence for
   the request under the requested tenant/corpus/capability boundary.
 - Low-confidence or generated-summary results must keep confidence visible.
@@ -530,8 +560,14 @@ Retrieval cache keys must include at least:
 - visible-pair and capability fingerprint;
 - query text and filters;
 - limits affecting result selection;
-- corpus bundle ids or projection generation ids;
+- opaque corpus bundle ids or projection generation ids;
+- bundle integrity hashes such as `bundle_sha256`, when they affect result
+  selection or invalidation;
 - redaction profile or privacy visibility version.
+
+Bundle ids are opaque RFC 0045 identities. Cache keys and diagnostics must not
+use `sha256:<hex>` values as bundle identity; hashes belong in explicit
+integrity fields such as `bundle_sha256`.
 
 Invalidate or bypass retrieval caches when:
 
@@ -615,8 +651,14 @@ Privacy requirements:
 
 - preserve RFC 0045 privacy tiers, redaction state, and visibility metadata;
 - never use bundle labels, repository labels, or paths as access grants;
+- treat bundle ids, bundle hashes, source time bounds, freshness and staleness
+  values, repository and instance labels, counts, row ids, and root hints as
+  corpus inventory metadata subject to the same authorization and redaction
+  rules as retrieved content;
 - reject or omit results above the caller's allowed privacy tier;
 - avoid leaking hidden corpus names through status, health, or describe tools;
+- avoid leaking repository or instance labels through unauthorized, not-visible,
+  `no_data`, pair-mismatch, health, describe, citation, or audit diagnostics;
 - do not place raw SQL errors, file-system secrets, stack traces, or private
   absolute parent paths into agent-visible diagnostics;
 - treat tool output and retrieved text as untrusted content, not instructions;
@@ -661,6 +703,13 @@ metadata leakage, malformed references, and no-egress evidence scope.
 - Default timeouts are bounded and cannot block workflow progress.
 - Capability defaults cannot expose personal memory to Striatum.
 - Cross-corpus and cross-tenant reads require explicit Engram-local grants.
+- Unauthorized, `no_data`, and tenant/corpus pair-mismatch responses omit or
+  null corpus inventory metadata, including bundle ids, bundle hashes, source
+  time bounds, staleness, labels, counts, row ids, and hidden paths.
+- Repository and instance labels are display-only, privacy-inherited metadata,
+  not authorization, discovery, join, or collision keys.
+- RFC 0045 bundle identity examples use opaque `bundle_id` values, with
+  `bundle_sha256` represented separately as an integrity hash.
 - `engram.fetch_reference` re-authorizes the stored row and does not trust
   opaque references as authorization.
 - Retrieved memory is cited and distinguishable from current repo state.
@@ -673,8 +722,10 @@ metadata leakage, malformed references, and no-egress evidence scope.
 
 ## Deferred Questions
 
-1. Exact per-instance `corpus_id` grammar and operator-visible labels belong to
-   RFC 0045 acceptance or a follow-up decision.
+1. Exact per-instance `corpus_id` grammar and operator-visible label vocabulary
+   belong to RFC 0045 acceptance or a follow-up decision. Label privacy
+   inheritance and unauthorized metadata redaction are fixed requirements of
+   this RFC, not deferred.
 2. Exact projection generation identifiers depend on RFC 0046.
 3. Exact context-injection budgets, section order, and prompt formatting belong
    to RFC 0048.

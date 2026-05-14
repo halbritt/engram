@@ -155,7 +155,7 @@ Open RFC 0045 decisions that can change this RFC:
 2. source of `instance_id` and `repository_id`;
 3. zero-row required files versus manifest-declared omissions;
 4. full diff and stdout/stderr export depth;
-5. final redaction-state vocabulary;
+5. exact privacy-tier assignment policy Striatum can guarantee before export;
 6. one-file-per-kind versus sharded layout;
 7. V1 compatibility adapter ownership;
 8. fixture bundle selection.
@@ -167,7 +167,9 @@ RFC 0049 expects RFC 0046 or its accepted successor to provide:
 - projection generation ids and active/superseded state;
 - `source_capture_id`, `source_item_id`, `source_logical_id`,
   `source_version_id`, hashes, and generation metadata;
-- exact-reference, structured, lexical, and optional local pgvector lanes;
+- exact-reference lane that mirrors RFC 0045's closed `ref_kind` vocabulary,
+  including `workflow_job_id` and `job_id`, plus structured, lexical, and
+  optional local pgvector lanes;
 - `authority_class`, `stability_class`, `confidence`, `privacy_tier`,
   `redaction_state`, chunk ids, and chunk boundaries;
 - health checks for latest validated bundle, active generation, invalidated
@@ -178,10 +180,11 @@ Open RFC 0046 decisions that can change this RFC:
 1. generic versus Striatum-specific projection generation table;
 2. composite FK versus trigger/service guards for tenant/corpus raw evidence;
 3. PostgreSQL lexical index strategy;
-4. per-corpus pgvector partial index feasibility;
-5. git identity and local-path privacy handling;
-6. projection audit table shape;
-7. semantic or inferred link ownership.
+4. exact-reference vocabulary parity with RFC 0045's closed `ref_kind` set;
+5. per-corpus pgvector partial index feasibility;
+6. git identity and local-path privacy handling;
+7. projection audit table shape;
+8. semantic or inferred link ownership.
 
 ### RFC 0047 And RFC 0048 Dependencies
 
@@ -313,7 +316,7 @@ surface is covered and which promotion level is still blocked.
 |------|---------|-------------------------------|---------------------------------------------------|--------------------------------------|----------------|
 | EG-000 RFC 0044 hardening baseline | Preserve accepted Phase 1 safety and reciprocal Striatum independence. | yes for service/MCP safety items | yes | yes | `fail` blocks affected service/MCP paths; `blocked_upstream` while RFC 0044 hardening evidence is unresolved; `accepted_with_scope_limit` may cover raw-only helper smoke only. |
 | EG-010 V2 fixture and validator | Provide deterministic inputs and fail-closed validation. | no for RFC 0044 raw-only manual search; yes for V2 manual claims | yes unless using a reviewed compatibility fixture | yes | `fail` is fail-closed; `blocked_upstream` until RFC 0045 or accepted successor is promoted; `accepted_with_scope_limit` may cover raw-only or reviewed compatibility input only. |
-| EG-020 no-egress | Prove corpus-reading paths and transitive local runtimes cannot call out. | yes, scoped to the manual path | yes | yes, OS-level evidence required | `fail` blocks the covered corpus-reading path; `blocked_upstream` if sandbox evidence cannot cover required local runtimes; `accepted_with_scope_limit` may cover Level 1 code/dependency inspection only. |
+| EG-020 no-egress | Prove corpus-reading paths and transitive local runtimes cannot call out. | yes, scoped to the manual path | yes | yes, OS-level evidence required | `fail` blocks the covered corpus-reading path, including any external, non-loopback, or unpaired HTTP/network dependency; `not_run` applies when sandbox evidence has not been attempted; `blocked_upstream` applies only when an unaccepted upstream contract prevents knowing which local runtimes must be covered; `accepted_with_scope_limit` may cover Level 1 code/dependency inspection only. |
 | EG-030 tenant/corpus/personal isolation | Prevent cross-boundary reads and metadata leaks. | yes | yes | yes | `fail` blocks all levels for the affected surface; `blocked_upstream` if token/pair semantics depend on an unaccepted upstream contract; scope limits must name the exact authorized pair and surface. |
 | EG-040 reference and MCP hardening | Reauthorize fetches and collapse probing surfaces. | yes for fetch-backed manual search | yes | yes | `fail` blocks fetch-backed use; `blocked_upstream` if reference format is not accepted; scope limits may cover search-only surfaces that do not fetch references. |
 | EG-050 stale-index and freshness | Detect stale projections, invalidated rows, and current-authority conflicts. | no for raw-only manual search; yes for projection-backed search | yes for projection-backed injection | yes | `fail` blocks projection-backed paths; `blocked_upstream` until RFC 0046/RFC 0047 freshness contracts are accepted; scope limits may cover raw-only manual search. |
@@ -366,8 +369,9 @@ Required fixture bundles:
    summary, issue, and blocker links.
 5. Git/path bundle with commit SHA, path references, branch or tag references,
    and bounded diff summaries.
-6. Redaction bundle with `redaction_state='withheld'`, redacted content, and
-   deterministic redaction-notice chunks.
+6. Redaction bundle with `redaction_state='withheld'` items represented only by
+   deterministic withheld/redaction notices, plus separate allowed `redacted`
+   or `synthetic_summary` rows where RFC 0045 permits them.
 7. Tombstone or incremental bundle that invalidates a prior logical item.
 8. Negative V1 raw-only bundle proving V1 input does not become projection-ready
    without a reviewed adapter.
@@ -419,12 +423,19 @@ servers, Ollama, ik-llama, reviewer/evaluator runtimes, and any helper service
 called over loopback. The caller process cannot satisfy this gate on behalf of
 the runtime that actually receives corpus text.
 
+External or non-loopback HTTP clients are not permitted on corpus-reading
+paths. Loopback HTTP or local-runtime clients are permitted only when the
+receiving endpoint is named, the endpoint receives corpus content only inside
+the local no-egress boundary, and the receiving runtime has paired no-egress
+evidence or is proven to share the caller's sandbox boundary.
+
 Pass criteria:
 
-- static dependency/import inspection finds no HTTP client, web-search client,
-  hosted SDK, telemetry, crash-reporting client, remote vector store, remote
-  cache, cloud DLP/classification service, or hosted reranker on the
-  corpus-reading path;
+- static dependency/import inspection finds no external or non-loopback HTTP
+  client, no unpaired loopback HTTP client, no web-search client, hosted SDK,
+  telemetry, crash-reporting client, remote vector store, remote cache, cloud
+  DLP/classification service, hosted reranker, or other hosted-network
+  dependency on the corpus-reading path;
 - any loopback HTTP client, model client, embedding client, or local service
   dependency that receives corpus text is paired with no-egress evidence for
   the receiving runtime;
@@ -520,7 +531,9 @@ Pass criteria:
 
 - health checks compare latest validated raw bundle, active projection
   generation, manifest hash, item count, active chunk count, embedding count,
-  invalidated-active-row count, and V1 raw-only bundle presence;
+  embedding skip count by model/dimension/skip reason, copied-field mismatch
+  counts between active embeddings, chunks, and items, invalidated-active-row
+  count, and V1 raw-only bundle presence;
 - invalidated-active-row count is zero for every retrieval-visible table;
 - a new full bundle supersedes old active projection rows transactionally or
   marks the index stale until activation completes;
@@ -552,6 +565,9 @@ Pass criteria:
   before lower-tier reads can serve them;
 - result fixtures include redacted, withheld, low-confidence, stale,
   identity-leak-shaped, and citation-leak-shaped rows;
+- `identity_leak` and `citation_leak` are RFC 0049 gate-local omission reason
+  codes until RFC 0048 or an accepted successor reconciles them with packet
+  omission vocabulary;
 - automatic injection preserves redaction labels or omits the item with a
   reason code such as `redaction_withheld`, `privacy_tier_exceeded`,
   `identity_leak`, or `citation_leak`;
@@ -603,7 +619,7 @@ Golden query records should have this shape inside the manifest:
   "forbidden_references": ["tenant:personal"],
   "expected_status": "ok",
   "freshness_policy": "accept_stale_with_warning",
-  "threshold_tier": "P1",
+  "quality_threshold_tier": "P1",
   "notes": "Exact RFC and accepted synthesis should outrank raw logs."
 }
 ```
@@ -641,6 +657,11 @@ Minimum manifest coverage:
 - at least one query for every RFC 0046 retrieval lane enabled in the evidence
   packet: exact-reference, structured, lexical, and local vector when vector is
   enabled;
+- for the exact-reference lane, coverage includes every RFC 0045 exact-reference
+  namespace represented in the fixtures, including RFC id, decision id, review
+  id, run id, workflow id, workflow job id, job id, process id, artifact id,
+  issue id, blocker id, commit SHA, path, logical path, source hash, and bundle
+  id; lexical or vector fallback does not count as exact-reference success;
 - at least one query for each Level 3 candidate purpose from RFC 0048:
   `operator_startup`, `workflow_scaffold`, `packet_prepare`, `review_prepare`,
   and `blocker_recovery`;
@@ -651,7 +672,8 @@ Minimum manifest coverage:
 Initial threshold proposal:
 
 - P0 exact identifier queries: 100 percent return the expected primary
-  reference at rank 1, with citation and no forbidden reference.
+  reference at rank 1 through the exact-reference lane, with citation,
+  successful `fetch_reference` reauthorization, and no forbidden reference.
 - P1 structured and linked queries: at least 90 percent return all required
   references within the requested `top_k`, with no forbidden reference.
 - P2 lexical and semantic queries: at least 80 percent return one expected
@@ -702,8 +724,9 @@ Pass criteria:
 - every omission records a reason code;
 - identity or citation leak omissions use `identity_leak` or `citation_leak`
   rather than silently dropping the result under a generic malformed reason;
-- automatic packet assembly produces status `malformed`, `no_data`, or
-  `omitted` rather than citation-free prose.
+- automatic packet assembly records omission reason codes and produces status
+  `malformed`, `no_data`, `stale`, or `ok` as appropriate, rather than
+  citation-free prose.
 
 ## EG-090: Prompt-Injection Containment Gate
 
@@ -783,8 +806,10 @@ Engram authoritative Striatum state.
 
 Pass criteria:
 
-- at least one automatic packet for each default-on purpose is reconstructed
-  from audit evidence, or the purpose remains ineligible for default-on use;
+- for Level 2, at least one automatic packet for each enabled opt-in purpose
+  covered by the report is reconstructed from audit evidence; for Level 3, at
+  least one automatic packet for each default-on purpose is reconstructed, or
+  the purpose remains ineligible for default-on use;
 - the audit record includes policy version, purpose, timestamp, run id,
   workflow job id, job id, session id, lease id, enable/disable state, override
   source, request id, query text, filters, tenant/corpus pair, limits, freshness

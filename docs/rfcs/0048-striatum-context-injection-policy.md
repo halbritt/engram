@@ -227,11 +227,13 @@ reviewed purposes are inherited from RFC 0047.
 | `ui_search` | no | yes | Interactive result list. Results are not agent context until selected. |
 | `manual_search` | no | yes | Operator-directed recall with richer diagnostics. |
 
-Before RFC 0049 acceptance, automatic injection should remain explicit
-experimental opt-in. After RFC 0049 acceptance, the target default is automatic
-augmentation for the primary Striatum pair on the five non-search purposes
-above, subject to per-run, per-session, per-packet, and operator disable
-controls.
+Before accepted RFC 0045-RFC 0048 successors and passing RFC 0049 gates,
+automatic injection should remain explicit experimental opt-in. Routine
+default-on augmentation is only a target after the upstream contracts are
+accepted or promoted and the RFC 0049 Level 3 gates pass for the covered
+surfaces. The target default is then automatic augmentation for the primary
+Striatum pair on the five non-search purposes above, subject to per-run,
+per-session, per-packet, purpose, and operator disable controls.
 
 ## Context Eligibility Rules
 
@@ -271,13 +273,24 @@ pair_mismatch
 privacy_tier_exceeded
 redaction_withheld
 missing_citation
+identity_leak
+citation_leak
 stale_rejected
 current_state_conflict
 low_score
 over_budget
 duplicate
 unsupported_surface
+generated_product_blocked
 ```
+
+`identity_leak` covers source identity, repository label, instance label, or
+path-shaped fields that would reveal data above the caller's tier.
+`citation_leak` covers reference payloads, line hints, display identifiers, or
+other citation material that would reveal hidden corpus or higher-tier source
+identity. `generated_product_blocked` covers generated memory products withheld
+until a separate accepted privacy-inheritance, citation, audit, and gate
+contract exists.
 
 ## Section Labels And Packet Shape
 
@@ -343,7 +356,9 @@ Overall authority order:
 6. Current proposal RFCs, design docs, and reviewable handoffs.
 7. Unsynthesized reviews and raw findings.
 8. Raw logs, run summaries, handoffs, packets, and operator notes.
-9. Generated memory products that cite raw evidence and carry audit metadata.
+9. Generated memory products that cite raw evidence and carry audit metadata,
+   but only after a separate accepted generated-product privacy, citation,
+   audit, and gate contract exists.
 10. Older brainstorms, prior-art notes, stale plans, and historical context.
 
 Within memory retrieval, exact identifier matches outrank semantic matches, and
@@ -395,8 +410,11 @@ Every injected memory item must include:
 - `privacy_tier`, redaction state when exposed, confidence, stability class,
   authority class, and freshness label.
 
-Generated summaries and future derived memory products must cite the raw items
-they summarize and must carry confidence. Direct raw evidence may use
+Packet-local summaries assembled from selected cited results must cite the raw
+items they summarize and must carry confidence when they add synthesis beyond a
+short excerpt. Future stored or generated memory products are not eligible for
+Level 2 or Level 3 injection until a separate accepted privacy-inheritance,
+citation, audit, and gate contract exists. Direct raw evidence may use
 `confidence=null` only when the source itself has no meaningful confidence
 value.
 
@@ -560,6 +578,14 @@ Manual augmentation:
 - does not become agent context until selected or summarized into a memory
   section with citations.
 
+Manual paste-through into Striatum operator or agent packets is still memory
+injection. Personal memory, non-primary corpora, non-primary tenants, and
+withheld or redacted results may enter a packet only with explicit per-packet
+operator or packet-builder selection, current authorization, citation
+eligibility, privacy/redaction checks, and audit metadata. Pasted memory remains
+evidence only; it does not become an instruction, capability grant, or workflow
+readiness signal.
+
 Automatic augmentation:
 
 - runs only for eligible purposes and enabled scopes;
@@ -583,6 +609,13 @@ manual: allow manual search while automatic injection stays disabled
 Disable state must be explicit in packet metadata or memory status. Silent
 disablement makes later review ambiguous.
 
+Session-scope disablement is transient to the current operator or agent session
+and prevents automatic Engram calls for that session. It does not survive a
+daemon restart unless an implementation explicitly promotes it to run scope or
+operator configuration and records that promotion. Disabled automatic memory
+must not degrade into hidden manual search, hidden retries, or broader
+capability requests.
+
 ## Reviewability And Audit Trail
 
 Every automatic memory section should be reconstructable after the fact without
@@ -601,10 +634,21 @@ Record at least:
 - bundle ids or projection generation ids;
 - selected `reference_id`, `item_id`, `logical_id`, `version_id`, and
   projection/chunk ids where available;
+- candidate-level selected/omitted status using request-local candidate ids
+  where source identity is not visible to the reviewing tier;
 - token budget, estimated token use, result counts, and truncation decisions;
 - omitted result reason codes;
 - stale/conflict labels;
 - privacy/redaction labels.
+
+Audit records inherit the maximum privacy tier and redaction constraints of the
+selected or omitted candidates they identify. Lower-tier audit views must use
+opaque request-local candidate ids for unauthorized, pair-mismatched,
+higher-tier, redacted, or otherwise hidden omitted candidates rather than
+leaking item ids, logical ids, paths, labels, bundle ids, source-time bounds,
+counts, freshness metadata, or corpus inventory. Reconstruction for a lower-tier
+caller receives only the redacted or opaque omission evidence that caller is
+authorized to see.
 
 Striatum may preserve a per-run copy of the injected section as provenance for
 what an operator or agent saw. That copy is not readiness state, not a future
@@ -612,8 +656,9 @@ retrieval cache authority, and not a substitute for current repository reads.
 
 ## RFC 0049 Gate Dependencies
 
-Routine default-on automatic injection should wait for RFC 0049 to provide or
-require evidence for:
+Routine default-on automatic injection is blocked until RFC 0045, RFC 0046, RFC
+0047, and RFC 0048, or accepted successors, are accepted or promoted and RFC
+0049 provides or requires passing evidence for:
 
 1. no-egress sandbox probe for corpus-reading paths;
 2. tenant/corpus isolation through actual service and MCP paths;
@@ -630,7 +675,10 @@ require evidence for:
 12. disable-control tests for run, session, and packet scopes.
 
 Manual search can be available earlier as explicit operator action if it remains
-local, read-only, cited, and scope-limited.
+local, read-only, cited, and scope-limited. Manual search of source evidence
+does not authorize generated memory products, automatic packet insertion, or
+manual paste-through that bypasses the injection, privacy, citation, and audit
+rules above.
 
 ## Review Requirements
 
@@ -661,6 +709,8 @@ instructions.
   instructions or authoritative Striatum state.
 - Eligible context surfaces and manual versus automatic augmentation are
   defined.
+- Manual paste-through is treated as explicit cited memory injection, not a
+  bypass around packet policy.
 - Section labels, memory item shape, status labels, and omission reason codes
   are defined.
 - Current authority outranks retrieved memory, and current canonical docs
@@ -675,8 +725,15 @@ instructions.
 - Disabled, unavailable, unauthorized, timeout, stale, malformed, no-data, and
   error behavior are non-fatal and visible.
 - Audit-trail fields are named.
+- Audit-trail privacy inheritance and lower-tier opaque omission behavior are
+  named.
 - Per-run, per-session, and per-packet disable controls are required.
-- RFC 0049 gates are named before routine default-on automatic injection.
+- Session-disable persistence semantics are stated.
+- RFC 0049 gates and accepted/promoted upstream RFC successors are required
+  before routine default-on automatic injection.
+- Generated memory products remain blocked from Level 2 and Level 3 injection
+  until a separate accepted privacy-inheritance, citation, audit, and gate
+  contract exists.
 - Upstream dependencies and open decisions from RFC 0045, RFC 0046, and RFC
   0047 are named rather than assumed accepted.
 
@@ -693,7 +750,8 @@ instructions.
 5. Whether stale memory should be automatically included for
    `operator_startup` or only for `review_prepare` and `blocker_recovery`
    needs ergonomics review.
-6. Whether generated memory products from the roadmap can enter automatic
-   injection before separate audit gates exist remains deferred.
+6. Which separate accepted privacy-inheritance, citation, audit, and gate
+   contract will permit generated memory products to enter future injection
+   remains deferred; until then they cannot enter Level 2 or Level 3 injection.
 7. Whether memory-section citations should be inline text only or also a
    structured sidecar depends on the future packet format.

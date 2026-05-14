@@ -71,9 +71,15 @@ metadata, and redaction/privacy tier.
 
 ## Roadmap
 
+RFC 0045-RFC 0049 now exist as proposal and review provenance. They do not
+authorize implementation, default-on Striatum memory, runtime changes, or a
+binding architecture contract without a separate recorded project decision or
+accepted spec handoff.
+
 ### Phase 0: Harden RFC 0044
 
-Finish the known RFC 0044 follow-ups before expanding the surface:
+Finish the known RFC 0044 follow-ups before any projection, retrieval, or
+operator-context implementation depends on the RFC 0044 substrate:
 
 - run a local smoke test against a real or committed fixture Striatum export
   bundle;
@@ -217,18 +223,18 @@ Before routine operator use, add gates for:
 
 ## Execution Backlog
 
-Recommended execution order:
+Recommended follow-up order:
 
-1. RFC 0044 hardening cleanup.
-2. RFC 0045: Striatum Corpus Contract V2.
-3. RFC 0046: Engram Striatum projection and index schema.
-4. RFC 0047: Striatum retrieval augmentation boundary.
-5. RFC 0048: context-injection policy for operator and workflow agents.
-6. RFC 0049: evaluation, no-egress, and retrieval-quality gates.
-7. Striatum exporter implementation lanes.
-8. Engram ingestion and projection implementation lanes.
-9. Striatum UI, CLI, and operator-context integration lanes.
-10. Multi-lane review with an added ergonomics/context-quality review.
+1. RFC alignment cleanup for the RFC 0047, RFC 0046, RFC 0048, and RFC 0049
+   follow-up findings carried by the final synthesis.
+2. RFC 0044 hardening and EG-000 evidence before projection, retrieval, or
+   operator-context implementation depends on the current Phase 1 substrate.
+3. A separate recorded project decision or accepted spec handoff before
+   implementation treats RFC 0045-RFC 0049 as binding contracts.
+4. Striatum exporter implementation lanes.
+5. Engram ingestion and projection implementation lanes.
+6. Striatum UI, CLI, and operator-context integration lanes.
+7. Multi-lane review with an added ergonomics/context-quality review.
 
 ## Open Decisions
 
@@ -247,6 +253,8 @@ contract:
 
 ## Immediate Next Step
 
-Scaffold RFC 0045 around the Striatum Corpus Contract V2. That contract is the
-dependency for complete export, Engram-side projections, and Striatum context
-injection.
+Complete the RFC alignment cleanup called out by the final synthesis, then
+gather RFC 0044 hardening and EG-000 evidence before any projection, retrieval,
+or operator-context implementation depends on this package. RFC 0045-RFC 0049
+remain proposal material until a recorded project decision or accepted spec
+handoff makes a binding contract.

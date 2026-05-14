@@ -74,7 +74,8 @@ RFC 0046 assumes RFC 0045 provides these stable V2 item fields:
 - `content`, `content_sha256`, and `record_sha256`;
 - `observed_at`, `recorded_at`, and `emitted_at`;
 - retraceable provenance fields such as path, logical path, commit, run id,
-  process id, artifact id, issue id, and blocker id;
+  workflow id, workflow job id, job id, process id, artifact id, issue id,
+  blocker id, and dirty-working-tree state;
 - `privacy`, `visibility`, `classification`, and `links`.
 
 Open RFC 0045 decisions remain upstream decisions, not hidden RFC 0046 choices:
@@ -104,7 +105,7 @@ EG-000-equivalent evidence from RFC 0049. The prerequisite evidence must cover:
   `memory.read_cross_corpus` and `memory.read_cross_tenant` requirements for
   non-primary pairs;
 - `engram.fetch_reference` reauthorization against the stored row's
-  `tenant_id`, `corpus_id`, and `source_kind`;
+  `tenant_id`, `corpus_id`, `source_kind`, and `source_capture_id`;
 - structural or service-level guardrails tying Striatum tenant rows to
   `source_kind='striatum'` before content is returned;
 - uniform unauthorized/not-found/malformed reference failures at the MCP
@@ -155,10 +156,12 @@ explicitly noted:
 | `tenant_id TEXT NOT NULL` | Must be `striatum` for this RFC's tables. |
 | `corpus_id TEXT NOT NULL` | Striatum corpus boundary; never `personal`. |
 | `source_capture_id UUID NOT NULL` | Raw Engram capture that stores the V2 item. |
+| `source_kind TEXT NOT NULL` | Copied from RFC 0045 `source_kind`; must be `striatum` for rows proposed by this RFC. |
 | `source_item_id TEXT NOT NULL` | RFC 0045 exact-version `item_id`. |
 | `source_logical_id TEXT NOT NULL` | RFC 0045 stable conceptual `logical_id`. |
 | `source_version_id TEXT NOT NULL` | RFC 0045 `version_id`. |
 | `source_sub_kind TEXT NOT NULL` | RFC 0045 `sub_kind`. |
+| `source_dirty_working_tree BOOLEAN NOT NULL` | Copied from RFC 0045 `provenance.dirty_working_tree`; dirty evidence remains filterable and audit-visible. |
 | `content_sha256 TEXT NOT NULL` | Hash of the indexable/citable content. |
 | `record_sha256 TEXT NOT NULL` | Hash of the canonical V2 item record. |
 | `observed_at TIMESTAMPTZ NOT NULL` | Source state observation time. |
@@ -179,6 +182,40 @@ explicitly noted:
 Implementation may factor the common fields into helper SQL or Python row
 builders, but the physical tables should keep explicit columns for reviewable
 indexes and boundary tests.
+
+### Mechanical Provenance And Authorization Rule
+
+Retrieval-visible projection rows do not inherit authorization-critical source
+identity solely through joins. They store the source identity directly, then use
+joins as consistency checks.
+
+For every retrieval-visible row family proposed in this RFC, the rule is:
+
+| Row family | `source_capture_id` | `source_kind` | `source_sub_kind` |
+|------------|---------------------|---------------|-------------------|
+| First-class item/structured projection rows, including `striatum_items`, `striatum_documents`, `striatum_runs`, `striatum_agents`, `striatum_artifacts`, `striatum_git_refs`, `striatum_issues`, and `striatum_links` | Direct copied column from the validated V2 item capture. | Direct copied column from the validated V2 item; must be `striatum`. | Direct copied column from the validated V2 item. |
+| `striatum_references` | Direct copied column; `item_projection_id` must match it but is not the source of authority. | Direct copied column; must match `striatum_items.source_kind` through `item_projection_id`. | Direct copied column; must match `striatum_items.source_sub_kind` through `item_projection_id`. |
+| `striatum_chunks` | Direct copied column; `item_projection_id` must match it but is not the source of authority. | Direct copied column; must match `striatum_items.source_kind` through `item_projection_id`. | Direct copied column; must match `striatum_items.source_sub_kind` through `item_projection_id`. |
+| `striatum_chunk_embeddings` | Direct copied column from the active chunk/item row. | Direct copied column from the active chunk/item row; must be `striatum`. | Direct copied column from the active chunk/item row. |
+| `striatum_embedding_skips` | Direct copied column from the active chunk/item row. | Direct copied column from the active chunk/item row; must be `striatum`. | Direct copied column from the active chunk/item row. |
+
+Mandatory joins still apply before a row can serve. Reference and chunk rows must
+join to their item row in the same generation and authorized `(tenant_id,
+corpus_id)`. Embedding and skip rows must join to their chunk and item rows in
+the same generation and authorized `(tenant_id, corpus_id)`. The copied fields
+and joined fields must match for `source_capture_id`, `source_kind`,
+`source_item_id`, `source_logical_id`, `source_version_id`, `source_sub_kind`,
+privacy tier, redaction state, dirty-working-tree state, content hash, and
+record hash. A mismatch is a malformed or stale projection condition and must
+fail closed; it is not resolved by choosing one side of the join.
+
+Future `fetch_reference` implementations must authorize against the stored
+candidate row's direct `tenant_id`, `corpus_id`, `source_kind`,
+`source_capture_id`, privacy tier, redaction state, and visibility before any
+content lookup. If the candidate row is a reference, chunk, embedding, or skip
+row, the implementation must also perform the mandatory same-generation joins
+above and fail closed on mismatch. Joins may narrow or invalidate access; they
+must not grant access that the candidate row's direct copied fields would deny.
 
 ## Generation-Scoped Keys And Active Serving Model
 
@@ -319,6 +356,8 @@ Additional columns:
 - `commit_sha TEXT NULL`;
 - `run_id TEXT NULL`;
 - `workflow_id TEXT NULL`;
+- `workflow_job_id TEXT NULL`;
+- `job_id TEXT NULL`;
 - `process_id TEXT NULL`;
 - `artifact_id TEXT NULL`;
 - `issue_id TEXT NULL`;
@@ -336,8 +375,8 @@ Normalized exact-reference index. One V2 item can emit many references.
 
 Columns:
 
-- common provenance columns, except `source_capture_id` may be inherited through
-  `item_projection_id`;
+- common provenance columns, including direct copied `source_capture_id`,
+  `source_kind`, and `source_sub_kind`;
 - `item_projection_id UUID NOT NULL`;
 - `ref_kind TEXT NOT NULL`;
 - `ref_value TEXT NOT NULL`;
@@ -358,6 +397,8 @@ decision_id
 review_id
 run_id
 workflow_id
+workflow_job_id
+job_id
 agent_process_id
 artifact_id
 issue_id
@@ -394,9 +435,10 @@ Path and reference privacy rules:
   branch/tag names, issue IDs, artifact IDs, and opaque `reference_id` payloads
   are not globally authoritative and are never authorization grants.
 - Future `fetch_reference` implementations must reauthorize the stored
-  projection row's `tenant_id`, `corpus_id`, `source_kind`, privacy tier,
-  redaction state, and visibility before returning content. Collision-shaped
-  personal-memory and Striatum references must fail closed.
+  projection row's direct copied `tenant_id`, `corpus_id`, `source_kind`,
+  `source_capture_id`, privacy tier, redaction state, and visibility before
+  returning content, then verify mandatory same-generation joins to the item row.
+  Collision-shaped personal-memory and Striatum references must fail closed.
 
 ### `striatum_documents`
 
@@ -529,6 +571,21 @@ Generation-scoped idempotency key suffix:
 - `(tenant_id, corpus_id, git_ref_kind, commit_sha, source_item_id)` for commit
   rows where `commit_sha IS NOT NULL`;
 - `(tenant_id, corpus_id, source_item_id)` otherwise.
+
+Dirty working tree projection rules:
+
+- RFC 0046 operates only on RFC 0045-validated rows. A bundle with
+  `identity.git_dirty=true` but no manifest-level operator opt-in, or a dirty
+  item without `provenance.dirty_working_tree=true`, fails before projection.
+- Projection rows derived from dirty evidence copy
+  `source_dirty_working_tree=true` onto retrieval-visible rows, including
+  references, git refs, artifacts, chunks, chunk embeddings, and embedding skip
+  rows. `raw_payload` may preserve the local opt-in identifier for audit, but it
+  must not leak hidden diff/stdout content or operator-private paths.
+- Dirty evidence must not be presented as clean committed state. Exact lookups,
+  citations, health checks, and future packet builders must be able to
+  distinguish dirty working-tree evidence from evidence tied only to committed
+  Git objects.
 
 ### `striatum_issues`
 
@@ -674,9 +731,13 @@ Columns:
 - `privacy_tier INT NOT NULL`;
 - `redaction_state TEXT NOT NULL`;
 - `visibility JSONB NOT NULL`;
+- `source_capture_id UUID NOT NULL`;
+- `source_kind TEXT NOT NULL`;
 - `source_item_id TEXT NOT NULL`;
 - `source_logical_id TEXT NOT NULL`;
 - `source_version_id TEXT NOT NULL`;
+- `source_sub_kind TEXT NOT NULL`;
+- `source_dirty_working_tree BOOLEAN NOT NULL`;
 - `chunk_sha256 TEXT NOT NULL`;
 - `content_sha256 TEXT NOT NULL`;
 - `record_sha256 TEXT NOT NULL`;
@@ -708,14 +769,21 @@ Columns:
 - `item_projection_id UUID NOT NULL`;
 - `embedding_model_version TEXT NOT NULL`;
 - `embedding_dimension INT NOT NULL`;
+- `is_active BOOLEAN NOT NULL DEFAULT false`;
+- `invalidated_at TIMESTAMPTZ NULL`;
+- `invalidation_reason TEXT NULL`;
 - `skip_reason TEXT NOT NULL`;
 - `skip_detail TEXT NULL`;
 - `privacy_tier INT NOT NULL`;
 - `redaction_state TEXT NOT NULL`;
 - `visibility JSONB NOT NULL`;
+- `source_capture_id UUID NOT NULL`;
+- `source_kind TEXT NOT NULL`;
 - `source_item_id TEXT NOT NULL`;
 - `source_logical_id TEXT NOT NULL`;
 - `source_version_id TEXT NOT NULL`;
+- `source_sub_kind TEXT NOT NULL`;
+- `source_dirty_working_tree BOOLEAN NOT NULL`;
 - `chunk_sha256 TEXT NOT NULL`;
 - `content_sha256 TEXT NOT NULL`;
 - `record_sha256 TEXT NOT NULL`;
@@ -743,6 +811,14 @@ Skip records must not contain hidden body text in `skip_detail` or `raw_payload`
 They are only local evidence that the embedding completeness gate was satisfied
 without producing a vector.
 
+A skip row satisfies activation and embedding completeness only when it belongs
+to the same active generation, tenant/corpus pair, chunk row, and item row as the
+serving lane, has `is_active=true`, and has `invalidated_at IS NULL`.
+Invalidation from rebuild, tombstone, redaction, or privacy reclassification
+treats active skip rows like active embedding rows: stale skip rows are set
+inactive and receive an `invalidation_reason` before a lower-tier or
+newer-generation lane can serve.
+
 ### Embedding Boundaries
 
 - embeddings use local model runtimes only, such as the existing local Ollama
@@ -752,8 +828,9 @@ without producing a vector.
 - dimensions are versioned per D033-style rules, with indexes per active
   `(embedding_model_version, embedding_dimension)`;
 - embeddings for a generation do not become active until all required chunks in
-  that generation have either an embedding row or a
-  `striatum_embedding_skips` row for that model/dimension;
+  that generation have either an active, non-invalidated embedding row or a
+  active, non-invalidated `striatum_embedding_skips` row for that
+  model/dimension;
 - embeddings are computed only from persisted `striatum_chunks.chunk_text`, never
   from a pre-redaction or fully withheld body;
 - lexical and exact lookup must remain usable if vector embedding is disabled.
@@ -783,7 +860,8 @@ through the active predicate rather than by deleting or rewriting old rows.
 ### Structured Filters
 
 - source kind/sub-kind/status/time:
-  `(tenant_id, corpus_id, source_sub_kind, is_active, observed_at DESC)`;
+  `(tenant_id, corpus_id, source_kind, source_sub_kind, is_active,
+  observed_at DESC)`;
 - privacy:
   `(tenant_id, corpus_id, privacy_tier, is_active)`;
 - authority:
@@ -794,6 +872,8 @@ through the active predicate rather than by deleting or rewriting old rows.
   `(tenant_id, corpus_id, workflow_id, workflow_job_id, job_id)`;
 - producer lineage:
   `(tenant_id, corpus_id, producer_run_id, producer_process_id)`.
+- dirty working tree:
+  `(tenant_id, corpus_id, source_dirty_working_tree, is_active)`.
 
 ### Lexical Search
 
@@ -832,10 +912,11 @@ must include query plans for the expected corpus count.
 This RFC prepares, but does not expose, these local read surfaces:
 
 - exact reference lookup by item id, logical id, RFC id, decision id, review id,
-  run id, workflow id, process id, artifact id, issue id, blocker id, commit SHA,
-  path, or source hash;
+  run id, workflow id, workflow job id, job id, process id, artifact id, issue
+  id, blocker id, commit SHA, path, or source hash;
 - structured filters by corpus, sub-kind, authority class, status, privacy tier,
-  time window, run/job, agent role, artifact kind, path, and commit;
+  time window, run/job, agent role, artifact kind, path, commit, and
+  dirty-working-tree state;
 - cross-link traversal such as "reviews for RFC 0044", "runs that produced this
   handoff", "commits touching this design", or "blockers mentioned by failed
   jobs";
@@ -867,7 +948,8 @@ embedding generation is deferred or vector search is disabled, vector rows for a
 prior generation must not be served as if they belong to the newly activated
 generation. The vector lane either remains unavailable/stale by explicit status
 or activates only when the new generation has complete embedding rows or
-`striatum_embedding_skips` rows for the declared model/dimension set.
+active, non-invalidated `striatum_embedding_skips` rows for the declared
+model/dimension set.
 
 ### Incremental Bundle Handling
 
@@ -886,6 +968,12 @@ mixed-generation view.
   prior chunks, references, embeddings, and skips for the affected logical item.
 - Source omission: carry forward prior active rows unless RFC 0045 emits
   tombstone or redaction evidence. Silent omission is not deletion.
+- Dirty working-tree evidence: copy forward dirty state unchanged for unchanged
+  rows. A new dirty item version is projected only after RFC 0045 validation has
+  accepted both the manifest-level operator opt-in and row-level
+  `provenance.dirty_working_tree=true`; replacement projection rows carry
+  `source_dirty_working_tree=true` and remain distinguishable from clean
+  committed evidence.
 
 ### Privacy Reclassification
 
@@ -913,8 +1001,10 @@ Projection health checks compare:
 - active chunk count and embedding count by model/dimension;
 - embedding skip count by model/dimension and skip reason;
 - invalidated-but-still-active row count, which must be zero;
-- copied-field mismatches between active embeddings, active chunks, and active
-  items;
+- dirty-working-tree projection count and any dirty rows missing copied dirty
+  provenance state, which must be zero;
+- copied-field mismatches for direct provenance, privacy/redaction, dirty state,
+  and hashes between active embeddings, active chunks, and active items;
 - V1 raw-only bundle presence, which must not be treated as projection-ready.
 
 Stale-index detection hooks feed RFC 0049. They do not authorize automatic
@@ -939,8 +1029,9 @@ acceptance:
 7. Tombstone/incremental fixture that invalidates a prior logical item.
 8. Negative V1 fixture proving V1 raw-only bundles do not populate RFC 0046
    projection tables.
-9. Negative tenant/corpus fixture proving inconsistent `tenant_id`, `corpus_id`,
-   or `source_kind` rows fail before projection.
+9. Negative tenant/corpus/provenance fixture proving inconsistent `tenant_id`,
+   `corpus_id`, `source_capture_id`, `source_kind`, or `source_sub_kind` rows
+   fail before projection or fail closed before serving.
 10. Local embedding fixture using mocked or precomputed local vectors for unit
     tests; no live hosted model call is allowed.
 11. Generation rollover fixture proving the same V2 items can exist in two
@@ -959,6 +1050,9 @@ acceptance:
 16. Reference-collision fixture proving personal-memory and Striatum
     collision-shaped references are scoped by stored `(tenant_id, corpus_id)` and
     fail closed through `fetch_reference` reauthorization.
+17. Dirty-working-tree fixture proving projection refuses unapproved dirty
+    exports, projects approved dirty rows with `source_dirty_working_tree=true`,
+    and never presents dirty evidence as clean committed state.
 
 ## Validation And Test Expectations
 
@@ -974,23 +1068,33 @@ Later implementation acceptance should include:
   equivalent inputs;
 - every active serving query uses active views or equivalent predicates, not
   unfiltered base tables;
-- every projection row cites `source_capture_id`, `source_item_id`,
-  `source_logical_id`, hashes, and derivation generation;
+- every projection row cites direct copied `source_capture_id`, `source_kind`,
+  `source_item_id`, `source_logical_id`, `source_version_id`,
+  `source_sub_kind`, hashes, and derivation generation;
 - every active projection row has matching `tenant_id` and `corpus_id`;
 - active serving uniqueness is enforced separately from physical
   generation-scoped uniqueness;
 - single-pair serving/query paths enforce primary-pair and cross-boundary
   capabilities through the actual service path, not only helper methods;
 - exact reference lookups never scan or return another tenant/corpus;
-- privacy reclassification invalidates old chunks and embeddings before lower
-  tier retrieval can see them;
-- embedding rows and skip rows are complete for every required
+- exact reference vocabulary and fixtures include `workflow_job_id` and `job_id`
+  as scoped lookup identifiers;
+- privacy reclassification invalidates old chunks, embeddings, and embedding
+  skips before lower tier retrieval can see them;
+- embedding rows and active, non-invalidated skip rows are complete for every
   `(generation_id, chunk_id, embedding_model_version, embedding_dimension)`;
-- embedding rows cannot serve unless matching active chunk and item rows share
-  the same generation, tenant/corpus, privacy tier, redaction state, and hashes;
+- embedding rows cannot serve unless their direct copied provenance fields match
+  active chunk and item rows in the same generation, tenant/corpus, privacy tier,
+  redaction state, dirty state, and hashes;
+- embedding skip rows cannot satisfy completeness unless matching active chunk
+  and item rows share the same direct copied provenance fields, generation,
+  tenant/corpus, privacy tier, redaction state, dirty state, and hashes;
 - withheld bodies are never embedded before redaction-notice substitution;
 - path-like fields are repository-relative unless an explicit RFC 0045 operator
   opt-in permits absolute paths at an appropriate privacy tier;
+- dirty working-tree rows are rejected unless RFC 0045 validation accepted the
+  manifest-level opt-in and row-level dirty provenance, and projected dirty rows
+  carry `source_dirty_working_tree=true`;
 - personal/Striatum reference collisions fail closed through stored-row
   reauthorization;
 - V1 bundles are rejected or routed through an explicit reviewed adapter;
@@ -1008,8 +1112,9 @@ Later implementation acceptance should include:
   to decide context-injection budgets and redaction behavior.
 - RFC 0049 uses projection generations, fixture bundles, stale-index health
   checks, no-egress probes, tenant/corpus isolation tests, embedding skip counts,
-  invalidated-active-row checks, copied-field mismatch checks, and golden
-  reference queries.
+  invalidated-active-row checks, copied-field mismatch checks, dirty-export
+  projection checks, and golden reference queries including workflow/job
+  identifiers.
 - Striatum exporter implementation must emit V2 fields stable enough for these
   projection keys.
 - Engram implementation must add migrations, projection workers, service query
@@ -1061,9 +1166,11 @@ those invariants.
 
 1. Whether `striatum_projection_generations` should share a generic projection
    generation table with future application memories or remain Striatum-specific.
-2. Whether `source_capture_id` should be enforced by composite foreign keys that
-   include `(tenant_id, corpus_id)` or by triggers/service guards, given the
-   current raw table primary-key shape.
+2. Whether direct copied provenance fields (`source_capture_id`, `source_kind`,
+   `source_item_id`, `source_logical_id`, `source_version_id`, and
+   `source_sub_kind`) should be enforced by composite foreign keys that include
+   `(tenant_id, corpus_id)` or by triggers/service guards, given the current raw
+   and projection table primary-key shapes.
 3. Exact PostgreSQL lexical index strategy: built-in full-text, trigram, or both.
 4. Whether per-corpus pgvector partial indexes are acceptable once multiple
    Striatum corpora exist.

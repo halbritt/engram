@@ -24,6 +24,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   contract-coherence repair and re-review, a findings ledger, and final
   synthesis; the artifacts remain proposal evidence and keep Striatum memory as
   optional, local-only augmentation rather than authoritative workflow state.
+- Striatum memory RFC alignment follow-up workflow scaffold, queued from the
+  roadmap final synthesis, with five initial lanes for RFC 0046-RFC 0049
+  alignment and roadmap/RFC index cleanup before independent review, findings
+  ledger, and final synthesis.
+- Striatum memory RFC alignment handoffs and independent review artifacts under
+  `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/`. The run remains
+  proposal/document alignment only: it does not implement code, promote RFCs,
+  change runtime behavior, or authorize default-on Striatum memory. Contract and
+  privacy reviews returned `accept_with_findings`; the ergonomics recovery review
+  returned `needs_revision` and queued a bounded RFC 0046 provenance repair.
+- Striatum memory RFC alignment workflow final synthesis. The RFC 0046
+  provenance/authorization repair was accepted on fresh re-review, the original
+  ergonomics `needs_revision` was superseded to `accept_with_findings`, the
+  findings ledger and final synthesis were published, and the run completed with
+  no open blockers or checkpoints. Remaining work is carried as promotion,
+  implementation, and deferred gate findings.
 - RFC 0038 operator UI rework proposal and Striatum implementation workflow
   scaffold, derived from `ENGRAM_UI_REWORK_HANDOFF.md`, covering a three-lane
   UI implementation split plus the normal review cycle augmented with an

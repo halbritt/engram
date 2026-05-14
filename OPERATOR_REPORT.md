@@ -2,6 +2,116 @@
 
 Last updated: 2026-05-14
 
+## Live Operator Addendum: Striatum Memory RFC Alignment Follow-up
+
+- Follow-up workflow scaffold added at
+  `striatum/striatum-memory-rfc-alignment-2026-05-14/` after the Striatum
+  memory roadmap final synthesis identified non-implementation alignment work
+  before any promotion packet.
+- Validation passed for
+  `striatum/striatum-memory-rfc-alignment-2026-05-14/workflow.json` with
+  `STRIATUM_DAEMON_REQUIRED=0 STRIATUM_TEST_HARNESS=1 .venv/bin/striatum
+  --repo . workflow validate ... --json`; `workflow plan` shows five initial
+  parallel lanes for RFC 0046, RFC 0047, RFC 0048, RFC 0049, and roadmap/RFC
+  index cleanup, followed by three independent reviews, a findings ledger, and
+  final synthesis.
+- Active Striatum execution run:
+  `run_169531d5568248ff8f0dfc803d955311` on branch
+  `engram/striatum-memory-rfc-alignment`.
+- Initial author lanes completed:
+  `align_rfc0046_projection_index` published
+  `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/ALIGN_RFC0046.md`
+  as artifact `art_1a5e83efc9714c9190407b4d7dd0103a`;
+  `align_rfc0047_retrieval_boundary` published
+  `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/ALIGN_RFC0047.md`
+  as artifact `art_00937b2034e64453a80a96c45c344111`;
+  `align_rfc0048_context_policy` published
+  `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/ALIGN_RFC0048.md`
+  as artifact `art_0a44cff30bc9455eb04234e530b623a8`;
+  `align_rfc0049_evaluation_gates` published
+  `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/ALIGN_RFC0049.md`
+  as artifact `art_3482b62479474e52a4e444e510e9199d`; and
+  `cleanup_roadmap_index` published
+  `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/ROADMAP_INDEX_CLEANUP.md`
+  as artifact `art_3e6c4f8a461e4ba38f0f5b83faac3f58`.
+- Author-lane worker prompts required the maximum useful number of native
+  sub-agents, disjoint write scopes, no implementation, no promotion, no
+  runtime changes, and no artifact publication or Striatum state changes by the
+  worker.
+- Operator validation after the author lanes: `git diff --check` passed, the
+  handoff artifacts passed no-index whitespace checks, and `make check-refs`
+  passed with `0 error(s), 5 warning(s), 191 check(s) ok`.
+- Review fan-out results:
+  `review_contract_alignment` published
+  `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/REVIEW_contract_alignment.md`
+  as artifact `art_ad7e1922542b46c7871733e21e471afc` with verdict
+  `accept_with_findings`
+  (`verdict_2ac078444f1c4fd28441384a62975692`);
+  `review_privacy_boundary` published
+  `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/REVIEW_privacy_boundary.md`
+  as artifact `art_3189d38e3a7b468abe3c56ab5f1b10e1` with verdict
+  `accept_with_findings`
+  (`verdict_eb007084c4874253917746f8fb9491c0`); and
+  `review_operator_ergonomics` published
+  `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/REVIEW_operator_ergonomics.md`
+  as artifact `art_93678846038044a9b4c93904e6d979cc` with verdict
+  `needs_revision`
+  (`verdict_72c5fbe0870f48439cd5e5eb83840e30`).
+- Open checkpoint: `blk_6453bebc5d2141a3a0e4e16eb04c0915` blocks the findings
+  ledger because the ergonomics recovery review found B001: RFC 0046 must make
+  provenance and authorization fields mechanically clear for retrieval-visible
+  projection rows, references, chunks, embeddings, and skip rows. The operator
+  routed this to a bounded RFC 0046 provenance repair worker, with re-review
+  required before the original verdict is superseded.
+- Operator decision `dec_a9580c46b637decb86ff2f4879b87c16` recorded that
+  repair path at
+  `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/OPERATOR_DECISION_ERGONOMICS_REPAIR.md`
+  as artifact `art_96f6a14c9e7849308ff477ac4ae4cfad`.
+- The bounded repair worker completed
+  `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/REPAIR_RFC0046_PROVENANCE.md`
+  and updated RFC 0046 so retrieval-visible rows use direct copied
+  `source_capture_id`, `source_kind`, and `source_sub_kind` fields plus
+  mandatory same-generation join checks. Worker validation passed
+  `git diff --check` for the RFC 0046 repair and handoff. A fresh
+  operator-ergonomics repair re-review produced
+  `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/REVIEW_operator_ergonomics_repair.md`
+  with verdict `accept` and no remaining B001 blockers.
+- Operator decision `dec_c6bcff2287ad5e24f07a308bb26251f1` accepted the
+  ergonomics repair re-review path at
+  `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/OPERATOR_DECISION_ACCEPT_ERGONOMICS_REPAIR_REVIEW.md`
+  as artifact `art_9f90876ac5914f2887af94e99042c52c`. The original ergonomics
+  `needs_revision` verdict was overridden to `accept_with_findings` as verdict
+  `verdict_aebb1c396d3445a986d016b3b2019737`, resolving
+  `blk_6453bebc5d2141a3a0e4e16eb04c0915`.
+- The findings ledger job is claimed and acknowledged by session
+  `sess_a56973bfbe7e404783d2c0fe5b43c360` with lease
+  `lease_da4f88430fef46bb89a569338cea0467`. It published
+  `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/FINDINGS_LEDGER.md`
+  as artifact `art_a27836a7f0064410a5106dee78a6545a`.
+- The final synthesis job published
+  `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/FINAL_SYNTHESIS.md`
+  as artifact `art_b6fd438a12aa41488cbe26262ada8aaf`.
+- Final Striatum status for `run_169531d5568248ff8f0dfc803d955311`:
+  10 jobs completed, run state `completed`, no claimable jobs, no open
+  blockers, no human checkpoints, and no lost, stale, timed-out, or running
+  processes.
+- Workflow friction recorded: parallel `claim-next` assigned the
+  `alignment-rfc0049` and `alignment-roadmap-index` operator labels to the
+  opposite jobs. The direct worker prompts explicitly instruct those workers to
+  follow the packet job and artifact paths rather than the label.
+- Additional workflow friction recorded: `run summary` was accidentally
+  exported to the scaffold path
+  `striatum/striatum-memory-rfc-alignment-2026-05-14/workflow.json`.
+  The operator restored the workflow JSON from the run/job scaffold and
+  validation now passes again. Gemini then exhausted capacity for
+  `gemini-3.1-pro-preview` before producing the ergonomics review artifact; the
+  operator launched a bounded Codex recovery reviewer for that single artifact
+  and instructed it to record the model-capacity failure explicitly.
+- Additional Striatum CLI friction: for the contract and privacy reviews,
+  `verdict` recorded the accepting verdict and transitioned each job to
+  completed, so the subsequent explicit `complete` calls returned
+  `lease is not active`. No retry is needed for those jobs.
+
 ## Live Operator Addendum: Striatum Memory RFC Execution
 
 - Latest pushed main commit before execution:
