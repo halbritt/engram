@@ -40,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   findings ledger and final synthesis were published, and the run completed with
   no open blockers or checkpoints. Remaining work is carried as promotion,
   implementation, and deferred gate findings.
+- Operator handoff summary for the alignment run was recorded in
+  `OPERATOR_REPORT.md` with the current backlog extracted from the findings
+  ledger for the next operator.
 - RFC 0038 operator UI rework proposal and Striatum implementation workflow
   scaffold, derived from `ENGRAM_UI_REWORK_HANDOFF.md`, covering a three-lane
   UI implementation split plus the normal review cycle augmented with an
