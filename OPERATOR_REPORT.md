@@ -1,6 +1,58 @@
 # Operator Report
 
-Last updated: 2026-05-13
+Last updated: 2026-05-14
+
+## Live Operator Addendum: RFC 0044 And Checkpoint Cleanup
+
+- Main worktree: `/home/halbritt/git/engram`, branch `master`. The local
+  Engram venv reports `striatum 1.35.0`.
+- RFC 0038 UI rework is already pushed to `origin/master` through `ad09a99`
+  (`Implement RFC 0038 operator UI rework`).
+- RFC 0044 original run `run_322110269dfb4ec98fc6f7ea818448c0` is complete.
+  The capability-boundary repair run
+  `run_1aadc5c6bc00434497bc6d9754358a62` completed, the operator decision
+  `dec_e26bc9506a6842e7944134ed0eeb9c2d` accepted the repair with follow-up,
+  and original checkpoint `blk_603d77b8a1364075994f2bf8565478b7` was resolved.
+- RFC 0044 recovery artifacts now include
+  `REPAIR_SYNTHESIS_AND_OPERATOR_DECISION.md`,
+  `OPERATOR_DECISION_RFC0044_REPAIR.md`,
+  `REVIEW_correctness_repair_resolution_codex.md`,
+  `REVIEW_operator_gemini_verdict_recovery.md`, `FINDINGS_LEDGER.md`, and
+  `FINAL_SYNTHESIS.md`. The final synthesis outcome is
+  `accept_with_findings`.
+- RFC 0028 prompt-literal checkpoint
+  `blk_80898b6f841d44d3a37bd8877ac3e60e` was cleared by a narrow operator
+  override using accepted re-review evidence
+  `verdict_48068fa5f263453796852c638324d219`; the replacement verdict on the
+  original focused review is `verdict_05e30e6695ad451eab60cec132c510da`.
+  This does not promote RFC 0028 and does not accept D082.
+- RFC 0027 web-state checkpoint `blk_4d7be5151bec4e18ae6aea672269998f` was
+  cleared by a narrow operator override using accepted re-review evidence
+  `verdict_a4d97e72583e487095afa4e4f8598367`; the replacement verdict on the
+  recovery review is `verdict_9c64e8b2cd98405bb5e2d480f21ebd4b`.
+  Striatum still reports process-adapter blocker
+  `blk_6dd92e18a3da4cc5ac2c4f1445755b99` for the completed re-review job; this
+  remains tracked as https://github.com/halbritt/striatum/issues/7.
+- Historical RFC 0028 missing-verdict blockers
+  `blk_b17b8f9d745845e7871c3c58e627016d`,
+  `blk_21f692125f53493f9c378a3865e51be8`, and
+  `blk_857ee9425c734fcd8eeccb4a6b09ebfa` were resolved as terminal no-op
+  recovery on completed run `run_66ba248f6e4f47e49c130bca866e383f`.
+- Focused review ledgers completed:
+  `docs/reviews/rerun-backlog-focused-reviews-2026-05-13/FOCUSED_REVIEW_LEDGER.md`
+  (`art_49c87c7f54f04ed7b02885b99a848afb`) and
+  `docs/reviews/rerun-backlog-focused-reviews-2026-05-13/FOCUSED_REVIEW_RECOVERY_LEDGER.md`
+  (`art_586fab95a6b64707909b09cfe39a6ea7`).
+- Current Striatum status: no human checkpoints and no running, stale-running,
+  lost, or timed-out processes. The only open blocker is
+  `blk_6dd92e18a3da4cc5ac2c4f1445755b99`. Seven old RFC 0030 review/adversary
+  jobs remain claimable in run `run_68de8953cfe049da8b2216a328fd8e36`, and
+  older downstream jobs remain blocked behind those reviews and an old Phase 4
+  spec-review run.
+- Final local pre-push verification passed: `git diff --check`;
+  RFC 0044-focused tests (`11 passed in 9.37s`); adjacent RFC 0044 regression
+  set (`17 passed in 10.09s`); `make check-refs` (`0 error(s), 5 warning(s),
+  181 check(s) ok`); and `make test` (`590 passed in 276.30s`).
 
 ## Live Operator Addendum: RFC 0038 UI Rework
 
@@ -152,6 +204,66 @@ Last updated: 2026-05-13
 - Concurrent background work in `/home/halbritt/git/engram`: RFC 0044 repair
   workflow `run_1aadc5c6bc00434497bc6d9754358a62` completed with focused
   correctness verdict `accept`; focused RFC 0044 tests passed with 11 tests.
+
+## Live Operator Addendum: RFC 0044
+
+- Main worktree: `/home/halbritt/git/engram`, branch `master`.
+- RFC 0044 run: `run_322110269dfb4ec98fc6f7ea818448c0`.
+  - Terminology handoff completed earlier in session
+    `sess_9df14cab59fa497092ecae8e91adfc9b`.
+  - Implementation lane `sess_249af81e42bc4940879e566c66fda54d`
+    / lease `lease_df0e7b19fc4a411fa5d265fc54d7f94a` exited cleanly
+    from adapter PTY `8704`.
+  - Capability-boundary tests are active in session
+    `sess_08538c90bce143bf94c224ebd1286565` / lease
+    `lease_3ae8f3f221344e7c834e142c2b5797d8` / adapter PTY `58196`;
+    the adapter exited cleanly.
+  - RFC 0044 review lanes are active: boundary/security PTY `72569`,
+    correctness PTY `80970`, and operator-contract Gemini PTY `37152`.
+- UI worktree: `/home/halbritt/git/engram-worktrees/ui-rework-rfc`,
+  branch `engram/rfc0038-ui-rework`.
+  - Scaffold commit `19651c8` added RFC 0038 and its Striatum workflow.
+  - RFC 0038 run `run_468b22aff5e54a9280a867d3c81314e6` completed the
+    shared substrate, interview UI, bench-review UI implementation lanes, and
+    integration evidence.
+  - Four RFC 0038 review lanes are active: ergonomics PTY `39392`, security
+    PTY `37250`, correctness PTY `33225`, and operator-contract retry PTY
+    `42484`.
+- Gemini quota repair: `gemini-3.1-pro-preview` is quota-exhausted until about
+  2026-05-14 12:55 UTC. `gemini-2.5-flash` was verified with a no-data probe
+  and active workflow snapshots plus scaffold files were repaired to use it for
+  the Gemini review lanes.
+- RFC 0044 review outcome: correctness returned `needs_revision` for a
+  single-pair serving-path capability bypass; Gemini review retries exited
+  without recorded verdicts. Repair workflow
+  `run_1aadc5c6bc00434497bc6d9754358a62` is active from
+  `striatum/rfc-0044-capability-boundary-repair-2026-05-13/workflow.json`.
+- Active RFC 0044 repair lane: session
+  `sess_2e1a2fb1c93f4857b1350488be2f44c2`, lease
+  `lease_e9eab74e81ba4c8fad87661363f1daa2`, adapter PTY `59335`.
+- RFC 0038 repair workflow is also active in the UI worktree with repair PTYs
+  `37927`, `28603`, and `22311`.
+- Resume checkpoint: after context compaction, RFC 0044 repair implementation
+  was still running and quiet. `repair_boundary_tests` and
+  `repair_correctness_review` remain blocked on that lane.
+- Repair progress update: the RFC 0044 repair implementation later exited
+  cleanly. `repair_boundary_tests` is running as session
+  `sess_50db16a2144b4c2893d18ba8b11d7720`, lease
+  `lease_31a9e25cb00c418a9d8ee4ae90879a77`, adapter PTY `13200`.
+- Repair re-review update: `repair_boundary_tests` exited cleanly and
+  produced `REPAIR_CAPABILITY_EVIDENCE.md`. Focused correctness re-review is
+  running as session `sess_e0ff277ec73f407db841b4d023826e9f`, lease
+  `lease_9c21ac29eb794adfbde0a1ea2f2bd1e2`, adapter PTY `11163`.
+- RFC 0044 repair outcome: focused correctness re-review completed with
+  verdict `accept`; no findings were recorded. The main worktree was then
+  rebased/fast-forwarded onto `origin/master` at `6e80938`, adding
+  `ENGRAM_UI_REWORK_HANDOFF.md`; autostash reapplied the local RFC 0044 batch.
+- Operator verification after rebase: `git diff --check` passed; focused
+  RFC 0044 tests passed with
+  `PYTHONDONTWRITEBYTECODE=1 ENGRAM_TEST_DATABASE_URL=postgresql:///engram_test .venv/bin/python -m pytest -p no:cacheprovider -q tests/test_striatum_ingest.py tests/test_mcp_stdio.py`
+  reporting `11 passed in 10.14s`.
+- Later closeout: RFC 0038 was completed and pushed to `origin/master` through
+  `ad09a99`; RFC 0044 completed final synthesis in the main worktree.
 - Workflow repair during active runs: Striatum SQLite migration v16 left
   `runs_new` behind in both active repo-local DBs. The local editable Striatum
   checkout was patched to use the existing FK-safe `rebuild_table` helper, both
@@ -162,10 +274,20 @@ Last updated: 2026-05-13
 
 - Repo: `/home/halbritt/git/engram`
 - Branch: `master`
-- Current objective: recover and promote the RFC 0028/RFC 0029 work through legitimate review, rerun Phase 4 gate review with multi-lane evidence, audit older Striatum provenance gaps, and then scaffold/execute the backlog with maximum useful parallelism.
-- Current checkpoint: RFC 0032 recovery implementation is committed as `4c59259` (`Recover RFC 0032 audit findings`); fresh quarantine/rerun scaffolds are committed as `d56cef7` (`Scaffold attested review reruns`); lane-command repair is committed as `6d537cc` (`Fix Striatum lane commands`); Gemini trust automation is committed as `6590970` (`Trust Gemini automation worktrees`); fresh rerun artifacts and checkpoint docs are pushed through `188955c` (`Update rerun outcome notes`); upstream RFC 0033-0037 docs are present at `47677d6` (`Add OutputGuard segmentation RFC`).
-- Sync status: fetched and rebased onto `origin/master` at `47677d6`. The current uncommitted batch sits on top of the remote RFC 0033-0037 documentation.
-- Current local batch: fresh rerun backlog scaffold, completed RFC 0021/RFC 0027/RFC 0028/RFC 0029/Phase 4 backlog outputs, RFC 0044 Engram memory Phase 1 queue scaffold, focused review/recovery/re-review artifacts, refreshed Striatum workflow skill bundles, and current operator report/changelog updates. No workflow has been prepared or started from the RFC 0044 queue.
+- Current objective: land the RFC 0044 Engram memory Phase 1 implementation,
+  repair artifacts, final synthesis, and focused-review checkpoint cleanup as
+  one operator checkpoint.
+- Current checkpoint: RFC 0038 UI work is pushed to `origin/master` through
+  `ad09a99`; the current uncommitted batch sits on top of that commit and
+  includes RFC 0044 implementation files, repair workflow artifacts, final
+  synthesis/ledger artifacts, focused-review ledgers, and operator
+  report/changelog updates.
+- Sync status: main was fast-forwarded to `origin/master` before the local RFC
+  0044 batch was restored. Fetch/rebase again immediately before push.
+- Current local batch: RFC 0044 Engram memory Phase 1 implementation and MCP
+  stdio surface, RFC 0044 repair artifacts and final synthesis, focused
+  RFC 0027/RFC 0028 ledger cleanup, and current operator report/changelog
+  updates.
 
 ## Verified Work
 
@@ -184,9 +306,22 @@ Last updated: 2026-05-13
   `STRIATUM_DAEMON_REQUIRED=0 STRIATUM_TEST_HARNESS=1 .venv/bin/striatum --repo . workflow validate striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/workflow.json --json`; `workflow plan` also passed for the same file. No prepare/start/run command was executed.
 - Rerun backlog focused-review scaffold validation passed with
   `STRIATUM_DAEMON_REQUIRED=0 STRIATUM_TEST_HARNESS=1 .venv/bin/striatum --repo . workflow validate striatum/rerun-backlog-focused-reviews-2026-05-13/workflow.json --json`; `workflow plan` also passed and shows five parallel review jobs followed by a ledger.
-- Striatum workflow skills were refreshed for the project Codex and Claude profiles from Striatum `1.14.0` templates to the current Engram venv `striatum 1.37.0`; skill-bundle doctor warnings are gone.
-- `striatum doctor --verbose` currently reports four open terminal-run blockers: the three known historical RFC 0028 implementation adapter blockers from `run_66ba248f6e4f47e49c130bca866e383f` (`blk_b17b8f9d745845e7871c3c58e627016d`, `blk_21f692125f53493f9c378a3865e51be8`, `blk_857ee9425c734fcd8eeccb4a6b09ebfa`) plus the current RFC 0027 re-review adapter blocker `blk_6dd92e18a3da4cc5ac2c4f1445755b99`.
-- Fresh Striatum status checks show no running, stale-running, lost, or timed-out processes for the landed second-wave runs. RFC 0021, RFC 0027, RFC 0028, and RFC 0029 design remain open only because human checkpoints block downstream jobs after substantive `needs_revision` verdicts.
+- Striatum workflow skills were refreshed for the project Codex and Claude profiles from Striatum `1.14.0` templates to the then-current Engram venv `striatum 1.37.0`; skill-bundle doctor warnings are gone. The main worktree venv now reports `striatum 1.35.0`.
+- Striatum status currently reports no human checkpoints and no running,
+  stale-running, lost, or timed-out processes. The only open blocker is
+  `blk_6dd92e18a3da4cc5ac2c4f1445755b99`, tracked as Striatum issue #7.
+- Historical RFC 0028 terminal-run blockers from
+  `run_66ba248f6e4f47e49c130bca866e383f` were resolved as terminal no-op
+  recovery; RFC 0027/RFC 0028 focused review checkpoints were reconciled
+  with narrow accepted re-review evidence and no promotion decision.
+- RFC 0044 final synthesis completed with outcome `accept_with_findings`;
+  focused review ledgers for `run_6d6d3c3ce51f4b4286bfefad6d4ed09e` and
+  `run_6f98dedd6ce04282984b4931421659a9` completed.
+- Final local pre-push verification for the current RFC 0044/checkpoint batch
+  passed: `git diff --check`; RFC 0044-focused tests (`11 passed in 9.37s`);
+  adjacent RFC 0044 regression set (`17 passed in 10.09s`); `make check-refs`
+  (`0 error(s), 5 warning(s), 181 check(s) ok`); and `make test`
+  (`590 passed in 276.30s`).
 
 ## Completed In Current Checkpoint
 
@@ -222,8 +357,15 @@ Last updated: 2026-05-13
    - In progress: backlog scaffold created under `docs/reviews/rerun-backlog-2026-05-13/`.
    - Done: five parallel worker lanes completed RFC 0028 implementation fixes, RFC 0027 web/privacy fixes, RFC 0021 contract revision, RFC 0029 design revision, and Phase 4 evidence-fix scaffold.
    - Done: a narrow implementation repair fixed the only full-suite failure by making the interview CLI test fixture seed real parent claim/belief rows that match the storage guard's version-triple contract.
-   - Queued only: RFC 0044 tenant-aware Engram memory Phase 1 scaffold created under `striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/`. It queues tenant terminology, implementation, capability-boundary tests, independent reviews, ledger, and synthesis, but it has not been prepared, started, or run.
-   - Done with follow-up recovery: focused review workflow `run_6d6d3c3ce51f4b4286bfefad6d4ed09e` completed its review lanes, then narrow recovery/re-review workflows cleared the RFC 0028 prompt-literal finding and RFC 0027 web-state findings with fresh accepted review evidence. Original historical checkpoints remain documented rather than silently waived.
+   - Done: RFC 0044 tenant-aware Engram memory Phase 1 scaffold was prepared,
+     run, repaired, reviewed, ledgered, and synthesized. The original run
+     `run_322110269dfb4ec98fc6f7ea818448c0` is complete.
+   - Done with follow-up recovery: focused review workflow
+     `run_6d6d3c3ce51f4b4286bfefad6d4ed09e` completed its review lanes, then
+     narrow recovery/re-review workflows cleared the RFC 0028 prompt-literal
+     finding and RFC 0027 web-state findings with fresh accepted review
+     evidence. Original historical checkpoints remain documented rather than
+     silently waived.
 
 ## Completed Parallel Audits
 
@@ -304,13 +446,23 @@ Last updated: 2026-05-13
 
 ## Remaining Operator Work
 
-- Git integration: rebase onto `47677d6` is complete and the batch is committed/pushed as a single operator checkpoint.
-- Focused-review ledger: do not run or synthesize the ledger until the RFC 0028 prompt-literal checkpoint and RFC 0027 recovery checkpoint are explicitly reconciled. The accepted narrow re-reviews are evidence, not promotion decisions.
-- RFC 0028: decide whether the accepted prompt-literal re-review clears checkpoint `blk_80898b6f841d44d3a37bd8877ac3e60e` without promoting D082; D082 remains proposed until a separate decision binding exists.
-- RFC 0027: decide whether accepted web-state re-review artifact `RFC0027_WEB_STATE_RE_REVIEW.md` clears checkpoint `blk_4d7be5151bec4e18ae6aea672269998f`. Striatum issue `#7` blocks clean state reconciliation for run `run_9cadfc4d2e4646848e2d6539c23322b2`.
+- Git integration: fetch/rebase onto `origin/master`, commit this batch as one
+  checkpoint, and push.
+- Striatum workflow friction: keep
+  `blk_6dd92e18a3da4cc5ac2c4f1445755b99` visible until Striatum issue #7
+  provides a clean recovery path for completed-job process blockers.
+- RFC 0030: old run `run_68de8953cfe049da8b2216a328fd8e36` has seven
+  claimable review/adversary jobs and a canceled Claude review that blocks
+  downstream ledger/synthesis work. Quarantine or rerun this in a later
+  operator pass before treating it as current evidence.
+- Older Phase 4 spec-review run `run_7a59159ec4f8442481e62eefc035b515` still
+  has downstream jobs blocked behind incomplete review evidence.
 - Phase 4: continue only on the evidence-fix path. The fresh gate package is bounded, privacy-safe evidence; it does not promote Phase 4 or authorize full-corpus execution.
-- RFC 0044: leave the tenant-aware Engram memory Phase 1 scaffold queued only until explicitly authorized. The terminology/design handoff must precede implementation.
-- Older Striatum state debt remains: completed RFC 0028 implementation blockers, a stale RFC 0030 spec run, and an old Phase 4 spec-review run should be quarantined or rerun in a later operator pass if their provenance cannot be verified.
+- RFC 0044 follow-ups: final synthesis accepted Phase 1 with findings; treat
+  any further expansion beyond the read-only Phase 1 MCP surface as new scoped
+  work.
+- D082/RFC 0028 remains proposed only. The accepted prompt-literal re-review
+  cleared a narrow checkpoint; it is not a promotion decision.
 
 ## Canceled Probe Runs
 
@@ -385,6 +537,6 @@ Last updated: 2026-05-13
 - `D082` is currently only `proposed`; RFC 0028 now has the governed extraction-prompt artifact and accepted focused prompt-literal re-review, but still lacks an accepted decision binding or full promotion review.
 - Phase 4 full-corpus execution remains blocked. The completed multi-lane gate accepted only a bounded evidence package and requires an evidence-fix pass before any bounded Tier 2 preflight.
 - Older Striatum runs still need quarantine or rerun if their provenance cannot be verified.
-- The local Engram venv reports `striatum 1.37.0`. The standalone Striatum repo currently has unrelated dirty work; do not revert or fold that work into the Engram commit.
-- Local Striatum daemon-default behavior requires `STRIATUM_DAEMON_REQUIRED=0 STRIATUM_TEST_HARNESS=1` for scaffold-only validation/plan/status commands in this repo until the operator is ready to use daemon-backed execution. This is validation friction only; the RFC 0044 workflow was not prepared or started.
+- The local Engram venv reports `striatum 1.35.0`. The standalone Striatum repo currently has unrelated dirty work; do not revert or fold that work into the Engram commit.
+- Local Striatum daemon-default behavior requires `STRIATUM_DAEMON_REQUIRED=0 STRIATUM_TEST_HARNESS=1` for scaffold-only validation/plan/status commands in this repo until the operator is ready to use daemon-backed execution. This is validation friction only.
 - Striatum process-adapter recovery has an open bug: `https://github.com/halbritt/striatum/issues/7`. The accepted RFC 0027 re-review evidence exists, but Striatum doctor will continue reporting blocker `blk_6dd92e18a3da4cc5ac2c4f1445755b99` until the tooling can resolve completed-job process blockers.

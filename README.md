@@ -68,6 +68,7 @@ entity/review build.
 | Phase 3 claims + bitemporal beliefs | Implemented and in bounded/full-corpus operational validation. |
 | Phase 4 entity canonicalization + review | Not built yet. |
 | Phase 5 `context_for` + MCP serving | Not built yet. |
+| RFC 0044 Striatum memory Phase 1 | Implemented as optional local application-memory ingest + read-only MCP stdio. |
 
 Phase 3 has already moved through several runtime repair loops. The same-bound
 `pipeline-3 --limit 500` gate completed with zero extraction failures and zero
@@ -132,6 +133,7 @@ Ingest local exports:
 make phase1-ingest-chatgpt PATH=/path/to/chatgpt-export
 make phase1-ingest-claude PATH=/path/to/claude-export-or-zip
 make phase1-ingest-gemini PATH=/path/to/google-takeout
+make phase1-ingest-striatum PATH=/path/to/striatum-bundle REPO=striatum
 ```
 
 Run Phase 2:
@@ -163,6 +165,8 @@ Useful bounded operator commands:
 .venv/bin/python -m engram.cli phase3 run --limit 50
 .venv/bin/python -m engram.cli phase4 smoke --limit 25
 make phase4-smoke LIMIT=25
+.venv/bin/engram describe-corpus striatum
+.venv/bin/engram-mcp-stdio --health-check
 ```
 
 Useful targeted Phase 3 recovery commands:
@@ -209,12 +213,23 @@ Do not edit [docs/schema/README.md](docs/schema/README.md) by hand.
 | ChatGPT JSON export | Implemented | Phase 1 ingestion and Phase 2/3 AI-conversation substrate. |
 | Claude export ZIP/directory | Implemented | Added in Phase 1.5 before LLM-derived stages. |
 | Gemini Google Takeout | Implemented | Added in Phase 1.5 before LLM-derived stages. |
+| Striatum corpus export | Implemented | Optional RFC 0044 local application-memory tenant; read-only raw retrieval only. |
 | Obsidian vault | Schema-reserved / deferred | Not part of current Phase 2 or Phase 3 runs. |
 | MCP live capture | Schema-reserved / deferred | Capture and serving work return in later phases. |
 
 Phase 2 and Phase 3 intentionally operate on the AI-conversation corpus only:
 ChatGPT, Claude, and Gemini. Notes, captures, and Obsidian-derived rows remain
 future scope even where the schema already has room for them.
+
+RFC 0044 adds a separate local `tenant_id='striatum'`,
+`corpus_id='striatum'` application-memory boundary for Striatum operator
+artifacts exported by `striatum corpus export`. The Engram side reads the
+bundle from disk with `engram ingest-striatum --bundle <dir> [--repo <name>]`
+and exposes only four read-only MCP stdio tools through `engram-mcp-stdio`:
+`engram.search`, `engram.fetch_reference`, `engram.describe_corpus`, and
+`engram.health`. The default Striatum operator token has
+`memory.read_striatum` and `memory.describe` only; personal memory remains
+outside that boundary.
 
 ## Stack
 

@@ -126,6 +126,17 @@ def test_interview_active_learning_migration_013_exists_on_disk() -> None:
     assert "fn_gold_label_active_learning_events_append_only" in text
 
 
+def test_rfc0044_migration_014_exists_on_disk() -> None:
+    path = MIGRATIONS_DIR / "014_striatum_tenant_corpus.sql"
+    assert path.exists(), f"missing migration: {path}"
+    text = path.read_text(encoding="utf-8")
+    assert "RFC 0044" in text
+    assert "ADD VALUE IF NOT EXISTS 'striatum'" in text
+    assert "tenant_id" in text
+    assert "corpus_id" in text
+    assert "captures_striatum_external_idx" in text
+
+
 def test_rfc0021_migration_010_applies_via_conn_fixture(conn) -> None:
     """The conftest fixture already runs ``migrate(conn)``; presence of the
     new tables/views is the contract."""
@@ -196,12 +207,58 @@ def test_013_interview_active_learning_state_applies(conn) -> None:
     ).fetchone()[0]
     with pytest.raises(errors.RaiseException) as update_exc:
         conn.execute(
-            "UPDATE gold_label_active_learning_events SET signal_version = 'changed' "
-            "WHERE id = %s",
+            "UPDATE gold_label_active_learning_events SET signal_version = 'changed' WHERE id = %s",
             (event_id,),
         )
     assert update_exc.value.diag.sqlstate == "P0001"
     conn.rollback()
+
+
+def test_014_striatum_tenant_corpus_applies(conn) -> None:
+    source_kind_row = conn.execute("SELECT 'striatum'::source_kind::text").fetchone()
+    assert source_kind_row[0] == "striatum"
+
+    for table in (
+        "sources",
+        "conversations",
+        "messages",
+        "notes",
+        "captures",
+        "segments",
+        "claims",
+        "beliefs",
+    ):
+        columns = {
+            row[0]
+            for row in conn.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = %s
+                """,
+                (table,),
+            ).fetchall()
+        }
+        assert {"tenant_id", "corpus_id"} <= columns
+
+    capture_columns = {
+        row[0]
+        for row in conn.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'captures'
+            """
+        ).fetchall()
+    }
+    assert "bundle_id" in capture_columns
+
+    index_row = conn.execute(
+        "SELECT to_regclass('public.captures_striatum_external_idx') IS NOT NULL"
+    ).fetchone()
+    assert index_row[0] is True
 
 
 def test_migration_checksums_detect_changed_applied_file(conn, tmp_path):

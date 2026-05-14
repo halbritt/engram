@@ -29,6 +29,7 @@ serve = [
 
 [project.scripts]
 engram = "engram.cli:main"
+engram-mcp-stdio = "engram.mcp_stdio:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -8,7 +8,7 @@ SEGMENTER_MODEL ?=
 SEGMENTER_MODEL_ENV := $(if $(SEGMENTER_MODEL),ENGRAM_SEGMENTER_MODEL="$(SEGMENTER_MODEL)",)
 STRIATUM_REPO ?= $(HOME)/git/striatum
 
-.PHONY: install db-up db-down wait-db migrate migrate-docker phase1-ingest-chatgpt phase1-ingest-chatgpt-docker phase1-ingest-claude phase1-ingest-claude-docker phase1-ingest-gemini phase1-ingest-gemini-docker ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker phase2-segment phase2-segment-docker phase2-embed phase2-embed-docker phase2-run phase2-run-docker phase2-run-isolated segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker phase3-extract phase3-extract-docker phase3-consolidate phase3-consolidate-docker phase3-run phase3-run-docker phase3-re-extract phase3-interview-start phase3-interview-resume phase3-interview-history phase3-interview-export phase3-interview-list-sessions phase3-interview-coverage phase3-interview-enable-active-learning phase3-interview-serve phase4-refresh phase4-build-entities phase4-smoke phase4-smoke-docker test test-db test-docker test-db-docker schema-docs check-refs lint format typecheck install-striatum striatum-init phase4-validate phase4-prepare phase4-status phase4-gate-validate phase4-gate-prepare phase4-gate-status phase4-gate-dashboard rfc25-validate rfc25-prepare rfc25-status rfc25-impl-validate rfc25-impl-prepare rfc25-impl-status
+.PHONY: install db-up db-down wait-db migrate migrate-docker phase1-ingest-chatgpt phase1-ingest-chatgpt-docker phase1-ingest-claude phase1-ingest-claude-docker phase1-ingest-gemini phase1-ingest-gemini-docker phase1-ingest-striatum phase1-ingest-striatum-docker describe-corpus ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker phase2-segment phase2-segment-docker phase2-embed phase2-embed-docker phase2-run phase2-run-docker phase2-run-isolated segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker phase3-extract phase3-extract-docker phase3-consolidate phase3-consolidate-docker phase3-run phase3-run-docker phase3-re-extract phase3-interview-start phase3-interview-resume phase3-interview-history phase3-interview-export phase3-interview-list-sessions phase3-interview-coverage phase3-interview-enable-active-learning phase3-interview-serve phase4-refresh phase4-build-entities phase4-smoke phase4-smoke-docker test test-db test-docker test-db-docker schema-docs check-refs lint format typecheck install-striatum striatum-init phase4-validate phase4-prepare phase4-status phase4-gate-validate phase4-gate-prepare phase4-gate-status phase4-gate-dashboard rfc25-validate rfc25-prepare rfc25-status rfc25-impl-validate rfc25-impl-prepare rfc25-impl-status
 
 install: .venv/.installed
 
@@ -59,6 +59,17 @@ phase1-ingest-gemini: install
 phase1-ingest-gemini-docker: install wait-db
 	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make phase1-ingest-gemini-docker PATH=/path/to/google-takeout"; exit 2; fi
 	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli phase1 ingest-gemini "$(EXPORT_PATH)"
+
+phase1-ingest-striatum: install
+	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make phase1-ingest-striatum PATH=/path/to/striatum-bundle [REPO=striatum]"; exit 2; fi
+	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase1 ingest-striatum --bundle "$(EXPORT_PATH)" --repo "$(or $(REPO),striatum)"
+
+phase1-ingest-striatum-docker: install wait-db
+	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make phase1-ingest-striatum-docker PATH=/path/to/striatum-bundle [REPO=striatum]"; exit 2; fi
+	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli phase1 ingest-striatum --bundle "$(EXPORT_PATH)" --repo "$(or $(REPO),striatum)"
+
+describe-corpus: install
+	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli describe-corpus "$(or $(CORPUS),striatum)" $(if $(TENANT),--tenant $(TENANT),)
 
 ingest-chatgpt:
 	@echo "warning: make ingest-chatgpt is deprecated; use make phase1-ingest-chatgpt" >&2

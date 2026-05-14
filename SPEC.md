@@ -17,6 +17,7 @@ corpus-reading process.
 | ChatGPT | JSON export | ingested (3,437 conversations) |
 | Claude | ZIP export | ingested (78 conversations) |
 | Gemini | Google Takeout JSON | ingested (4,401 conversations) |
+| Striatum | RFC 0044 JSONL corpus bundle | optional local application-memory tenant, raw retrieval only |
 | Obsidian | Vault on disk | Phase 1.5+ |
 | MCP capture | Live via MCP tool | Phase 4+ |
 
@@ -48,8 +49,31 @@ prior rows without overwriting them.
 - **Simple weighted scorer in the live path:** no LLM reranker at serve time.
 - **Privacy tiers:** carried on raw rows and derived units. Reclassification
   is a new capture row, not a column update.
+- **Local tenant/corpus boundaries:** `tenant_id` separates local application
+  memories such as `personal` and `striatum`; `corpus_id` separates workloads
+  inside a tenant. This is local isolation under one machine owner, not hosted
+  multi-tenancy.
 - **No outbound network** from any corpus-reading process — enforced at the
   OS level, not just by discipline.
+
+## RFC 0044 Striatum Memory
+
+Striatum integration is an optional augmentation path. Engram does not import
+Striatum or call Striatum commands at runtime; it reads a disk bundle produced
+by `striatum corpus export`.
+
+```sh
+engram ingest-striatum --bundle /path/to/bundle --repo striatum
+engram describe-corpus striatum
+engram-mcp-stdio --tenant striatum --corpus striatum
+```
+
+The MCP stdio server exposes exactly four read-only tools:
+`engram.search`, `engram.fetch_reference`, `engram.describe_corpus`, and
+`engram.health`. Default Striatum operator access grants only
+`memory.read_striatum` for `tenant_id='striatum', corpus_id='striatum'` plus
+`memory.describe`. Personal memory requires `memory.read_personal`; cross-tenant
+and cross-corpus retrieval require explicit Engram-local capabilities.
 
 ## Build order
 

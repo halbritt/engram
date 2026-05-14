@@ -27,6 +27,8 @@ erDiagram
         JSONB score_breakdown
         UUID request_uuid
         TIMESTAMPTZ created_at
+        TEXT tenant_id
+        TEXT corpus_id
     }
     belief_review_actions {
         UUID id PK
@@ -65,6 +67,8 @@ erDiagram
         TEXT model_version
         INT privacy_tier
         JSONB raw_payload
+        TEXT tenant_id
+        TEXT corpus_id
     }
     captures {
         UUID id PK
@@ -78,6 +82,9 @@ erDiagram
         UUID corrects_belief_id
         TEXT content_text
         TIMESTAMPTZ observed_at
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT bundle_id
     }
     claim_audits {
         UUID id PK
@@ -102,6 +109,8 @@ erDiagram
         TIMESTAMPTZ created_at
         TIMESTAMPTZ completed_at
         JSONB raw_payload
+        TEXT tenant_id
+        TEXT corpus_id
     }
     claims {
         UUID id PK
@@ -123,6 +132,8 @@ erDiagram
         INT privacy_tier
         TIMESTAMPTZ extracted_at
         JSONB raw_payload
+        TEXT tenant_id
+        TEXT corpus_id
     }
     consolidation_progress {
         UUID id PK
@@ -146,6 +157,8 @@ erDiagram
         TIMESTAMPTZ resolved_at
         INT privacy_tier
         JSONB raw_payload
+        TEXT tenant_id
+        TEXT corpus_id
     }
     conversations {
         UUID id PK
@@ -158,6 +171,8 @@ erDiagram
         TEXT title
         TIMESTAMPTZ created_at
         TIMESTAMPTZ updated_at
+        TEXT tenant_id
+        TEXT corpus_id
     }
     embedding_cache {
         UUID id PK
@@ -183,6 +198,8 @@ erDiagram
         TIMESTAMPTZ created_at
         TIMESTAMPTZ superseded_at
         JSONB raw_payload
+        TEXT tenant_id
+        TEXT corpus_id
     }
     entity_edges {
         UUID id PK
@@ -199,6 +216,8 @@ erDiagram
         TIMESTAMPTZ created_at
         TIMESTAMPTZ superseded_at
         JSONB raw_payload
+        TEXT tenant_id
+        TEXT corpus_id
     }
     entity_resolution_events {
         UUID id PK
@@ -214,6 +233,8 @@ erDiagram
         INT privacy_tier
         JSONB raw_payload
         TIMESTAMPTZ created_at
+        TEXT tenant_id
+        TEXT corpus_id
     }
     gold_label_active_learning_events {
         UUID id PK
@@ -302,6 +323,17 @@ erDiagram
         TEXT content_text
         TIMESTAMPTZ created_at
         INT sequence_index
+        TEXT tenant_id
+        TEXT corpus_id
+    }
+    migration_checksum_probe_05e1190a8c8b4186a725a968aed0fbb9 {
+        INT id PK
+    }
+    migration_checksum_probe_6666810fc083454daa78e3b70cc53ba1 {
+        INT id PK
+    }
+    migration_checksum_probe_cb40527cc3124e7b8338bc494e43a54d {
+        INT id PK
     }
     notes {
         UUID id PK
@@ -315,6 +347,8 @@ erDiagram
         TIMESTAMPTZ created_at
         TIMESTAMPTZ updated_at
         INT privacy_tier
+        TEXT tenant_id
+        TEXT corpus_id
     }
     pinned_beliefs {
         UUID belief_id PK
@@ -355,6 +389,8 @@ erDiagram
         BOOLEAN is_active
         INT privacy_tier
         TIMESTAMPTZ created_at
+        TEXT tenant_id
+        TEXT corpus_id
     }
     segment_generations {
         UUID id PK
@@ -367,6 +403,8 @@ erDiagram
         TIMESTAMPTZ activated_at
         TIMESTAMPTZ superseded_at
         JSONB raw_payload
+        TEXT tenant_id
+        TEXT corpus_id
     }
     segments {
         UUID id PK
@@ -390,6 +428,8 @@ erDiagram
         INT privacy_tier
         TIMESTAMPTZ created_at
         JSONB raw_payload
+        TEXT tenant_id
+        TEXT corpus_id
     }
     sources {
         UUID id PK
@@ -399,6 +439,9 @@ erDiagram
         TEXT filesystem_path
         TEXT content_hash
         JSONB raw_payload
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT bundle_id
     }
     belief_audit }o--|| beliefs : "belief_id"
     belief_review_actions }o--|| beliefs : "belief_id"
@@ -467,6 +510,8 @@ erDiagram
 | `score_breakdown` | `JSONB` | NO | `'{}'::jsonb` |
 | `request_uuid` | `UUID` | NO | `` |
 | `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
 
 ## belief_review_actions
 
@@ -511,6 +556,8 @@ erDiagram
 | `model_version` | `TEXT` | NO | `` |
 | `privacy_tier` | `INT` | NO | `` |
 | `raw_payload` | `JSONB` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
 
 ## captures
 
@@ -527,6 +574,9 @@ erDiagram
 | `corrects_belief_id` | `UUID` | YES | `` |
 | `content_text` | `TEXT` | YES | `` |
 | `observed_at` | `TIMESTAMPTZ` | YES | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `bundle_id` | `TEXT` | YES | `` |
 
 ## claim_audits
 
@@ -557,6 +607,8 @@ erDiagram
 | `created_at` | `TIMESTAMPTZ` | NO | `now()` |
 | `completed_at` | `TIMESTAMPTZ` | YES | `` |
 | `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
 
 ## claims
 
@@ -581,6 +633,8 @@ erDiagram
 | `privacy_tier` | `INT` | NO | `` |
 | `extracted_at` | `TIMESTAMPTZ` | NO | `now()` |
 | `raw_payload` | `JSONB` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
 
 ## consolidation_progress
 
@@ -610,6 +664,8 @@ erDiagram
 | `resolved_at` | `TIMESTAMPTZ` | YES | `` |
 | `privacy_tier` | `INT` | NO | `` |
 | `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
 
 ## conversations
 
@@ -625,6 +681,8 @@ erDiagram
 | `title` | `TEXT` | YES | `` |
 | `created_at` | `TIMESTAMPTZ` | YES | `` |
 | `updated_at` | `TIMESTAMPTZ` | YES | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
 
 ## embedding_cache
 
@@ -656,6 +714,8 @@ erDiagram
 | `created_at` | `TIMESTAMPTZ` | NO | `now()` |
 | `superseded_at` | `TIMESTAMPTZ` | YES | `` |
 | `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
 
 ## entity_edges
 
@@ -675,6 +735,8 @@ erDiagram
 | `created_at` | `TIMESTAMPTZ` | NO | `now()` |
 | `superseded_at` | `TIMESTAMPTZ` | YES | `` |
 | `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
 
 ## entity_resolution_events
 
@@ -693,6 +755,8 @@ erDiagram
 | `privacy_tier` | `INT` | NO | `` |
 | `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
 | `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
 
 ## gold_label_active_learning_events
 
@@ -802,6 +866,26 @@ erDiagram
 | `content_text` | `TEXT` | YES | `` |
 | `created_at` | `TIMESTAMPTZ` | YES | `` |
 | `sequence_index` | `INT` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+
+## migration_checksum_probe_05e1190a8c8b4186a725a968aed0fbb9
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `INT` | NO | `` |
+
+## migration_checksum_probe_6666810fc083454daa78e3b70cc53ba1
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `INT` | NO | `` |
+
+## migration_checksum_probe_cb40527cc3124e7b8338bc494e43a54d
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `INT` | NO | `` |
 
 ## notes
 
@@ -818,6 +902,8 @@ erDiagram
 | `created_at` | `TIMESTAMPTZ` | YES | `` |
 | `updated_at` | `TIMESTAMPTZ` | YES | `` |
 | `privacy_tier` | `INT` | NO | `1` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
 
 ## pinned_beliefs
 
@@ -870,6 +956,8 @@ erDiagram
 | `is_active` | `BOOLEAN` | NO | `false` |
 | `privacy_tier` | `INT` | NO | `` |
 | `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
 
 ## segment_generations
 
@@ -885,6 +973,8 @@ erDiagram
 | `activated_at` | `TIMESTAMPTZ` | YES | `` |
 | `superseded_at` | `TIMESTAMPTZ` | YES | `` |
 | `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
 
 ## segments
 
@@ -911,6 +1001,8 @@ erDiagram
 | `privacy_tier` | `INT` | NO | `1` |
 | `created_at` | `TIMESTAMPTZ` | NO | `now()` |
 | `raw_payload` | `JSONB` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
 
 ## sources
 
@@ -923,3 +1015,6 @@ erDiagram
 | `filesystem_path` | `TEXT` | YES | `` |
 | `content_hash` | `TEXT` | YES | `` |
 | `raw_payload` | `JSONB` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `bundle_id` | `TEXT` | YES | `` |

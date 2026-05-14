@@ -66,6 +66,18 @@ def _make_ingest_result() -> SimpleNamespace:
     )
 
 
+def _make_striatum_ingest_result() -> SimpleNamespace:
+    return SimpleNamespace(
+        source_id="src-striatum",
+        bundle_id="bundle-123",
+        repo="striatum",
+        records_inserted=1,
+        records_seen=1,
+        records_skipped=0,
+        row_counts={"rfc": 1},
+    )
+
+
 def _make_segment_result(**overrides: int) -> SimpleNamespace:
     base = {"processed": 1, "created": 1, "skipped": 0, "failed": 0}
     base.update(overrides)
@@ -225,6 +237,75 @@ def test_ingest_gemini_accepts_path_option(
 
     assert rc == 0
     assert captured["path"] == tmp_path
+
+
+def test_ingest_striatum_dispatches_to_ingester(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_cli_connect: Any,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_ingest(connection: Any, bundle: Path, *, repo: str) -> SimpleNamespace:
+        captured["conn"] = connection
+        captured["bundle"] = bundle
+        captured["repo"] = repo
+        return _make_striatum_ingest_result()
+
+    monkeypatch.setattr(cli, "ingest_striatum_bundle", fake_ingest)
+
+    rc = cli.main(["ingest-striatum", "--bundle", str(tmp_path), "--repo", "striatum"])
+
+    assert rc == 0
+    assert captured == {"conn": fake_cli_connect, "bundle": tmp_path, "repo": "striatum"}
+
+
+def test_phase1_ingest_striatum_dispatches_to_ingester(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_cli_connect: Any,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_ingest(connection: Any, bundle: Path, *, repo: str) -> SimpleNamespace:
+        captured["conn"] = connection
+        captured["bundle"] = bundle
+        captured["repo"] = repo
+        return _make_striatum_ingest_result()
+
+    monkeypatch.setattr(cli, "ingest_striatum_bundle", fake_ingest)
+
+    rc = cli.main(["phase1", "ingest-striatum", "--bundle", str(tmp_path)])
+
+    assert rc == 0
+    assert captured == {"conn": fake_cli_connect, "bundle": tmp_path, "repo": "striatum"}
+
+
+def test_describe_corpus_dispatches_to_memory_service(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_cli_connect: Any,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeMemoryService:
+        def __init__(self, connection: Any) -> None:
+            captured["conn"] = connection
+
+        def describe_corpus(self, *, tenant_id: str, corpus_id: str) -> dict[str, Any]:
+            captured["tenant_id"] = tenant_id
+            captured["corpus_id"] = corpus_id
+            return {"tenant_id": tenant_id, "corpus_id": corpus_id}
+
+    monkeypatch.setattr(cli, "MemoryService", FakeMemoryService)
+
+    rc = cli.main(["describe-corpus", "striatum"])
+
+    assert rc == 0
+    assert captured == {
+        "conn": fake_cli_connect,
+        "tenant_id": "striatum",
+        "corpus_id": "striatum",
+    }
 
 
 # ---------------------------------------------------------------------------

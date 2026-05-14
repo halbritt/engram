@@ -29,6 +29,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   routes are disabled, configured interview IPv6 loopback POSTs are accepted
   without widening the default Origin allowlist, evidence passed, and fresh
   correctness, security, and ergonomics reviews all returned `accept`.
+- RFC 0044 Engram-side Phase 1 implementation: migration 014 adds
+  `source_kind='striatum'`, local `tenant_id` / `corpus_id` boundaries, and
+  bundle identifiers for Striatum raw captures; `engram ingest-striatum`
+  validates and idempotently ingests Striatum JSONL corpus bundles from disk;
+  `engram describe-corpus` reports authorized corpus metadata; and
+  `engram-mcp-stdio` exposes the four read-only MCP tools
+  `engram.search`, `engram.fetch_reference`, `engram.describe_corpus`, and
+  `engram.health` with Engram-local `memory.*` capability checks.
+- RFC 0044 review, repair, ledger, and final-synthesis artifacts under
+  `docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/`,
+  plus focused-review ledger artifacts that reconcile the RFC 0027/RFC 0028
+  checkpoint cleanup without promoting RFC 0028 or accepting D082.
 - RFC 0028 predicate-intent surfacing implementation is now present in the
   fresh 2026-05-13 author pass: migration 012 adds nullable
   `predicate_vocabulary.subject_kind_hint`, the extractor prompt version is
@@ -276,6 +288,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server slots for the Qwen3.6-35B-A3B-IQ4_XS local model.
 
 ### Fixed
+- Repaired the RFC 0044 single-pair memory serving authorization boundary:
+  `MemoryService.search`, `MemoryService.fetch_reference`, and MCP tool calls
+  now require `memory.read_cross_corpus` for a secondary Striatum corpus and
+  `memory.read_cross_tenant` for a non-primary tenant even when the token lists
+  the target pair as visible. Added service-path and MCP-handler regressions.
 - Hardened extraction benchmark reporting.
 - Closed Phase 3 validation repair failures.
 - Ignored `llama.log` local model output.

@@ -1,0 +1,142 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "rfc-0044-capability-boundary-repair-2026-05-13",
+  "workflow_version": "2026-05-13+capability-repair",
+  "name": "RFC 0044 Capability Boundary Repair",
+  "branch": {
+    "mode": "confirm",
+    "suggested_name": "master",
+    "allow_dirty": true
+  },
+  "coordinator": {
+    "role_id": "implementer",
+    "lane_id": "codex"
+  },
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 1,
+    "require_disjoint_write_scopes": true
+  },
+  "lanes": {
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--dangerously-bypass-approvals-and-sandbox", "-"],
+      "capabilities": ["write", "review", "synthesis"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    }
+  },
+  "roles": {
+    "implementer": {
+      "definition_path": "striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/roles/implementer.md"
+    },
+    "tester": {
+      "definition_path": "striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/roles/tester.md"
+    },
+    "reviewer": {
+      "definition_path": "striatum/rfc-0044-engram-memory-phase1-tenant-isolation-2026-05-13/roles/reviewer.md"
+    }
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "HUMAN_REQUIREMENTS.md", "required": true},
+    {"path": "SPEC.md", "required": true},
+    {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/TENANT_TERMINOLOGY_HANDOFF.md", "required": true},
+    {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/IMPLEMENTATION_HANDOFF.md", "required": true},
+    {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/CAPABILITY_BOUNDARY_EVIDENCE.md", "required": true},
+    {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REVIEW_correctness_codex.md", "required": true},
+    {"path": "docs/process/multi-agent-review-loop.md", "required": true},
+    {"path": "docs/process/project-judgment.md", "required": true},
+    {"path": "CHANGELOG.md", "required": true}
+  ],
+  "cycles": [],
+  "edges": [
+    {"from": "repair_capability_boundary", "on": "completed", "to": "repair_boundary_tests"},
+    {"from": "repair_boundary_tests", "on": "completed", "to": "repair_correctness_review"}
+  ],
+  "jobs": [
+    {
+      "id": "repair_capability_boundary",
+      "type": "build",
+      "title": "Repair RFC 0044 single-pair capability boundary",
+      "role_id": "implementer",
+      "lane_id": "codex",
+      "objective": "Fix the service-path authorization gap where single-pair search/fetch bypasses cross-tenant and cross-corpus capabilities, and add regression tests through the real serving paths.",
+      "task_prompt": {"path": "striatum/rfc-0044-capability-boundary-repair-2026-05-13/prompts/repair_capability_boundary.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REVIEW_correctness_codex.md", "kind": "review"},
+        {"path": "src/engram/memory.py", "kind": "implementation_surface"},
+        {"path": "src/engram/mcp_stdio.py", "kind": "implementation_surface"},
+        {"path": "tests", "kind": "test_surface"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/memory.py",
+          "src/engram/mcp_stdio.py",
+          "tests/test_mcp_stdio.py",
+          "tests/test_striatum_ingest.py",
+          "tests/test_augmentation_boundary.py",
+          "CHANGELOG.md",
+          "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REPAIR_CAPABILITY_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "migrations/", "README.md", "SPEC.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "repair_capability_handoff", "kind": "handoff", "path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REPAIR_CAPABILITY_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "repair_boundary_tests",
+      "type": "test",
+      "title": "Run RFC 0044 repair boundary tests",
+      "role_id": "tester",
+      "lane_id": "codex",
+      "objective": "Run focused service/MCP capability-boundary tests after the repair and publish evidence.",
+      "task_prompt": {"path": "striatum/rfc-0044-capability-boundary-repair-2026-05-13/prompts/repair_boundary_tests.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REPAIR_CAPABILITY_HANDOFF.md", "kind": "handoff"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REPAIR_CAPABILITY_EVIDENCE.md"],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/", "README.md", "SPEC.md", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "repair_capability_evidence", "kind": "test_report", "path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REPAIR_CAPABILITY_EVIDENCE.md", "required": true}
+      ]
+    },
+    {
+      "id": "repair_correctness_review",
+      "type": "review",
+      "title": "Review RFC 0044 capability repair",
+      "role_id": "reviewer",
+      "lane_id": "codex",
+      "objective": "Freshly re-review only the capability-boundary repair against the prior correctness findings.",
+      "task_prompt": {"path": "striatum/rfc-0044-capability-boundary-repair-2026-05-13/prompts/repair_correctness_review.md"},
+      "inputs": [
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REVIEW_correctness_codex.md", "kind": "prior_review"},
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REPAIR_CAPABILITY_HANDOFF.md", "kind": "handoff"},
+        {"path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REPAIR_CAPABILITY_EVIDENCE.md", "kind": "test_report"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REVIEW_capability_repair_codex.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "README.md", "SPEC.md", "CHANGELOG.md", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "repair_correctness_review", "kind": "finding", "path": "docs/reviews/rfc0044-engram-memory-phase1-tenant-isolation-2026-05-13/REVIEW_capability_repair_codex.md", "required": true}
+      ],
+      "review_policy": {
+        "posture": "neutral",
+        "access_scope": "repo_level",
+        "context_policy": "fresh",
+        "instruction": "Review only whether the prior F001/F002 capability-boundary findings are resolved. Do not expand scope unless you see a direct regression caused by the repair."
+      }
+    }
+  ]
+}

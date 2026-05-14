@@ -4,7 +4,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -71,6 +71,7 @@ from engram.interview.render import (
     pick_question,
     rationale_prompt_for,
 )
+from engram.memory import MemoryService
 from engram.migrations import migrate, migration_integrity_errors
 from engram.phase4 import (
     Phase4SchemaPreflightError,
@@ -84,6 +85,13 @@ from engram.phase4 import (
 )
 from engram.progress import upsert_progress
 from engram.segmenter import DEFAULT_RETRIES, apply_reclassification_invalidations, segment_pending
+from engram.striatum_ingest import (
+    IngestConflict as StriatumIngestConflict,
+)
+from engram.striatum_ingest import (
+    StriatumBundleError,
+    ingest_striatum_bundle,
+)
 
 
 class Phase3SchemaPreflightError(RuntimeError):
@@ -129,9 +137,7 @@ def parse_interview_strata_expr(value: str | None) -> dict[str, str]:
             )
         if key not in _INTERVIEW_STRATA_KEYS:
             allowed = ", ".join(sorted(_INTERVIEW_STRATA_KEYS))
-            raise argparse.ArgumentTypeError(
-                f"unknown strata key {key!r}; allowed keys: {allowed}"
-            )
+            raise argparse.ArgumentTypeError(f"unknown strata key {key!r}; allowed keys: {allowed}")
         filters[key] = parsed
     return filters
 
@@ -144,11 +150,9 @@ def _parse_cli_datetime(value: str) -> datetime:
     try:
         parsed = datetime.fromisoformat(normalized)
     except ValueError as exc:
-        raise ValueError(
-            "expected RFC3339 timestamp, e.g. 2026-05-13T12:00:00Z"
-        ) from exc
+        raise ValueError("expected RFC3339 timestamp, e.g. 2026-05-13T12:00:00Z") from exc
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
+        return parsed.replace(tzinfo=UTC)
     return parsed
 
 
@@ -188,6 +192,22 @@ def main(argv: list[str] | None = None) -> int:
         invoked_command="ingest-gemini",
         legacy_replacement="phase1 ingest-gemini",
     )
+
+    striatum_parser = subparsers.add_parser(
+        "ingest-striatum",
+        help="Ingest a local Striatum corpus export bundle",
+    )
+    striatum_parser.add_argument("--bundle", type=Path, required=True)
+    striatum_parser.add_argument("--repo", default="striatum")
+    striatum_parser.set_defaults(invoked_command="ingest-striatum")
+
+    describe_corpus_parser = subparsers.add_parser(
+        "describe-corpus",
+        help="Describe an authorized local Engram corpus",
+    )
+    describe_corpus_parser.add_argument("corpus")
+    describe_corpus_parser.add_argument("--tenant", default=None)
+    describe_corpus_parser.set_defaults(invoked_command="describe-corpus")
 
     segment_parser = subparsers.add_parser(
         "segment",
@@ -382,6 +402,13 @@ def main(argv: list[str] | None = None) -> int:
     phase1_gemini_parser.add_argument("path", nargs="?", type=Path)
     phase1_gemini_parser.add_argument("--path", dest="path_option", type=Path)
     phase1_gemini_parser.set_defaults(command="ingest-gemini")
+    phase1_striatum_parser = phase1_subparsers.add_parser(
+        "ingest-striatum",
+        help="Ingest a local Striatum corpus export bundle",
+    )
+    phase1_striatum_parser.add_argument("--bundle", type=Path, required=True)
+    phase1_striatum_parser.add_argument("--repo", default="striatum")
+    phase1_striatum_parser.set_defaults(command="ingest-striatum")
 
     phase2_parser = subparsers.add_parser(
         "phase2",
@@ -504,21 +531,12 @@ def main(argv: list[str] | None = None) -> int:
         "--strata",
         type=parse_interview_strata_expr,
         default={},
-        help=(
-            "comma-separated sampling filters, e.g. "
-            "stability_class=identity,conf_band=0.6-0.8"
-        ),
+        help=("comma-separated sampling filters, e.g. stability_class=identity,conf_band=0.6-0.8"),
     )
     phase3_interview_start_parser.add_argument("--seed", type=int, default=None)
-    phase3_interview_start_parser.add_argument(
-        "--include-superseded", action="store_true"
-    )
-    phase3_interview_start_parser.add_argument(
-        "--ignore-cooldown", action="store_true"
-    )
-    phase3_interview_start_parser.add_argument(
-        "--ignore-reask-cap", action="store_true"
-    )
+    phase3_interview_start_parser.add_argument("--include-superseded", action="store_true")
+    phase3_interview_start_parser.add_argument("--ignore-cooldown", action="store_true")
+    phase3_interview_start_parser.add_argument("--ignore-reask-cap", action="store_true")
     phase3_interview_start_parser.add_argument(
         "--non-interactive",
         action="store_true",
@@ -552,9 +570,7 @@ def main(argv: list[str] | None = None) -> int:
         default=1,
         help="fail-closed Tier ceiling (default: 1; higher tiers require opt-in)",
     )
-    phase3_interview_export_parser.add_argument(
-        "--format", choices=["jsonl"], default="jsonl"
-    )
+    phase3_interview_export_parser.add_argument("--format", choices=["jsonl"], default="jsonl")
     phase3_interview_export_parser.add_argument("--output", type=Path, default=None)
     phase3_interview_export_parser.set_defaults(command="phase3-interview-export")
 
@@ -567,17 +583,13 @@ def main(argv: list[str] | None = None) -> int:
         choices=["open", "completed", "all"],
         default="all",
     )
-    phase3_interview_list_sessions_parser.set_defaults(
-        command="phase3-interview-list-sessions"
-    )
+    phase3_interview_list_sessions_parser.set_defaults(command="phase3-interview-list-sessions")
 
     phase3_interview_coverage_parser = interview_subparsers.add_parser(
         "coverage",
         help="Show stratum coverage for the gold-label corpus",
     )
-    phase3_interview_coverage_parser.add_argument(
-        "--strata", type=str, required=True
-    )
+    phase3_interview_coverage_parser.add_argument("--strata", type=str, required=True)
     phase3_interview_coverage_parser.set_defaults(command="phase3-interview-coverage")
 
     phase3_interview_active_learning_parser = interview_subparsers.add_parser(
@@ -595,12 +607,8 @@ def main(argv: list[str] | None = None) -> int:
         "serve",
         help="Run the local web UI for the gold-set interview (RFC 0027)",
     )
-    phase3_interview_serve_parser.add_argument(
-        "--host", type=str, default="127.0.0.1"
-    )
-    phase3_interview_serve_parser.add_argument(
-        "--port", type=int, default=8765
-    )
+    phase3_interview_serve_parser.add_argument("--host", type=str, default="127.0.0.1")
+    phase3_interview_serve_parser.add_argument("--port", type=int, default=8765)
     phase3_interview_serve_parser.set_defaults(command="phase3-interview-serve")
 
     phase3_bench_review_parser = phase3_subparsers.add_parser(
@@ -620,9 +628,7 @@ def main(argv: list[str] | None = None) -> int:
     phase3_bench_review_serve_parser.add_argument("--review-db")
     phase3_bench_review_serve_parser.add_argument("--prior-prompt-version", required=True)
     phase3_bench_review_serve_parser.add_argument("--prior-model-version", required=True)
-    phase3_bench_review_serve_parser.add_argument(
-        "--prior-request-profile-version", required=True
-    )
+    phase3_bench_review_serve_parser.add_argument("--prior-request-profile-version", required=True)
     phase3_bench_review_serve_parser.add_argument("--host", type=str, default="127.0.0.1")
     phase3_bench_review_serve_parser.add_argument("--port", type=int, default=8770)
     phase3_bench_review_serve_parser.set_defaults(command="phase3-bench-review-serve")
@@ -721,6 +727,22 @@ def main(argv: list[str] | None = None) -> int:
             with connect() as conn:
                 result = ingest_gemini_export(conn, ingest_path)
             print_ingest_result(result)
+            return 0
+
+        if args.command == "ingest-striatum":
+            with connect() as conn:
+                result = ingest_striatum_bundle(conn, args.bundle, repo=args.repo)
+            print_striatum_ingest_result(result)
+            return 0
+
+        if args.command == "describe-corpus":
+            tenant_id = args.tenant or args.corpus
+            with connect() as conn:
+                description = MemoryService(conn).describe_corpus(
+                    tenant_id=tenant_id,
+                    corpus_id=args.corpus,
+                )
+            print(json.dumps(description, indent=2, sort_keys=True))
             return 0
 
         if args.command == "segment":
@@ -1068,8 +1090,16 @@ def main(argv: list[str] | None = None) -> int:
             )
 
             return run_phase3_bench_review_export(args)
-    except (ChatGPTIngestConflict, ClaudeIngestConflict, GeminiIngestConflict) as exc:
+    except (
+        ChatGPTIngestConflict,
+        ClaudeIngestConflict,
+        GeminiIngestConflict,
+        StriatumIngestConflict,
+    ) as exc:
         print(f"ingest conflict: {exc}", file=sys.stderr)
+        return 1
+    except (StriatumBundleError, FileNotFoundError) as exc:
+        print(f"ingest-striatum: {exc}", file=sys.stderr)
         return 1
     except Phase3SchemaPreflightError as exc:
         print(f"phase3 preflight failed: {exc}", file=sys.stderr)
@@ -1381,6 +1411,20 @@ def print_ingest_result(result) -> None:
         f"{result.conversations_inserted} inserted / {result.conversations_seen} seen"
     )
     print(f"messages: {result.messages_inserted} inserted / {result.messages_seen} seen")
+
+
+def print_striatum_ingest_result(result) -> None:
+    print(f"source_id={result.source_id}")
+    print(f"bundle_id={result.bundle_id}")
+    print(f"repo={result.repo}")
+    print(
+        "striatum records: "
+        f"{result.records_inserted} inserted / {result.records_seen} seen "
+        f"({result.records_skipped} skipped)"
+    )
+    if result.row_counts:
+        counts = ", ".join(f"{kind}={count}" for kind, count in sorted(result.row_counts.items()))
+        print(f"  sub_kind: {counts}")
 
 
 def print_embed_result(result) -> None:
@@ -1921,9 +1965,7 @@ def _run_phase3_interview_prompt_loop(
                 print(f"  {ev_dates_line}")
             excerpts = display.get("excerpts") or []
             if excerpts:
-                for line in format_evidence_excerpts(
-                    excerpts, display.get("evidence_count", 0)
-                ):
+                for line in format_evidence_excerpts(excerpts, display.get("evidence_count", 0)):
                     print(line)
             question = pick_question(target, display)
             print(f"  {question}")
@@ -2064,10 +2106,13 @@ def run_phase3_interview_resume(args) -> int:  # type: ignore[no-untyped-def]
     state = "open" if session.completed_at is None else "completed"
     with connect() as conn:
         targets = unanswered_session_targets(conn, session_id=args.session_id)
-        total = len(targets) + conn.execute(
-            "SELECT count(*) FROM gold_labels WHERE session_id = %s",
-            (args.session_id,),
-        ).fetchone()[0]
+        total = (
+            len(targets)
+            + conn.execute(
+                "SELECT count(*) FROM gold_labels WHERE session_id = %s",
+                (args.session_id,),
+            ).fetchone()[0]
+        )
         if state == "completed":
             print(
                 "phase3 interview resume: "
@@ -2210,8 +2255,7 @@ def run_phase3_interview_export(args) -> int:  # type: ignore[no-untyped-def]
         if payload:
             print(payload)
         print(
-            "phase3 interview export: "
-            f"{len(output_lines)} row(s) (privacy_tier_max={tier_max})",
+            f"phase3 interview export: {len(output_lines)} row(s) (privacy_tier_max={tier_max})",
             file=sys.stderr,
         )
     return 0
@@ -2244,8 +2288,7 @@ def run_phase3_interview_coverage(args) -> int:  # type: ignore[no-untyped-def]
             """,
         ).fetchall()
     print(
-        f"phase3 interview coverage strata={args.strata!r}: "
-        f"{sum(r[1] for r in rows)} row(s) total"
+        f"phase3 interview coverage strata={args.strata!r}: {sum(r[1] for r in rows)} row(s) total"
     )
     for stability_class, count in rows:
         print(f"  {stability_class}: {count}")
@@ -2299,9 +2342,9 @@ def run_phase3_interview_serve(args) -> int:  # type: ignore[no-untyped-def]
         sys.exit(8)
 
     try:
-        from engram.interview.web import app  # noqa: PLC0415 — deferred import
+        import uvicorn
 
-        import uvicorn  # noqa: PLC0415 — deferred import
+        from engram.interview.web import app
     except ImportError as exc:
         print(
             "phase3 interview serve: missing dependency "
