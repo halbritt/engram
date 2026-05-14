@@ -43,6 +43,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Operator handoff summary for the alignment run was recorded in
   `OPERATOR_REPORT.md` with the current backlog extracted from the findings
   ledger for the next operator.
+- Applied alignment findings ledger nonblocking items `AL-N001`, `AL-N002`,
+  `AL-N003`, `AL-N004`, `AL-N005`, `AL-N006`, and `AL-N009` to RFC 0046,
+  RFC 0047, RFC 0048, and RFC 0049 as proposal-text edits: generic
+  `filters.exact_refs` shape on the retrieval request; canonical
+  `omitted[]` audit-event shape with closed reason vocabulary; embedding
+  activation manifest and XOR invariant; `raw_payload` privacy-inheritance
+  rule and EG-060 proposal fixture; `dirty_working_tree` surfacing in
+  retrieval, packet freshness label, and EG-050/EG-110 sub-cases; aligned
+  loopback/local-runtime no-egress wording; and EG-120 disable-control
+  restart/promotion gate cases. The RFC package remains proposal/default-off;
+  promotion still depends on the deferred `AL-D001` RFC 0044 hardening /
+  EG-000 evidence, `AL-D002` recorded acceptance decision, and `AL-D003`
+  Level 3 / default-on authority gates.
 - RFC 0038 operator UI rework proposal and Striatum implementation workflow
   scaffold, derived from `ENGRAM_UI_REWORK_HANDOFF.md`, covering a three-lane
   UI implementation split plus the normal review cycle augmented with an

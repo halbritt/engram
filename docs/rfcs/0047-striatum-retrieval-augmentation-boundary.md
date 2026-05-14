@@ -210,6 +210,9 @@ but the semantics must remain stable.
   "corpus_id": "striatum",
   "filters": {
     "sub_kinds": ["rfc", "review", "synthesis", "handoff"],
+    "exact_refs": [
+      {"ref_kind": "rfc_id", "ref_value": "0044"}
+    ],
     "logical_ids": [],
     "paths": [],
     "run_ids": [],
@@ -264,6 +267,30 @@ but the semantics must remain stable.
 - `filters` should prefer stable RFC 0045 identifiers: `logical_id`,
   `item_id`, `sub_kind`, path, commit, run id, process id, artifact id, issue
   id, blocker id, and source time bounds.
+- `filters.exact_refs` is the generic exact-reference filter shape. Each entry
+  is an object `{"ref_kind": "<kind>", "ref_value": "<value>"}` whose
+  `ref_kind` must come from the closed exact-reference vocabulary defined in
+  RFC 0045 and projected by RFC 0046 (`item_id`, `logical_id`, `version_id`,
+  `path`, `logical_path`, `rfc_id`, `decision_id`, `review_id`, `run_id`,
+  `workflow_id`, `workflow_job_id`, `job_id`, `agent_process_id`,
+  `artifact_id`, `issue_id`, `blocker_id`, `commit_sha`, `branch`, `tag`,
+  `source_hash`, `bundle_id`). RFC 0045 and RFC 0046 remain the authoritative
+  vocabulary owners; if those proposals close additional kinds before
+  promotion, the accepted successor wins. Implementations must reject
+  `exact_refs` entries whose `ref_kind` is outside the accepted vocabulary,
+  rather than silently widening to a substring or vector fallback.
+- The singular convenience fields such as `logical_ids`, `paths`, `run_ids`,
+  `workflow_job_ids`, `job_ids`, `artifact_ids`, `rfc_ids`, `decision_ids`,
+  and `commit_shas` are equivalent shorthands for `{ref_kind, ref_value}`
+  entries with the matching kind. When a caller supplies both an `exact_refs`
+  entry and an equivalent shorthand, the union is queried; no implicit
+  precedence rule is defined here. Filters that cannot be expressed by the
+  closed vocabulary (such as `sub_kinds`, `authority_classes`, and source
+  time bounds) remain explicit fields on `filters`.
+- Exact-reference filtering inherits the RFC 0045/RFC 0046 scoping rule that
+  every lookup is bounded by the authorized `(tenant_id, corpus_id)` pair.
+  Reference values are not globally authoritative and are never authorization
+  grants on their own.
 - `limits` must be bounded. A retrieval request may not ask for unbounded
   result sets or full corpus dumps.
 - `timeout_ms` must be honored by the caller. Late responses are ignored.
@@ -311,6 +338,7 @@ invoked at all.
       "score": 0.91,
       "score_breakdown": {},
       "privacy_tier": 1,
+      "dirty_working_tree": false,
       "classification": {
         "evidence_kind": "raw",
         "stability_class": "decision",
@@ -362,6 +390,16 @@ invoked at all.
 - Every result must include `reference_id`, `tenant_id`, `corpus_id`,
   `source_kind`, `sub_kind`, `privacy_tier`, score or ordering basis, and
   citation.
+- Every result must surface a `dirty_working_tree` boolean that mirrors the
+  underlying projection row's `source_dirty_working_tree` value (RFC 0046
+  `docs/rfcs/0046-striatum-projection-index-schema.md` § Dirty working tree
+  projection rules). The field must be present on every visible result row;
+  it must not be omitted, defaulted to `false`, or inferred from absence.
+  Dirty evidence must not be returned with `dirty_working_tree=false` and
+  must not be presented as clean committed state. The field inherits the
+  parent item's privacy tier and remains visibility-scoped: unauthorized,
+  `no_data`, and pair-mismatch responses carry no result rows and therefore
+  carry no `dirty_working_tree` flag.
 - Every result that enters prompt or artifact context must include an RFC
   0045-compatible `item_id`, `logical_id`, `version_id`, and at least one
   retraceable provenance pointer.
@@ -377,6 +415,41 @@ invoked at all.
   malformed retrieval evidence, but they must not be presented as memory.
 - Current repository state and explicit work packets outrank memory when they
   disagree. Retrieved memory may be stale.
+- `omitted[]` carries one entry per candidate that the retrieval/augmentation
+  path considered and did not return as a selected result. Each entry uses
+  the canonical omission audit event shape defined in RFC 0048
+  [Omission Audit Event Shape](0048-striatum-context-injection-policy.md#omission-audit-event-shape),
+  with `selected=false`, a `reason` drawn from the closed RFC 0048 vocabulary,
+  and lineage and ranking fields covering candidate `candidate_id`, retrieval
+  lane, projection family, projection generation, rank, score, freshness
+  label, privacy tier, and redaction state. `warnings[]` may surface
+  operator-facing summaries derived from omitted entries but must not leak
+  fields the caller is not authorized to read.
+- `omitted[]` is privacy-safe local audit material. Entries for candidates
+  whose underlying row is above the caller's allowed privacy tier,
+  unauthorized, pair-mismatched, or hidden by redaction must use opaque
+  request-local `candidate_id` values and must omit or null `reference_id`,
+  `item_id`, `logical_id`, `version_id`, projection row ids, chunk ids,
+  chunk hashes, bundle ids, paths, labels, and source-time bounds, per RFC
+  0048. The `omitted[]` array is for local audit reconstruction; it must
+  not be exported off-host, sent to hosted services, or used as
+  authorization evidence.
+- The closed RFC 0048 omission reason vocabulary may not be extended on the
+  retrieval wire without an accepted RFC 0048 change; see RFC 0048's
+  extension rule.
+- Every projection `raw_payload` value inherits the parent item's
+  `privacy.privacy_tier`, `privacy.redaction_state`, `privacy.withheld_fields`,
+  and `visibility` (`visibility.default_visible_to` and
+  `visibility.requires_capabilities`) as exported by RFC 0045 and projected
+  by RFC 0046. Response fields derived from `raw_payload` are not part of
+  the response unless the upstream RFC 0045/RFC 0046 contract explicitly
+  whitelists them, and any retrieval-visible `raw_payload`-derived field
+  that would exceed the caller's authorized privacy tier, redaction state,
+  or visibility is forbidden. `unauthorized`, `no_data`, and tenant/corpus
+  pair-mismatch responses must omit or null `raw_payload`-derived fields on
+  the same terms as other inventory metadata, and `omitted[]` entries must
+  not carry `raw_payload`-derived content above the reviewing tier. RFC
+  0049 EG-060 carries the matching gate fixture.
 
 ## Failure Behavior
 
@@ -424,14 +497,29 @@ memory status and the packet proceeds without augmentation.
 
 Any process that reads Engram corpus content must be local-only and no-egress:
 
-- no HTTP client for corpus-serving paths;
-- no DNS lookup requirement;
+- no external or non-loopback HTTP client on corpus-serving paths, and no
+  remote egress of corpus content under any circumstance;
+- loopback HTTP or local-runtime clients (for example a local model runtime,
+  local embedding server, Ollama, ik-llama, or another local helper service)
+  are permitted only when the receiving endpoint is named, binds to
+  `127.0.0.1`, `::1`, or a local Unix socket, receives corpus content only
+  inside the local no-egress boundary, and has paired no-egress evidence for
+  the receiving runtime or shares the caller's sandbox boundary, as required
+  by RFC 0049 EG-020;
+- no DNS lookup requirement for corpus-serving paths;
 - no hosted model call;
 - no cloud embedding or reranking API;
 - no telemetry, crash reporting, analytics, or usage beacon;
 - no hosted persistence or remote cache;
 - no web search from Engram;
 - no network-accessible Engram MCP server.
+
+The loopback/local-runtime exception is strictly local-runtime: Engram is
+no-cloud and no-egress, so loopback-to-local-runtime is allowed but no remote
+egress of corpus content, embedding input, prompts, or audit data is ever
+permitted. Any local runtime that receives corpus text inherits the
+corpus-reading scope and must itself have paired no-egress evidence under
+RFC 0049 EG-020.
 
 MCP stdio is the default boundary. A future loopback HTTP API may be reviewed
 only if it preserves the no-egress corpus-reading property, binds locally, and
@@ -501,7 +589,10 @@ Every injected result must carry:
 - commit, blob hash, content hash, record hash, bundle id, run id, process id,
   artifact id, issue id, blocker id, or bundle integrity hash where available;
 - `privacy_tier`, redaction state where exposed, confidence, stability class,
-  and authority class.
+  and authority class;
+- `dirty_working_tree` boolean for the result row, so renderings can mark
+  dirty working-tree evidence distinctly from evidence tied only to committed
+  Git objects.
 
 Prompt and artifact renderings must label memory separately from current
 instructions. A recommended rendering shape is:
@@ -511,12 +602,25 @@ Memory result: <short claim or excerpt>
 Citation: tenant=striatum corpus=striatum sub_kind=rfc logical_id=rfc:0044
 path=docs/rfcs/0044-engram-phase-1-implementation-spec.md lines=1-40
 commit=<sha-or-null> bundle_id=striatum.bundle:<stable-local-id>
-bundle_sha256=sha256:<hex>
+bundle_sha256=sha256:<hex> dirty_working_tree=<true|false>
 ```
+
+When `dirty_working_tree=true`, the rendering must keep that marker adjacent
+to the citation. Renderings must not drop the marker, present a dirty result
+without it, or imply the citation refers to a clean committed state when the
+result row carries dirty working-tree provenance.
 
 Retrieved memory must not be rewritten into an uncited assertion. If the
 operator or an agent acts on memory, the artifact should preserve the citation
 next to the claim or explicitly state that no memory was available.
+
+Citations and result fields must not draw content from a projection
+`raw_payload` value above the caller's authorized privacy tier, redaction
+state, or visibility. `raw_payload` inherits the parent item's
+`privacy.privacy_tier`, `privacy.redaction_state`, `privacy.withheld_fields`,
+and `visibility` as exported by RFC 0045 and projected by RFC 0046; see the
+Response Contract clause above and RFC 0049 EG-060 for the matching gate
+fixture.
 
 ## Freshness And Truthfulness
 
@@ -540,6 +644,11 @@ Rules:
 - Low-confidence or generated-summary results must keep confidence visible.
 - A retrieved result must not imply full coverage of Striatum history unless
   the corpus contract and freshness metadata support that claim.
+- Dirty working-tree evidence is a distinct freshness concern from staleness.
+  Result rows projected from RFC 0046 dirty rows must surface
+  `dirty_working_tree=true`, and the rendering must keep that marker adjacent
+  to the citation. Dirty evidence is never reclassified as clean committed
+  state, and a clean-looking citation may not accompany a dirty-tree excerpt.
 
 ## Cache, Rebuild, And Invalidation Rules
 

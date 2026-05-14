@@ -259,9 +259,126 @@ A retrieval result may enter context only if all of these checks pass:
     only as an explicit stale/conflict warning.
 
 Ineligible results must be omitted with a policy reason code in the audit trail.
-They must not be silently rewritten into uncited summary prose.
+They must not be silently rewritten into uncited summary prose. The canonical
+shape of an omission audit entry, the closed reason vocabulary, and the
+extension rule are defined in
+[Omission Audit Event Shape](#omission-audit-event-shape) below. RFC 0047
+omitted entries on the retrieval wire and RFC 0049 audit reconstruction gates
+both reference that definition.
 
-Suggested omission reason codes:
+Every projection `raw_payload` value inherits the parent item's
+`privacy.privacy_tier`, `privacy.redaction_state`, `privacy.withheld_fields`,
+and `visibility` (`visibility.default_visible_to` and
+`visibility.requires_capabilities`) as exported by RFC 0045 and projected by
+RFC 0046. Context injection must not include excerpts, summaries, citations,
+or display fields derived from `raw_payload` that would exceed the caller's
+authorized privacy tier, redaction state, or visibility. `raw_payload`-derived
+content is injectable only when the upstream RFC 0045/RFC 0046 contract
+whitelists the specific field for retrieval exposure and the field's
+inherited constraints are within caller authorization; otherwise the result
+is ineligible and is omitted with the same policy reason codes used for
+above-tier or redacted material. RFC 0049 EG-060 carries the matching gate
+fixture.
+
+## Omission Audit Event Shape
+
+This section is the canonical definition for omission entries used by RFC 0047
+response `omitted[]` arrays, RFC 0048 packet audit records, and RFC 0049 audit
+reconstruction gates (EG-080, EG-110). Other RFCs in this package reference
+this section rather than redefining the shape.
+
+Every omitted candidate is recorded as a privacy-safe local audit event. The
+event must let a later reviewer reconstruct which candidate was considered,
+which retrieval lane and projection generation produced it, how it scored, and
+why it was omitted, without leaking source identity above the reviewing
+caller's privacy tier.
+
+### Entry Fields
+
+Each omission entry must carry:
+
+```text
+candidate_id              opaque request-local id; stable for this request only
+selected                  false for omitted entries; true for selected
+reason                    omission reason code from the closed vocabulary below
+reason_detail             optional short string; must not leak hidden identity
+lineage:
+  retrieval_lane          exact_reference | structured | lexical | vector
+  projection_family       e.g., striatum_items, striatum_chunks
+  projection_generation_id
+  projection_row_id       when visible to the reviewing tier
+  item_projection_id      when visible to the reviewing tier
+  chunk_id                when visible to the reviewing tier
+  chunk_sha256            when visible to the reviewing tier
+  chunk_bounds            line/char/token bounds when visible
+  bundle_id               opaque bundle id when visible
+  source_kind             when visible to the reviewing tier
+  reference_id            when visible to the reviewing tier
+  item_id                 RFC 0045 item identity when visible to the reviewing tier
+  logical_id              when visible to the reviewing tier
+  version_id              when visible to the reviewing tier
+ranking:
+  rank                    1-based pre-omission rank within the retrieval lane
+  score                   raw retrieval score for the lane
+  score_breakdown         optional per-input scores
+  ranking_profile         identifier for the ranking inputs used
+labels:
+  freshness               fresh | stale | unknown | current_state_conflict | index_stale
+  privacy_tier            integer tier of the candidate
+  redaction_state         none | redacted | withheld | synthetic_summary
+  authority_class         when visible to the reviewing tier
+  stability_class         when visible to the reviewing tier
+  confidence              when visible to the reviewing tier
+conflict_with:            optional, present for current_state_conflict and
+                          stale_rejected with a conflict
+  current_authority_kind  packet | repository_path | accepted_decision |
+                          striatum_state | operator_instruction
+  current_authority_id    `logical_id`, accepted decision id, packet id,
+                          repository path, or `null` when not visible to the
+                          reviewing tier
+```
+
+`candidate_id` is request-local and opaque. It must not be a hash of, or
+otherwise derived from, fields the reviewing caller is not authorized to read.
+Selected candidates use the same shape with `selected=true` and an empty
+`reason`.
+
+### Privacy-Safe Local Audit
+
+Omission audit events are local-only state. They must not be exported to
+hosted services, telemetry endpoints, remote caches, or any non-loopback
+network destination. Engram-side audit storage and Striatum-side packet
+provenance copies both stay inside the same no-egress boundary required of
+corpus-reading processes.
+
+Audit entries inherit the maximum privacy tier and redaction constraints of
+the candidates they identify. A lower-tier reviewer must receive only the
+opaque, redacted, or scrubbed projection of an entry whose underlying
+candidate sits above that reviewer's allowed tier. In particular:
+
+- omit or null `reference_id`, `item_id`, `logical_id`, `version_id`,
+  `projection_row_id`, `item_projection_id`, `chunk_id`, `chunk_sha256`,
+  `bundle_id`, `chunk_bounds`, and any path-shaped detail in `reason_detail`
+  when the underlying candidate is above the reviewing tier, unauthorized,
+  pair-mismatched, or hidden by redaction;
+- omit or null `authority_class`, `stability_class`, `confidence`, source
+  time bounds, freshness watermarks, hidden corpus labels, and row counts
+  for those entries;
+- keep the `candidate_id`, `selected` flag, `reason`, retrieval lane,
+  projection family, projection generation id, rank, score, freshness
+  label, privacy tier, and redaction state visible so reconstruction can
+  still explain that an entry existed and why it was omitted.
+
+Conflict warnings rendered into a packet must use only fields the rendering
+caller is authorized to read. The audit entry may still carry the full
+`conflict_with` block for higher-tier reconstruction, but lower-tier renders
+must redact `current_authority_id` when it would leak a hidden path,
+operator-private label, or higher-tier identity.
+
+### Closed Omission Reason Vocabulary
+
+The minimum closed vocabulary used by RFC 0047 omitted entries, RFC 0048
+audit trails, and RFC 0049 gate coverage is:
 
 ```text
 disabled
@@ -284,13 +401,57 @@ unsupported_surface
 generated_product_blocked
 ```
 
-`identity_leak` covers source identity, repository label, instance label, or
-path-shaped fields that would reveal data above the caller's tier.
-`citation_leak` covers reference payloads, line hints, display identifiers, or
-other citation material that would reveal hidden corpus or higher-tier source
-identity. `generated_product_blocked` covers generated memory products withheld
-until a separate accepted privacy-inheritance, citation, audit, and gate
-contract exists.
+This vocabulary is closed in the sense that implementations must use one of
+these codes for every omission in the covered surfaces and may not emit
+ad-hoc free-text reasons in the `reason` field. Until RFC 0049 produces
+passing gate evidence (EG-060, EG-080, EG-090, EG-110) for each code under
+the surfaces it gates, this list is a proposal subject to RFC 0049 review;
+codes that gate evidence does not exercise remain proposal-only.
+
+Code semantics:
+
+- `disabled`: retrieval was disabled at run/session/packet/purpose scope.
+- `unavailable`: Engram was missing, unhealthy, or could not be reached.
+- `unauthorized`: the candidate's pair was not authorized for the caller.
+- `timeout`: the candidate arrived after the request timeout.
+- `malformed`: the candidate failed schema or invariant validation.
+- `pair_mismatch`: the candidate's stored pair did not match the request pair.
+- `privacy_tier_exceeded`: the candidate's privacy tier is above the caller.
+- `redaction_withheld`: the candidate is `withheld`; only a notice may appear.
+- `missing_citation`: the candidate lacks citation fields sufficient for
+  `fetch_reference`.
+- `identity_leak`: an identity field, instance/repository label, or
+  path-shaped field would reveal data above the caller's tier.
+- `citation_leak`: a citation, reference payload, line hint, or display
+  identifier would reveal an absolute path, operator-private label, hidden
+  corpus identity, or higher-tier source identity.
+- `stale_rejected`: the candidate exceeded the request freshness policy.
+- `current_state_conflict`: the candidate disagrees with current authority.
+- `low_score`: the candidate fell below the lane's quality threshold.
+- `over_budget`: the candidate did not fit the surface token or result cap.
+- `duplicate`: the candidate duplicates a higher-precedence entry.
+- `unsupported_surface`: the candidate's surface is not eligible for the
+  requested purpose.
+- `generated_product_blocked`: the candidate is a generated memory product
+  ineligible for Level 2 or Level 3 injection until the separate accepted
+  generated-product contract exists.
+
+### Extension Rule
+
+The vocabulary may be extended only through this RFC or an accepted
+successor. New codes must:
+
+1. land in this section with a defined semantic;
+2. be added to the closed list, not appended ad-hoc by implementations;
+3. ship with matching gate coverage in RFC 0049 (or an accepted successor)
+   under the surfaces they gate, before the new code is allowed in audit
+   reconstruction for those surfaces;
+4. preserve the privacy-safe local audit posture above.
+
+Until an extension is accepted, implementations encountering an omission
+that does not fit any existing code must use the closest defensible code
+plus `reason_detail` (subject to the lower-tier redaction rules above) and
+file a follow-up to extend the vocabulary.
 
 ## Section Labels And Packet Shape
 
@@ -332,8 +493,23 @@ excerpt or summary:
   logical_id=<logical-id> version_id=<version-id> ref=<reference-id>
   path=<logical-path> lines=<start-end-or-null> bundle=<bundle-or-null>
   authority=<authority_class> stability=<stability_class>
-  confidence=<value-or-null> freshness=<fresh|stale|unknown>
+  confidence=<value-or-null>
+  freshness=<fresh|stale|unknown|current_state_conflict|index_stale|dirty_working_tree>
+  dirty_working_tree=<true|false>
 ```
+
+The `dirty_working_tree` field mirrors the RFC 0047 result row's
+`dirty_working_tree` boolean, which itself mirrors the RFC 0046 projection
+row's `source_dirty_working_tree` value (RFC 0046 § Dirty working tree
+projection rules). When the underlying result row is dirty, the packet
+builder must render the item with `dirty_working_tree=true` and the
+`freshness=dirty_working_tree` label adjacent to the citation. The label
+must not be replaced with `fresh`, dropped, or softened into a generic
+staleness marker. Dirty and stale are distinct freshness concerns: a dirty
+row may also be stale, in which case both concerns apply, the
+`dirty_working_tree` flag remains `true`, and the stale label is surfaced
+through the usual stale/conflict warning path rather than by overwriting
+the dirty freshness label.
 
 If a summary merges multiple results, each claim in the summary must retain at
 least one citation. Do not collapse a cited set into a citation-free paragraph.
@@ -455,6 +631,15 @@ Rules:
 - Redacted content must keep its `redaction_state` label.
 - Unauthorized and not-found diagnostics should avoid leaking hidden personal
   corpus names, counts, paths, or freshness metadata.
+- Every projection `raw_payload` value inherits the parent item's
+  `privacy.privacy_tier`, `privacy.redaction_state`, `privacy.withheld_fields`,
+  and `visibility` (`visibility.default_visible_to` and
+  `visibility.requires_capabilities`) as exported by RFC 0045 and projected
+  by RFC 0046. Excerpts, summaries, citations, or display fields derived
+  from `raw_payload` that would exceed the caller's authorized privacy tier,
+  redaction state, or visibility are forbidden in injected context and are
+  omitted with the same policy reason codes used for above-tier or redacted
+  material. RFC 0049 EG-060 carries the matching gate fixture.
 
 Manual and automatic augmentation use the same authorization rules.
 
@@ -514,6 +699,8 @@ Freshness inputs:
 - bundle source time bounds and watermarks;
 - RFC 0046 projection generation status and activation time;
 - invalidation status and stale-index health checks;
+- RFC 0046 `source_dirty_working_tree` state on the projection row, surfaced
+  through the RFC 0047 result row's `dirty_working_tree` boolean;
 - current repository file state, current git history, and current packet
   content;
 - authority class and stability class.
@@ -527,6 +714,13 @@ Default behavior:
   memory and may be shown only as a conflict warning.
 - Unknown freshness is allowed only for manual search or for low-risk context
   where the item is explicitly labeled `freshness=unknown`.
+- Dirty working-tree evidence must be labeled `freshness=dirty_working_tree`
+  with `dirty_working_tree=true`, never relabeled as `fresh`, and never
+  collapsed into the generic `stale` label. Dirty status is independent of
+  staleness: a dirty row may also be stale, in which case both concerns
+  apply, the `dirty_working_tree` flag remains `true`, and stale handling
+  follows the usual stale/conflict path without overwriting the dirty
+  freshness label.
 - V1 raw-only bundles must not be treated as projection-ready for RFC 0046
   surfaces unless a reviewed compatibility adapter supplies the required
   metadata.
@@ -541,6 +735,7 @@ freshness=stale
 freshness=unknown
 freshness=current_state_conflict
 freshness=index_stale
+freshness=dirty_working_tree
 ```
 
 ## Disabled, Unavailable, Timeout, And Error Behavior
@@ -634,21 +829,46 @@ Record at least:
 - bundle ids or projection generation ids;
 - selected `reference_id`, `item_id`, `logical_id`, `version_id`, and
   projection/chunk ids where available;
-- candidate-level selected/omitted status using request-local candidate ids
-  where source identity is not visible to the reviewing tier;
+- candidate-level selected and omitted entries using the canonical shape from
+  [Omission Audit Event Shape](#omission-audit-event-shape) above, including
+  request-local `candidate_id`, retrieval lane, projection family, projection
+  generation, rank, score, freshness label, privacy tier, redaction state,
+  and (for omitted entries) the closed-vocabulary `reason`;
+- the `dirty_working_tree` boolean for every selected candidate and for
+  every visible omitted candidate, mirrored from the RFC 0046 projection
+  row's `source_dirty_working_tree` value and the RFC 0047 result row's
+  `dirty_working_tree` field, so audit reconstruction can show which
+  injected or omitted items derived from dirty working-tree evidence and
+  which derived only from committed Git objects; the boolean inherits the
+  parent item's privacy tier and is omitted only when the candidate itself
+  is opaque to the reviewing tier under the
+  [Omission Audit Event Shape](#omission-audit-event-shape) rules;
 - token budget, estimated token use, result counts, and truncation decisions;
-- omitted result reason codes;
-- stale/conflict labels;
+- stale/conflict labels and `conflict_with` blocks for conflict-driven
+  omissions;
 - privacy/redaction labels.
 
 Audit records inherit the maximum privacy tier and redaction constraints of the
-selected or omitted candidates they identify. Lower-tier audit views must use
-opaque request-local candidate ids for unauthorized, pair-mismatched,
-higher-tier, redacted, or otherwise hidden omitted candidates rather than
-leaking item ids, logical ids, paths, labels, bundle ids, source-time bounds,
-counts, freshness metadata, or corpus inventory. Reconstruction for a lower-tier
-caller receives only the redacted or opaque omission evidence that caller is
-authorized to see.
+selected or omitted candidates they identify, per
+[Omission Audit Event Shape](#omission-audit-event-shape). Lower-tier audit
+views must use opaque request-local candidate ids for unauthorized,
+pair-mismatched, higher-tier, redacted, or otherwise hidden omitted candidates
+rather than leaking item ids, logical ids, paths, labels, bundle ids,
+source-time bounds, counts, freshness metadata, or corpus inventory.
+Reconstruction for a lower-tier caller receives only the redacted or opaque
+omission evidence that caller is authorized to see.
+
+Audit records and any audit storage are subject to the same local-only,
+no-egress, and tenant/corpus-isolation rules as retrieval projections.
+Audit-storage backends must remain on-host and must not introduce a hosted
+service, cloud API, remote persistence, telemetry sink, or any other
+network-accessible dependency that would transmit audit content off the
+machine. The loopback-to-local-runtime exception that RFC 0047 and RFC 0049
+EG-020 permit on corpus-reading paths does not authorize remote audit egress;
+loopback access is allowed only for local-runtime audit consumers that
+themselves carry paired no-egress evidence. This restates the audit-storage
+constraint that RFC 0049 EG-110 enforces at gate level so it is not lost
+when an implementer reads only this policy.
 
 Striatum may preserve a per-run copy of the injected section as provenance for
 what an operator or agent saw. That copy is not readiness state, not a future
@@ -711,8 +931,10 @@ instructions.
   defined.
 - Manual paste-through is treated as explicit cited memory injection, not a
   bypass around packet policy.
-- Section labels, memory item shape, status labels, and omission reason codes
-  are defined.
+- Section labels, memory item shape, status labels, and the canonical
+  omission audit event shape (including the closed reason vocabulary, the
+  extension rule, lineage fields, ranks/scores, and privacy-safe local audit
+  posture) are defined and referenced by RFC 0047 and RFC 0049.
 - Current authority outranks retrieved memory, and current canonical docs
   outrank stale brainstorms.
 - Accepted syntheses outrank unsynthesized reviews.

@@ -4,22 +4,33 @@ Last updated: 2026-05-14
 
 ## Handover Summary
 
-- Current branch state is complete and pushed: `master` is at `47c00c4`
-  (`Complete Striatum memory RFC alignment`) and matches `origin/master`.
-- The Striatum alignment run `run_169531d5568248ff8f0dfc803d955311` is
-  completed with no open blockers or human checkpoints.
-- The next operator should treat the findings-ledger items below as the active
-  backlog, in order of implementation/promotion relevance:
-  `AL-N001` exact-reference request shape, `AL-N002` omitted-candidate/audit
-  continuity, `AL-N003` embedding activation/skip invariant, `AL-N004`
-  `raw_payload` privacy inheritance, `AL-N005` dirty-state retrieval
-  surfacing, `AL-N006` audit/no-egress wording alignment, `AL-N009`
-  disable-control restart/promotion coverage, and the deferred
-  `AL-D001`/`AL-D003`/`AL-D004` authority gates.
+- Current branch state: `master` HEAD is at `92914e9`
+  (`Record operator handoff backlog`); working tree carries unstaged
+  proposal-text edits to RFC 0046, RFC 0047, RFC 0048, and RFC 0049 from the
+  alignment-findings backlog (see below). Pending human review and commit.
+- The Striatum alignment run `run_169531d5568248ff8f0dfc803d955311` remains
+  completed with no open blockers or human checkpoints; the ledger artifacts
+  under `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/` are unchanged.
+- Backlog status: alignment-findings nonblocking items `AL-N001`, `AL-N002`,
+  `AL-N003`, `AL-N004`, `AL-N005`, `AL-N006`, and `AL-N009` have been applied
+  as proposal-text edits to the four target RFCs. The work was delegated to
+  seven parallel worktree-isolated coordinator-spawned agents (one per
+  finding); no Striatum role-session bylines or workflow verdicts were
+  produced or claimed. `make check-refs` returns 0 errors and the same five
+  pre-existing warnings as prior to the edits.
+- The next operator should: (1) review the unstaged RFC edits and decide on
+  commit, (2) decide whether to queue a separate promotion packet for these
+  edits or batch with the remaining nonblocking items (`AL-N007`, `AL-N008`,
+  `AL-N010`-`AL-N015` from the ledger were not in this backlog), and
+  (3) progress the deferred authority gates: `AL-D001` RFC 0044 hardening /
+  EG-000 evidence, `AL-D002` recorded acceptance decision, `AL-D003` Level 3
+  default-on authorization, and `AL-D004` generated-product contract.
+- The RFC package remains proposal/default-off. These edits do not authorize
+  implementation, schemas, migrations, generated docs, runtime behavior, or
+  default-on Striatum memory use.
 - If the next operator needs a single starting point, use
   [docs/reviews/striatum-memory-rfc-alignment-2026-05-14/FINDINGS_LEDGER.md](/home/halbritt/git/engram/docs/reviews/striatum-memory-rfc-alignment-2026-05-14/FINDINGS_LEDGER.md)
-  and then decide whether to queue a promotion packet or continue with RFC 0044
-  hardening evidence.
+  for full disposition context.
 
 ## Live Operator Addendum: Striatum Memory RFC Alignment Follow-up
 

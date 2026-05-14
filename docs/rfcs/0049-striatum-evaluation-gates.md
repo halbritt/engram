@@ -551,6 +551,48 @@ Pass criteria:
 - Engram never calls Striatum to auto-export fresh data. If freshness is needed,
   it emits a gap, stale status, or operator action hint without corpus egress.
 
+Dirty-working-tree retrieval rendering cases (proposal-text coverage; the
+cases below describe inputs and expected behavior. Harness wiring, fixture
+names, and runnable command names remain deferred with EG-050's broader
+implementation surface and do not assert that any gate currently passes):
+
+- case `dirty_retrieval_surface_flag_present`: input is an RFC 0046
+  projection row with `source_dirty_working_tree=true` returned through an
+  authorized RFC 0047 retrieval; expected behavior is that the result row
+  surfaces `dirty_working_tree=true` (RFC 0047 § Response Requirements) and
+  the recommended citation rendering carries the `dirty_working_tree=true`
+  marker adjacent to the citation. Covers: dirty rows must not be returned
+  with `dirty_working_tree=false`, defaulted to `false`, or rendered
+  without the marker.
+
+- case `dirty_retrieval_no_clean_relabel`: input is a dirty RFC 0046
+  projection row whose row-level provenance carries
+  `provenance.dirty_working_tree=true`; expected behavior is that no RFC
+  0047 result row, RFC 0048 memory item, or recommended citation rendering
+  presents the result as a clean committed-state citation (no
+  `dirty_working_tree=false`, no missing marker, no commit-only rendering
+  that hides the dirty provenance). Covers: dirty evidence must remain
+  distinguishable from evidence tied only to committed Git objects (RFC
+  0046 § Dirty working tree projection rules).
+
+- case `dirty_packet_freshness_label`: input is a dirty result row that is
+  selected for an RFC 0048 packet; expected behavior is that the packet
+  builder renders the item with the RFC 0048 memory item shape's
+  `freshness=dirty_working_tree` label and `dirty_working_tree=true`, never
+  relabels the item as `freshness=fresh`, and never collapses dirty status
+  into the generic `stale` label. Covers: dirty status is a distinct
+  freshness concern from staleness; a dirty row that is also stale carries
+  both concerns without overwriting the dirty label.
+
+- case `dirty_unauthorized_no_metadata_leak`: input is a dirty projection
+  row that the caller is not authorized to read, requested through an
+  unauthorized, `no_data`, or pair-mismatch path; expected behavior is that
+  the response carries no result row for that candidate, leaks no
+  `dirty_working_tree` flag, hidden path, or dirty-specific metadata, and
+  records the omission only through the privacy-safe audit shape defined
+  in RFC 0048 § Omission Audit Event Shape. Covers: dirty state must not
+  become a side channel for unauthorized-corpus inventory.
+
 ## EG-060: Privacy, Redaction, And Withheld-Content Gate
 
 Pass criteria:
@@ -577,6 +619,50 @@ Pass criteria:
 - `citation_leak` is used when a citation, reference payload, path, line hint,
   or display identifier would reveal an absolute path, operator-private label,
   hidden corpus identity, or higher-tier source identity.
+
+EG-060 `raw_payload` privacy inheritance fixture (proposed; not implemented
+and not yet passing):
+
+- the fixture proposes that every projection `raw_payload` value inherits
+  the parent item's `privacy.privacy_tier`, `privacy.redaction_state`,
+  `privacy.withheld_fields`, and `visibility`
+  (`visibility.default_visible_to` and `visibility.requires_capabilities`)
+  as exported by RFC 0045 and projected by RFC 0046, and that retrieval and
+  injection must forbid `raw_payload`-derived fields above the caller's
+  authorized tier, redaction state, or visibility;
+- fixture proposal: a multi-tier V2 bundle yields projection rows across
+  every family proposed by RFC 0046 (`striatum_items`, `striatum_references`,
+  `striatum_documents`, `striatum_runs`, `striatum_agents`,
+  `striatum_artifacts`, `striatum_git_refs`, `striatum_issues`,
+  `striatum_links`, `striatum_chunks`, `striatum_chunk_embeddings`, and
+  `striatum_embedding_skips`) with `raw_payload` values whose constituent
+  fields each carry a known parent `privacy.privacy_tier`,
+  `privacy.redaction_state`, and `visibility`;
+- pass criteria proposal: for a caller authorized at a given tier and
+  capability set, the RFC 0047 response, the RFC 0048 injected packet, and
+  any `omitted[]` audit entry must not expose any `raw_payload`-derived
+  field whose inherited tier, redaction state, or visibility exceeds
+  caller authorization, and the matching projection row must be omitted
+  with a closed RFC 0048 reason code such as `privacy_tier_exceeded`,
+  `redaction_withheld`, `identity_leak`, or `citation_leak`;
+- negative-case proposal: a candidate row whose `raw_payload` carries
+  hidden body text, withheld field values, pre-redaction content,
+  operator-private absolute paths, or identity/label fields that would
+  exceed visibility must fail closed before retrieval, injection, or audit
+  entry exposure, regardless of whether the row's top-level columns alone
+  would otherwise be eligible;
+- audit-reconstruction proposal: EG-110 audit reconstruction must show
+  that every omission caused by a `raw_payload`-derived violation is
+  recorded with an opaque request-local `candidate_id`, lineage to the
+  projection family, generation, and retrieval lane, and a closed RFC
+  0048 reason code, without copying the hidden `raw_payload`-derived
+  content into the audit record itself;
+- status: this fixture is proposal text only. EG-060 carries the fixture
+  description as a proposal; the fixture is not implemented and has not
+  been exercised against runtime evidence. Until accepted/promoted RFC
+  0045-RFC 0048 successors and the implementation exist, this fixture's
+  state is `not_run`, and the gate continues to use `blocked_upstream`
+  when upstream privacy/redaction vocabulary is not accepted.
 
 ## EG-070: Retrieval-Quality And Golden-Query Gate
 
@@ -721,12 +807,23 @@ Pass criteria:
   unauthorized;
 - malformed partial results do not poison otherwise valid results unless the
   response-level contract is broken;
-- every omission records a reason code;
+- every omission records an entry that conforms to the canonical omission
+  audit event shape defined in RFC 0048
+  [Omission Audit Event Shape](0048-striatum-context-injection-policy.md#omission-audit-event-shape),
+  with `selected=false`, a `reason` drawn from the closed RFC 0048
+  vocabulary, request-local `candidate_id`, lineage (retrieval lane,
+  projection family, projection generation, projection/chunk ids when
+  visible to the reviewing tier), and ranking (rank, score);
 - identity or citation leak omissions use `identity_leak` or `citation_leak`
   rather than silently dropping the result under a generic malformed reason;
-- automatic packet assembly records omission reason codes and produces status
-  `malformed`, `no_data`, `stale`, or `ok` as appropriate, rather than
-  citation-free prose.
+- new omission reasons that do not fit the closed RFC 0048 vocabulary are
+  not invented at the malformed-handling boundary; RFC 0048's extension
+  rule applies and the closest defensible code plus `reason_detail`
+  (subject to the lower-tier redaction rules) is used until an extension
+  is accepted upstream;
+- automatic packet assembly records omission entries using the canonical
+  shape and produces status `malformed`, `no_data`, `stale`, or `ok` as
+  appropriate, rather than citation-free prose.
 
 ## EG-090: Prompt-Injection Containment Gate
 
@@ -815,25 +912,34 @@ Pass criteria:
   source, request id, query text, filters, tenant/corpus pair, limits, freshness
   policy, timeout, citation requirement, response status, warnings, Engram
   schema/retrieval profile, bundle ids or projection generation ids, selected
-  references, omitted references, reason codes, token budget, estimated token
-  use, truncation decisions, stale/conflict labels, privacy tier, and redaction
-  labels;
+  references, omitted candidate entries, the canonical-shape omission reason,
+  token budget, estimated token use, truncation decisions, stale/conflict
+  labels, privacy tier, and redaction labels;
 - candidate-level audit evidence records every selected and omitted candidate
-  with request-local candidate id, selected/omitted status, omission reason,
-  `reference_id` when visible, RFC 0045 item identity when visible, RFC 0046
-  projection row id, item projection id, chunk id, chunk hash, chunk bounds,
-  retrieval lane, projection family, projection generation id, bundle id,
-  score, rank, ranking inputs/profile, freshness status, privacy tier, and
-  redaction state;
+  using the canonical omission audit event shape defined in RFC 0048
+  [Omission Audit Event Shape](0048-striatum-context-injection-policy.md#omission-audit-event-shape),
+  including request-local `candidate_id`, `selected` flag, `reason` from the
+  closed RFC 0048 vocabulary, lineage fields (retrieval lane, projection
+  family, projection generation id, projection row id, item projection id,
+  chunk id, chunk hash, chunk bounds, bundle id, `reference_id`, RFC 0045
+  item identity) populated only when visible to the reviewing tier, ranking
+  fields (rank, score, score breakdown, ranking profile), and labels
+  (freshness, privacy tier, redaction state, authority class, stability
+  class, confidence) populated subject to the same visibility rule;
 - conflict omission records include the omitted memory `logical_id` or visible
   reference and the current authority `logical_id`, accepted decision id,
-  packet id, or repository path that caused the omission;
+  packet id, or repository path that caused the omission, recorded in the
+  RFC 0048 `conflict_with` block;
 - omitted candidates that are unauthorized, pair-mismatched, above the caller's
   privacy tier, or hidden by redaction use opaque request-local candidate ids
   instead of leaking item ids, logical ids, paths, labels, bundle ids,
-  source-time bounds, or corpus inventory into lower-tier audit views;
+  source-time bounds, or corpus inventory into lower-tier audit views, per
+  RFC 0048's privacy-safe local audit rules;
 - audit records inherit the maximum privacy tier of the selected or omitted
   items they identify, and audit storage remains local-only and no-egress;
+- the reason codes used in audit evidence are drawn from the closed RFC 0048
+  vocabulary; any extension must follow RFC 0048's extension rule before it
+  is accepted as evidence under this gate;
 - reconstruction can explain why every selected result appeared and why every
   omitted candidate was omitted;
 - reconstruction for an authorized caller does not require reading rows that
@@ -841,6 +947,51 @@ Pass criteria:
   redacted/opaque omission evidence only;
 - a per-run copy of the memory section is provenance only. It is not readiness
   state, cache authority, or a substitute for current repository reads.
+
+Dirty-working-tree audit reconstruction cases (proposal-text coverage; these
+cases describe inputs and expected behavior. Harness wiring, fixture names,
+and runnable command names remain deferred with EG-110's broader
+implementation surface and do not assert that any gate currently passes):
+
+- case `dirty_audit_records_flag`: input is an automatic packet that
+  selected at least one dirty result row (RFC 0046
+  `source_dirty_working_tree=true`); expected behavior is that the audit
+  record carries the `dirty_working_tree` boolean for that selected
+  candidate, mirrored from the RFC 0047 result row and the RFC 0046
+  projection row, alongside the existing freshness label, privacy tier,
+  and redaction state. Covers: audit reconstruction must show which
+  selected items derived from dirty working-tree evidence.
+
+- case `dirty_audit_records_for_visible_omissions`: input is an automatic
+  packet whose candidate list contained dirty rows that were omitted for
+  reasons other than authorization or privacy tier (for example
+  `freshness_rejected`, `budget`, or `pair_mismatch_safe_reason`); expected
+  behavior is that the omitted candidate audit entry carries the
+  `dirty_working_tree` boolean when the candidate is visible to the
+  reviewing tier under the RFC 0048 § Omission Audit Event Shape rules.
+  Covers: dirty state is recorded for visible omitted candidates so a
+  later reviewer can reconstruct whether the omission applied to dirty or
+  clean evidence.
+
+- case `dirty_audit_lower_tier_opaque`: input is an audit reconstruction
+  request from a reviewer whose tier is below the privacy tier of a dirty
+  candidate; expected behavior is that the audit view uses the opaque
+  request-local `candidate_id` for that candidate and does not surface the
+  `dirty_working_tree` flag, source path, dirty-specific lineage, or any
+  other field above the reviewer's tier. Covers: dirty state inherits
+  parent-item privacy and may not become a side channel for higher-tier
+  inventory in lower-tier audit views.
+
+- case `dirty_audit_no_clean_relabel_in_reconstruction`: input is a
+  reconstruction of an automatic packet that included a dirty result;
+  expected behavior is that the reconstructed memory section preserves
+  the `dirty_working_tree=true` marker and the
+  `freshness=dirty_working_tree` label that RFC 0048 § Memory Item Shape
+  requires, never reconstructs the item with `dirty_working_tree=false` or
+  a `freshness=fresh` label, and never replaces the dirty evidence with a
+  clean-looking citation. Covers: audit reconstruction faithfully
+  preserves the rendering contract that RFC 0047 and RFC 0048 establish
+  for dirty evidence.
 
 ## EG-120: Disable-Control Gate
 
@@ -868,6 +1019,49 @@ Pass criteria:
 - silent disablement is a failure because it prevents later review;
 - disabled automatic memory never degrades into hidden manual search, hidden
   retries, or broader capability requests.
+
+Gate cases for the transient-unless-promoted rule (RFC 0048's session-disable
+persistence rule, `docs/rfcs/0048-striatum-context-injection-policy.md`):
+these cases are proposal-text coverage of the disable-control rule. They
+describe inputs and expected behavior; harness wiring and runnable command
+names remain deferred with EG-120's broader implementation surface.
+
+- case `disable_session_transient_on_restart`: input is an operator or agent
+  session that issued a session-scope disable, followed by a daemon restart
+  with no recorded promotion to run scope or operator configuration; expected
+  behavior is that the new session starts without inheriting the prior
+  session-scope disable, the prior session's disable state does not silently
+  carry over, and an automatic call in the new session is governed by the
+  default enable/disable state rather than the lost session-scope disable.
+  Covers: session-scope disablement is transient across daemon restart unless
+  promotion is recorded.
+
+- case `disable_session_promoted_persists`: input is a session-scope disable
+  that an implementation explicitly promotes to run scope or operator
+  configuration, with the promotion recorded in disable state; expected
+  behavior is that after a daemon restart the promoted disable continues to
+  prevent automatic Engram calls within its promoted scope, the promotion is
+  reflected in packet metadata or memory status as a non-session scope, and
+  the promotion record is reconstructable in EG-110 audit evidence. Covers:
+  promotion to a non-session scope must persist and must remain visible.
+
+- case `disable_session_unpromoted_no_silent_carry`: input is a session-scope
+  disable that was never promoted, paired with a subsequent automatic packet
+  attempt in a post-restart session that reuses the same operator identity or
+  the same workflow continuation; expected behavior is that the post-restart
+  attempt either proceeds under the default enable state or is disabled only
+  by a fresh, explicit disable, never by a silently inherited prior
+  session-scope disable. Covers: the rule that disablement may not be silent
+  and may not survive restart without an explicit promotion record.
+
+- case `disable_promotion_recorded_in_audit`: input is any promotion of a
+  session-scope disable to run scope or operator configuration; expected
+  behavior is that the promotion source, the prior and new scope, and the
+  recording timestamp appear in the disable-control transcript referenced by
+  EG-110's audit evidence, alongside the existing enable/disable state and
+  override source fields. Covers: the promotion record requirement that
+  closes the deferred F022 / AL-D011 disable-persistence concern at gate
+  level.
 
 ## EG-130: Striatum-Without-Engram Compatibility Gate
 

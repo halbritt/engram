@@ -183,6 +183,43 @@ Implementation may factor the common fields into helper SQL or Python row
 builders, but the physical tables should keep explicit columns for reviewable
 indexes and boundary tests.
 
+### `raw_payload` Privacy Inheritance Rule
+
+Every projection `raw_payload` value inherits the parent item's
+`privacy.privacy_tier`, `privacy.redaction_state`, `privacy.withheld_fields`,
+and `visibility` (`visibility.default_visible_to` and
+`visibility.requires_capabilities`) as exported by RFC 0045. No field whose
+presence would exceed those constraints may live in `raw_payload`. In
+particular:
+
+- `raw_payload` must not carry hidden body text, withheld field values,
+  pre-redaction content, operator-private absolute paths, or any data above
+  the parent item's `privacy.privacy_tier`;
+- `raw_payload` must not be used to smuggle identity, label, path, or
+  reference fields that the parent item's `visibility` constraints would
+  hide from the caller;
+- when the parent item's `privacy.redaction_state` is `redacted`, `withheld`,
+  or `synthetic_summary`, `raw_payload` must remain consistent with that
+  state and must not reintroduce material the parent redacted;
+- privacy reclassification of the parent item invalidates `raw_payload` on
+  the affected projection rows together with the row itself.
+
+Retrieval-visible `raw_payload`-derived fields above the caller's authorized
+privacy tier, redaction state, or visibility are forbidden. RFC 0047 must not
+expose `raw_payload`-derived fields to a response unless the upstream contract
+whitelists them, and RFC 0048 must not inject `raw_payload`-derived content
+that would exceed the caller's tier or violate the parent item's visibility.
+RFC 0049 EG-060 carries the matching gate fixture.
+
+This rule applies uniformly to every projection family proposed in this RFC,
+including `striatum_items`, `striatum_references`, `striatum_documents`,
+`striatum_runs`, `striatum_agents`, `striatum_artifacts`, `striatum_git_refs`,
+`striatum_issues`, `striatum_links`, `striatum_chunks`,
+`striatum_chunk_embeddings`, and `striatum_embedding_skips`. It composes with
+the existing narrow rules already stated for dirty-working-tree audit hints
+and `striatum_embedding_skips.raw_payload`; those narrow rules remain in
+force.
+
 ### Mechanical Provenance And Authorization Rule
 
 Retrieval-visible projection rows do not inherit authorization-critical source
@@ -289,7 +326,38 @@ Required columns:
 - `error_count INT NOT NULL DEFAULT 0`;
 - `last_error TEXT NULL`;
 - `parent_generation_id UUID NULL`;
+- `required_embedding_profile JSONB NOT NULL DEFAULT '{}'::jsonb`;
 - `raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb`.
+
+The `required_embedding_profile` column persists the activation manifest that
+declares which `(embedding_model_version, embedding_dimension)` lanes this
+generation must satisfy before activation. It is the authoritative input to the
+embedding/skip XOR invariant described in
+[Embedding Activation Invariant](#embedding-activation-invariant). The minimal
+proposed shape, subject to later contract review, is:
+
+```text
+{
+  "version": "1",
+  "models": [
+    {
+      "embedding_model_version": "<text>",
+      "embedding_dimension": "<int>",
+      "lane": "<text>",                          // serving lane label, e.g. "vector_primary"
+      "required": "<bool>",                      // true when activation must satisfy this lane
+      "policy_source": "<text>"                  // why this lane is in the manifest, e.g. "default_profile", "operator_opt_in"
+    }
+  ],
+  "selected_at": "<timestamptz>",
+  "selected_by": "<text>"                        // operator id or worker identity that froze the profile
+}
+```
+
+`models[]` is closed for the duration of a generation: once a generation row is
+written, its required embedding profile is immutable. Changing the profile
+requires a new generation. Profile shape, additional keys, lane vocabulary, and
+the exact JSON schema remain proposal subject to later contract review during
+RFC 0046 promotion.
 
 Status vocabulary:
 
@@ -819,6 +887,49 @@ treats active skip rows like active embedding rows: stale skip rows are set
 inactive and receive an `invalidation_reason` before a lower-tier or
 newer-generation lane can serve.
 
+<a id="embedding-activation-invariant"></a>
+
+### Embedding Activation Invariant
+
+For every `(generation_id, chunk_id, embedding_model_version,
+embedding_dimension)` tuple covered by the activated generation's
+`required_embedding_profile`, exactly one of the following must hold for that
+generation to remain activated and for the affected vector lane to remain
+serving:
+
+- exactly one active, non-invalidated `striatum_chunk_embeddings` row
+  (`is_active=true` and `invalidated_at IS NULL`) with that key; or
+- exactly one active, non-invalidated `striatum_embedding_skips` row
+  (`is_active=true` and `invalidated_at IS NULL`) with that key.
+
+This is an XOR invariant. The following states are malformed and must fail
+activation closed or trigger invalidation of the affected lane:
+
+- both an active embedding row and an active skip row exist for the same
+  `(generation_id, chunk_id, embedding_model_version, embedding_dimension)`;
+- neither an active embedding nor an active skip row exists for a required key;
+- more than one active row exists in either table for the same key.
+
+Scope and key shape:
+
+- The invariant applies per row in the active generation's
+  `required_embedding_profile.models[]` whose `required=true`. Lanes not in the
+  manifest are not subject to the invariant and must not be served as vector
+  results for that generation.
+- Active chunks that are removed from the generation (tombstoned, redacted, or
+  superseded) are not subject to the invariant for that generation, since the
+  `chunk_id` is no longer part of the active serving set.
+- Implementation may enforce this through partial unique indexes, a serving
+  view, transactional activation checks, or trigger-style guards. RFC 0046 does
+  not pick the enforcement mechanism. It only requires that the invariant hold
+  at activation time and at every later read.
+
+Projection and embedding workers must treat the manifest plus this invariant as
+the unambiguous activation rule. The activation step in
+`Rebuild, Invalidation, And Freshness` and the freshness checks that feed
+RFC 0049 must be implemented against this rule rather than against per-chunk
+heuristics.
+
 ### Embedding Boundaries
 
 - embeddings use local model runtimes only, such as the existing local Ollama
@@ -828,9 +939,11 @@ newer-generation lane can serve.
 - dimensions are versioned per D033-style rules, with indexes per active
   `(embedding_model_version, embedding_dimension)`;
 - embeddings for a generation do not become active until all required chunks in
-  that generation have either an active, non-invalidated embedding row or a
-  active, non-invalidated `striatum_embedding_skips` row for that
-  model/dimension;
+  that generation have either an active, non-invalidated embedding row or an
+  active, non-invalidated `striatum_embedding_skips` row for every
+  `(embedding_model_version, embedding_dimension)` lane listed as required in
+  the generation's persisted `required_embedding_profile`, in accordance with
+  the [Embedding Activation Invariant](#embedding-activation-invariant);
 - embeddings are computed only from persisted `striatum_chunks.chunk_text`, never
   from a pre-redaction or fully withheld body;
 - lexical and exact lookup must remain usable if vector embedding is disabled.
@@ -947,9 +1060,10 @@ The activation step must be transactional where PostgreSQL can enforce it. If
 embedding generation is deferred or vector search is disabled, vector rows for a
 prior generation must not be served as if they belong to the newly activated
 generation. The vector lane either remains unavailable/stale by explicit status
-or activates only when the new generation has complete embedding rows or
-active, non-invalidated `striatum_embedding_skips` rows for the declared
-model/dimension set.
+or activates only when the new generation satisfies the
+[Embedding Activation Invariant](#embedding-activation-invariant) for every
+required `(embedding_model_version, embedding_dimension)` lane in its persisted
+`required_embedding_profile`.
 
 ### Incremental Bundle Handling
 
@@ -1000,6 +1114,11 @@ Projection health checks compare:
 - manifest hash and item count;
 - active chunk count and embedding count by model/dimension;
 - embedding skip count by model/dimension and skip reason;
+- required-lane coverage from the generation's `required_embedding_profile`,
+  including per-required-lane counts of chunks with neither an active embedding
+  nor an active skip row (must be zero) and per-required-lane counts of chunks
+  with both an active embedding and an active skip row (must be zero), per the
+  [Embedding Activation Invariant](#embedding-activation-invariant);
 - invalidated-but-still-active row count, which must be zero;
 - dirty-working-tree projection count and any dirty rows missing copied dirty
   provenance state, which must be zero;
@@ -1081,6 +1200,14 @@ Later implementation acceptance should include:
   as scoped lookup identifiers;
 - privacy reclassification invalidates old chunks, embeddings, and embedding
   skips before lower tier retrieval can see them;
+- each generation persists a `required_embedding_profile` that names the
+  `(embedding_model_version, embedding_dimension)` lanes required for
+  activation, and that profile is immutable for the life of the generation;
+- the [Embedding Activation Invariant](#embedding-activation-invariant) holds
+  at activation and at every later serving read: exactly one active embedding
+  row or exactly one active skip row exists per
+  `(generation_id, chunk_id, embedding_model_version, embedding_dimension)`
+  for every required lane in the generation's `required_embedding_profile`;
 - embedding rows and active, non-invalidated skip rows are complete for every
   `(generation_id, chunk_id, embedding_model_version, embedding_dimension)`;
 - embedding rows cannot serve unless their direct copied provenance fields match
@@ -1156,6 +1283,12 @@ those invariants.
 - Embedding rows and embedding skip rows preserve enough privacy, visibility,
   redaction, source identity, hash, and invalidation state to prevent stale or
   withheld chunks from serving.
+- Each `striatum_projection_generations` row persists a
+  `required_embedding_profile` activation manifest, and the
+  [Embedding Activation Invariant](#embedding-activation-invariant) is stated
+  as an XOR rule: exactly one active embedding or one active skip per
+  `(generation_id, chunk_id, embedding_model_version, embedding_dimension)`
+  for every required lane in the manifest.
 - Rebuild, activation, invalidation, stale-index, privacy reclassification, and
   V1 rejection behavior are specified.
 - Validation fixtures and downstream RFC dependencies are named.
@@ -1181,3 +1314,13 @@ those invariants.
    audit table.
 7. Whether semantic/inferred links belong in RFC 0046 follow-up work or should
    wait for a separate local reviewer/auditor RFC.
+8. Final shape and key vocabulary of `required_embedding_profile` (manifest
+   schema version, lane labels, required vs. optional lanes, `policy_source`
+   values, and any additional per-lane metadata). The shape proposed above is
+   minimal and remains subject to later contract review during RFC 0046
+   promotion.
+9. Enforcement mechanism for the
+   [Embedding Activation Invariant](#embedding-activation-invariant): partial
+   unique indexes, a serving view, transactional activation checks, or
+   trigger-style guards. RFC 0046 fixes the invariant but leaves the mechanism
+   to implementation review.
