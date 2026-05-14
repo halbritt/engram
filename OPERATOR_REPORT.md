@@ -4,30 +4,49 @@ Last updated: 2026-05-14
 
 ## Handover Summary
 
-- Current branch state: `master` HEAD is at `92914e9`
-  (`Record operator handoff backlog`); working tree carries unstaged
-  proposal-text edits to RFC 0046, RFC 0047, RFC 0048, and RFC 0049 from the
-  alignment-findings backlog (see below). Pending human review and commit.
+- Current branch state: `master` is at `f7090b1`
+  (`Apply Striatum memory alignment nonblocking findings`), pushed.
+  Alignment-findings nonblocking items `AL-N001`, `AL-N002`, `AL-N003`,
+  `AL-N004`, `AL-N005`, `AL-N006`, and `AL-N009` are applied as
+  proposal-text edits to RFC 0046-RFC 0049 (delegated to seven parallel
+  worktree-isolated coordinator-spawned agents; no Striatum role-session
+  bylines or workflow verdicts were produced or claimed). `make check-refs`
+  returns 0 errors and the same five pre-existing warnings.
+- The Striatum memory RFC promotion workflow scaffold is queued at
+  `striatum/striatum-memory-rfc-promotion-2026-05-14/`. Four
+  promotion-recommendation lanes (one per RFC, codex), three independent
+  reviewer lanes (codex contract coherence, claude privacy/no-egress
+  boundary, gemini operator ergonomics), findings ledger, and final
+  synthesis. The workflow does not edit RFC text and does not record an
+  AL-D002 acceptance decision.
+- Engram Striatum control plane has been migrated from repo-local SQLite to
+  daemon-backed PostgreSQL on `2026-05-14`. The prior alignment run state
+  is preserved offline at `.striatum/state.sqlite3.bak`; the migrated
+  empty SQLite was tombstoned at `.striatum/state.sqlite3.tombstone`. The
+  daemon registered the engram repo as
+  `repo_b63673a288c64bb987d29bafffaed578` in Postgres.
+- Promotion workflow execution is currently blocked on
+  `daemon authorization failed: token_missing`. The daemon's
+  `/run/user/1000/striatum/client-token` was unintentionally removed during
+  daemon-lifecycle thrashing and subsequent daemon restarts have not
+  reissued it. The next operator must either (a) reissue/locate the
+  daemon's client token, (b) restore the prior daemon's token state, or
+  (c) restore the pre-migration SQLite from `.bak` and resume in
+  `STRIATUM_TEST_HARNESS=1` mode if the daemon path remains blocked.
+- Once auth is restored: `striatum workflow validate
+  striatum/striatum-memory-rfc-promotion-2026-05-14/workflow.json` then
+  `workflow prepare` and `workflow start`. The promotion-author lanes are
+  daemon-driven `codex` lanes; reviewer lanes fan out to `codex`, `claude`,
+  and `gemini`.
 - The Striatum alignment run `run_169531d5568248ff8f0dfc803d955311` remains
-  completed with no open blockers or human checkpoints; the ledger artifacts
-  under `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/` are unchanged.
-- Backlog status: alignment-findings nonblocking items `AL-N001`, `AL-N002`,
-  `AL-N003`, `AL-N004`, `AL-N005`, `AL-N006`, and `AL-N009` have been applied
-  as proposal-text edits to the four target RFCs. The work was delegated to
-  seven parallel worktree-isolated coordinator-spawned agents (one per
-  finding); no Striatum role-session bylines or workflow verdicts were
-  produced or claimed. `make check-refs` returns 0 errors and the same five
-  pre-existing warnings as prior to the edits.
-- The next operator should: (1) review the unstaged RFC edits and decide on
-  commit, (2) decide whether to queue a separate promotion packet for these
-  edits or batch with the remaining nonblocking items (`AL-N007`, `AL-N008`,
-  `AL-N010`-`AL-N015` from the ledger were not in this backlog), and
-  (3) progress the deferred authority gates: `AL-D001` RFC 0044 hardening /
-  EG-000 evidence, `AL-D002` recorded acceptance decision, `AL-D003` Level 3
-  default-on authorization, and `AL-D004` generated-product contract.
-- The RFC package remains proposal/default-off. These edits do not authorize
-  implementation, schemas, migrations, generated docs, runtime behavior, or
-  default-on Striatum memory use.
+  completed; the ledger artifacts under
+  `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/` are unchanged.
+- The RFC package remains proposal/default-off. The scaffold does not
+  authorize implementation, schemas, migrations, generated docs, runtime
+  behavior, or default-on Striatum memory use.
+- Deferred authority gates carried forward: `AL-D001` RFC 0044 hardening /
+  EG-000 evidence, `AL-D002` recorded acceptance decision, `AL-D003`
+  Level 3 default-on authorization, `AL-D004` generated-product contract.
 - If the next operator needs a single starting point, use
   [docs/reviews/striatum-memory-rfc-alignment-2026-05-14/FINDINGS_LEDGER.md](/home/halbritt/git/engram/docs/reviews/striatum-memory-rfc-alignment-2026-05-14/FINDINGS_LEDGER.md)
   for full disposition context.

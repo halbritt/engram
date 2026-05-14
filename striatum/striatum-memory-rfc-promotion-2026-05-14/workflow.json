@@ -1,0 +1,408 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "striatum-memory-rfc-promotion-2026-05-14",
+  "workflow_version": "2026-05-14+scaffold",
+  "name": "Striatum Memory RFC Promotion Packet",
+  "branch": {
+    "mode": "confirm",
+    "allow_dirty": true,
+    "suggested_name": "engram/striatum-memory-rfc-promotion"
+  },
+  "coordinator": {
+    "lane_id": "codex",
+    "role_id": "author"
+  },
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 5,
+    "require_disjoint_write_scopes": true
+  },
+  "cycles": [],
+  "lanes": {
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "-"],
+      "capabilities": ["write", "review", "synthesis"],
+      "constraints": {
+        "network": "forbidden",
+        "repo_scope": "local_only",
+        "transcripts": "off"
+      }
+    },
+    "claude": {
+      "adapter": "process",
+      "display_model": "Claude Opus",
+      "command": ["claude", "--model", "opus", "-p"],
+      "capabilities": ["review"],
+      "constraints": {
+        "network": "forbidden",
+        "repo_scope": "local_only",
+        "transcripts": "off"
+      }
+    },
+    "gemini": {
+      "adapter": "process",
+      "display_model": "Gemini 3.1 Pro Preview",
+      "command": ["gemini", "--model", "gemini-3.1-pro-preview"],
+      "capabilities": ["review"],
+      "constraints": {
+        "network": "forbidden",
+        "repo_scope": "local_only",
+        "transcripts": "off"
+      }
+    }
+  },
+  "roles": {
+    "author": {
+      "definition_path": "striatum/striatum-memory-rfc-promotion-2026-05-14/roles/author.md"
+    },
+    "reviewer": {
+      "definition_path": "striatum/striatum-memory-rfc-promotion-2026-05-14/roles/reviewer.md"
+    },
+    "ledger": {
+      "definition_path": "striatum/striatum-memory-rfc-promotion-2026-05-14/roles/ledger.md"
+    },
+    "synthesizer": {
+      "definition_path": "striatum/striatum-memory-rfc-promotion-2026-05-14/roles/synthesizer.md"
+    }
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "HUMAN_REQUIREMENTS.md", "required": true},
+    {"path": "DECISION_LOG.md", "required": true},
+    {"path": "BUILD_PHASES.md", "required": true},
+    {"path": "ROADMAP.md", "required": true},
+    {"path": "SPEC.md", "required": true},
+    {"path": "STRIATUM_MEMORY_ROADMAP.md", "required": true},
+    {"path": "docs/schema/README.md", "required": true},
+    {"path": "docs/rfcs/README.md", "required": true},
+    {"path": "docs/process/multi-agent-review-loop.md", "required": true},
+    {"path": "docs/process/project-judgment.md", "required": true},
+    {"path": "docs/reviews/striatum-memory-rfc-alignment-2026-05-14/FINDINGS_LEDGER.md", "required": true},
+    {"path": "docs/reviews/striatum-memory-rfc-alignment-2026-05-14/FINAL_SYNTHESIS.md", "required": true},
+    {"path": "docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/FINDINGS_LEDGER.md", "required": true},
+    {"path": "docs/reviews/striatum-memory-roadmap-rfcs-2026-05-14/FINAL_SYNTHESIS.md", "required": true}
+  ],
+  "jobs": [
+    {
+      "id": "promote_rfc0046_projection_index",
+      "type": "draft",
+      "lane_id": "codex",
+      "role_id": "author",
+      "parallel_group": "promotion_authors",
+      "title": "Author RFC 0046 promotion recommendation",
+      "objective": "Author a promotion recommendation for the aligned RFC 0046 against ledger residuals and deferred prerequisites. Do not promote unilaterally and do not edit the RFC itself.",
+      "task_prompt": {"path": "striatum/striatum-memory-rfc-promotion-2026-05-14/prompts/promote.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0046-striatum-projection-index-schema.md"},
+        {"kind": "ledger", "path": "docs/reviews/striatum-memory-rfc-alignment-2026-05-14/FINDINGS_LEDGER.md"},
+        {"kind": "synthesis", "path": "docs/reviews/striatum-memory-rfc-alignment-2026-05-14/FINAL_SYNTHESIS.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-alignment-2026-05-14/ALIGN_RFC0046.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0046.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "DECISION_LOG.md", "CHANGELOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "promote_rfc0046",
+          "kind": "handoff",
+          "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0046.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "promote_rfc0047_retrieval_boundary",
+      "type": "draft",
+      "lane_id": "codex",
+      "role_id": "author",
+      "parallel_group": "promotion_authors",
+      "title": "Author RFC 0047 promotion recommendation",
+      "objective": "Author a promotion recommendation for the aligned RFC 0047 against ledger residuals and deferred prerequisites. Do not promote unilaterally and do not edit the RFC itself.",
+      "task_prompt": {"path": "striatum/striatum-memory-rfc-promotion-2026-05-14/prompts/promote.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0047-striatum-retrieval-augmentation-boundary.md"},
+        {"kind": "ledger", "path": "docs/reviews/striatum-memory-rfc-alignment-2026-05-14/FINDINGS_LEDGER.md"},
+        {"kind": "synthesis", "path": "docs/reviews/striatum-memory-rfc-alignment-2026-05-14/FINAL_SYNTHESIS.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-alignment-2026-05-14/ALIGN_RFC0047.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0047.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "DECISION_LOG.md", "CHANGELOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "promote_rfc0047",
+          "kind": "handoff",
+          "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0047.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "promote_rfc0048_context_policy",
+      "type": "draft",
+      "lane_id": "codex",
+      "role_id": "author",
+      "parallel_group": "promotion_authors",
+      "title": "Author RFC 0048 promotion recommendation",
+      "objective": "Author a promotion recommendation for the aligned RFC 0048 against ledger residuals and deferred prerequisites. Do not promote unilaterally and do not edit the RFC itself.",
+      "task_prompt": {"path": "striatum/striatum-memory-rfc-promotion-2026-05-14/prompts/promote.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0048-striatum-context-injection-policy.md"},
+        {"kind": "ledger", "path": "docs/reviews/striatum-memory-rfc-alignment-2026-05-14/FINDINGS_LEDGER.md"},
+        {"kind": "synthesis", "path": "docs/reviews/striatum-memory-rfc-alignment-2026-05-14/FINAL_SYNTHESIS.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-alignment-2026-05-14/ALIGN_RFC0048.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0048.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "DECISION_LOG.md", "CHANGELOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "promote_rfc0048",
+          "kind": "handoff",
+          "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0048.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "promote_rfc0049_evaluation_gates",
+      "type": "draft",
+      "lane_id": "codex",
+      "role_id": "author",
+      "parallel_group": "promotion_authors",
+      "title": "Author RFC 0049 promotion recommendation",
+      "objective": "Author a promotion recommendation for the aligned RFC 0049 against ledger residuals and deferred prerequisites. Do not promote unilaterally and do not edit the RFC itself.",
+      "task_prompt": {"path": "striatum/striatum-memory-rfc-promotion-2026-05-14/prompts/promote.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0049-striatum-evaluation-gates.md"},
+        {"kind": "ledger", "path": "docs/reviews/striatum-memory-rfc-alignment-2026-05-14/FINDINGS_LEDGER.md"},
+        {"kind": "synthesis", "path": "docs/reviews/striatum-memory-rfc-alignment-2026-05-14/FINAL_SYNTHESIS.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-alignment-2026-05-14/ALIGN_RFC0049.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0049.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "DECISION_LOG.md", "CHANGELOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "promote_rfc0049",
+          "kind": "handoff",
+          "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0049.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_promotion_contract_alignment",
+      "type": "review",
+      "lane_id": "codex",
+      "role_id": "reviewer",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "reviewer_context_policy": "fresh",
+      "title": "Review promotion packet for contract coherence",
+      "objective": "Independently review whether the four promotion recommendations are coherent against the aligned RFCs, the alignment ledger residuals, and the deferred AL-D001/AL-D002/AL-D003/AL-D004 gates.",
+      "task_prompt": {"path": "striatum/striatum-memory-rfc-promotion-2026-05-14/prompts/review.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0046-striatum-projection-index-schema.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0047-striatum-retrieval-augmentation-boundary.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0048-striatum-context-injection-policy.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0049-striatum-evaluation-gates.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0046.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0047.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0048.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0049.md"},
+        {"kind": "ledger", "path": "docs/reviews/striatum-memory-rfc-alignment-2026-05-14/FINDINGS_LEDGER.md"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/striatum-memory-rfc-promotion-2026-05-14/REVIEW_contract_coherence.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "contract_coherence_review",
+          "kind": "finding",
+          "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/REVIEW_contract_coherence.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_promotion_privacy_boundary",
+      "type": "review",
+      "lane_id": "claude",
+      "role_id": "reviewer",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "reviewer_context_policy": "fresh",
+      "title": "Review promotion packet for privacy and no-egress boundary",
+      "objective": "Independently review whether the promotion recommendations preserve local-only, no-egress, tenant/corpus, generated-product, and personal-memory boundaries.",
+      "task_prompt": {"path": "striatum/striatum-memory-rfc-promotion-2026-05-14/prompts/review.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0046-striatum-projection-index-schema.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0047-striatum-retrieval-augmentation-boundary.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0048-striatum-context-injection-policy.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0049-striatum-evaluation-gates.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0046.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0047.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0048.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0049.md"},
+        {"kind": "roadmap", "path": "STRIATUM_MEMORY_ROADMAP.md"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/striatum-memory-rfc-promotion-2026-05-14/REVIEW_privacy_boundary.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "privacy_boundary_review",
+          "kind": "finding",
+          "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/REVIEW_privacy_boundary.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_promotion_operator_ergonomics",
+      "type": "review",
+      "lane_id": "gemini",
+      "role_id": "reviewer",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "reviewer_context_policy": "fresh",
+      "title": "Review promotion packet for operator ergonomics",
+      "objective": "Independently review whether the promotion recommendations are operator-actionable and unambiguous.",
+      "task_prompt": {"path": "striatum/striatum-memory-rfc-promotion-2026-05-14/prompts/review.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0046-striatum-projection-index-schema.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0047-striatum-retrieval-augmentation-boundary.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0048-striatum-context-injection-policy.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0049-striatum-evaluation-gates.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0046.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0047.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0048.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0049.md"},
+        {"kind": "roadmap", "path": "STRIATUM_MEMORY_ROADMAP.md"},
+        {"kind": "index", "path": "docs/rfcs/README.md"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/striatum-memory-rfc-promotion-2026-05-14/REVIEW_operator_ergonomics.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "operator_ergonomics_review",
+          "kind": "finding",
+          "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/REVIEW_operator_ergonomics.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "findings_ledger",
+      "type": "ledger",
+      "lane_id": "codex",
+      "role_id": "ledger",
+      "fresh_session_required": true,
+      "title": "Record Striatum memory RFC promotion findings ledger",
+      "objective": "Normalize the four promotion recommendations and three independent reviews into one ledger with per-RFC promotion disposition and outstanding gates.",
+      "task_prompt": {"path": "striatum/striatum-memory-rfc-promotion-2026-05-14/prompts/findings_ledger.md"},
+      "inputs": [
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0046.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0047.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0048.md"},
+        {"kind": "handoff", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/PROMOTE_RFC0049.md"},
+        {"kind": "review", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/REVIEW_contract_coherence.md"},
+        {"kind": "review", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/REVIEW_privacy_boundary.md"},
+        {"kind": "review", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/REVIEW_operator_ergonomics.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/striatum-memory-rfc-promotion-2026-05-14/FINDINGS_LEDGER.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "findings_ledger",
+          "kind": "findings_ledger",
+          "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/FINDINGS_LEDGER.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "final_synthesis",
+      "type": "synthesis",
+      "lane_id": "codex",
+      "role_id": "synthesizer",
+      "fresh_session_required": true,
+      "title": "Synthesize Striatum memory RFC promotion packet",
+      "objective": "Produce an operator-ready closeout that names, per RFC, the promotion disposition (ready / blocked / deferred), the gates that remain, and the human decision required to record AL-D002 acceptance.",
+      "task_prompt": {"path": "striatum/striatum-memory-rfc-promotion-2026-05-14/prompts/synthesis.md"},
+      "inputs": [
+        {"kind": "ledger", "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/FINDINGS_LEDGER.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/striatum-memory-rfc-promotion-2026-05-14/FINAL_SYNTHESIS.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "final_synthesis",
+          "kind": "synthesis",
+          "path": "docs/reviews/striatum-memory-rfc-promotion-2026-05-14/FINAL_SYNTHESIS.md",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {"from": "promote_rfc0046_projection_index", "on": "completed", "to": "review_promotion_contract_alignment"},
+    {"from": "promote_rfc0047_retrieval_boundary", "on": "completed", "to": "review_promotion_contract_alignment"},
+    {"from": "promote_rfc0048_context_policy", "on": "completed", "to": "review_promotion_contract_alignment"},
+    {"from": "promote_rfc0049_evaluation_gates", "on": "completed", "to": "review_promotion_contract_alignment"},
+    {"from": "promote_rfc0046_projection_index", "on": "completed", "to": "review_promotion_privacy_boundary"},
+    {"from": "promote_rfc0047_retrieval_boundary", "on": "completed", "to": "review_promotion_privacy_boundary"},
+    {"from": "promote_rfc0048_context_policy", "on": "completed", "to": "review_promotion_privacy_boundary"},
+    {"from": "promote_rfc0049_evaluation_gates", "on": "completed", "to": "review_promotion_privacy_boundary"},
+    {"from": "promote_rfc0046_projection_index", "on": "completed", "to": "review_promotion_operator_ergonomics"},
+    {"from": "promote_rfc0047_retrieval_boundary", "on": "completed", "to": "review_promotion_operator_ergonomics"},
+    {"from": "promote_rfc0048_context_policy", "on": "completed", "to": "review_promotion_operator_ergonomics"},
+    {"from": "promote_rfc0049_evaluation_gates", "on": "completed", "to": "review_promotion_operator_ergonomics"},
+    {"from": "review_promotion_contract_alignment", "on": "completed", "to": "findings_ledger", "required_verdicts": ["accept", "accept_with_findings"]},
+    {"from": "review_promotion_privacy_boundary", "on": "completed", "to": "findings_ledger", "required_verdicts": ["accept", "accept_with_findings"]},
+    {"from": "review_promotion_operator_ergonomics", "on": "completed", "to": "findings_ledger", "required_verdicts": ["accept", "accept_with_findings"]},
+    {"from": "findings_ledger", "on": "completed", "to": "final_synthesis"}
+  ]
+}

@@ -56,6 +56,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   promotion still depends on the deferred `AL-D001` RFC 0044 hardening /
   EG-000 evidence, `AL-D002` recorded acceptance decision, and `AL-D003`
   Level 3 / default-on authority gates.
+- Striatum memory RFC promotion workflow scaffold queued at
+  `striatum/striatum-memory-rfc-promotion-2026-05-14/`. Four per-RFC
+  promotion-recommendation lanes (RFC 0046-RFC 0049, codex), three
+  independent reviewer lanes (codex contract coherence, claude
+  privacy/no-egress boundary, gemini operator ergonomics), findings ledger,
+  and final synthesis. Output destination is
+  `docs/reviews/striatum-memory-rfc-promotion-2026-05-14/`. The workflow
+  does not edit RFC text, does not record an AL-D002 acceptance decision,
+  and does not authorize implementation.
+- Engram Striatum control plane migrated from repo-local SQLite
+  (`.striatum/state.sqlite3`) to daemon-backed PostgreSQL on
+  `2026-05-14`. The prior SQLite was tombstoned at
+  `.striatum/state.sqlite3.tombstone` after a fresh empty migration
+  (`repository_id = repo_b63673a288c64bb987d29bafffaed578`); the prior
+  state from the alignment run is preserved in
+  `.striatum/state.sqlite3.bak` for offline inspection only. Workflow
+  execution requires the daemon's client-token to be re-issued before the
+  promotion run can be prepared and started.
 - RFC 0038 operator UI rework proposal and Striatum implementation workflow
   scaffold, derived from `ENGRAM_UI_REWORK_HANDOFF.md`, covering a three-lane
   UI implementation split plus the normal review cycle augmented with an
