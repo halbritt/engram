@@ -96,6 +96,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   42558 beliefs, last extraction 2026-05-07). Step 5 (gold-set authoring)
   is now the active step; Phase 3 cleanup of 149 unextracted active
   segments and 22 failed extractions is residual.
+- Striatum-memory e2e backlog execution plan landed at
+  `STRIATUM_MEMORY_E2E_BACKLOG.md`, superseding the paper-promotion
+  sequencing for execution order: build forward layer by layer
+  (projection → retrieval → packet → gates → MCP smoke) treating RFC
+  0045-RFC 0049 as design reference, not as contract gates. Records
+  the 2026-05-15 pivot and explicit sequencing through AL-D002, with
+  the nonblocking RFC polish (AL-N007/N008/N010-N015) and AL-D003 /
+  AL-D004 carried as cross-cutting items.
 - RFC 0044 hardening / EG-000 baseline evidence landed at
   `docs/reviews/eg-000-evidence-2026-05-15/EG_000_EVIDENCE.md`, closing
   `AL-D001` from the alignment findings ledger. The evidence covers all
