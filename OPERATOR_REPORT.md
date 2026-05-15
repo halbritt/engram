@@ -46,6 +46,13 @@ Last updated: 2026-05-14
   remains valid; a fresh `striatum run prepare` against it will start
   cleanly once #18 lands or the workflow's lane command is changed to a
   non-stdin delivery path.
+- AL-D001 RFC 0044 hardening / EG-000 baseline is closed. Evidence at
+  `docs/reviews/eg-000-evidence-2026-05-15/EG_000_EVIDENCE.md` covers
+  all eight EG-000 pass criteria; supporting code, tests, and a
+  committed non-private fixture bundle landed alongside it. This is the
+  first concrete artifact of the 2026-05-15 pivot to building the e2e
+  Striatum-memory pipeline incrementally rather than promoting RFC
+  0045-0049 as paper.
 - Unblock options for the next operator: (a) fix the Striatum supervisor
   to close the stdin write end after delivering the packet, (b) change
   the workflow lane command to deliver the packet as a positional

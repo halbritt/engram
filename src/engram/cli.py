@@ -736,7 +736,19 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "describe-corpus":
-            tenant_id = args.tenant or args.corpus
+            # EG-000 baseline: the positional-only shorthand collapses
+            # tenant_id == corpus_id only for the sanctioned `striatum` value.
+            # Every other corpus requires an explicit --tenant.
+            if args.tenant:
+                tenant_id = args.tenant
+            elif args.corpus == "striatum":
+                tenant_id = "striatum"
+            else:
+                print(
+                    "engram describe-corpus: specify --tenant for non-striatum corpora",
+                    file=sys.stderr,
+                )
+                return 2
             with connect() as conn:
                 description = MemoryService(conn).describe_corpus(
                     tenant_id=tenant_id,

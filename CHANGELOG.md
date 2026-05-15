@@ -96,6 +96,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   42558 beliefs, last extraction 2026-05-07). Step 5 (gold-set authoring)
   is now the active step; Phase 3 cleanup of 149 unextracted active
   segments and 22 failed extractions is residual.
+- RFC 0044 hardening / EG-000 baseline evidence landed at
+  `docs/reviews/eg-000-evidence-2026-05-15/EG_000_EVIDENCE.md`, closing
+  `AL-D001` from the alignment findings ledger. The evidence covers all
+  eight EG-000 pass criteria: primary-pair search/fetch enforcement,
+  MCP `--allow-pair` not granting cross-tenant/corpus reads, restricted
+  `describe-corpus` positional shorthand, rejection of unknown
+  `--capability memory.*` names, applied-ordering schema version,
+  committed non-private fixture round-trip, and Striatum-side
+  zero-Engram-coupling. Supporting code: `KNOWN_MEMORY_CAPABILITIES`
+  vocabulary in `src/engram/memory.py`; capability validation in
+  `src/engram/mcp_stdio.py::build_token`; describe-corpus CLI guard;
+  applied-ordering schema query in `MemoryService.health`. Supporting
+  fixture: `tests/fixtures/striatum_eg000/` (committed bundle plus a
+  deterministic regeneration script). New tests in
+  `tests/test_striatum_ingest.py`, `tests/test_mcp_stdio.py`, and
+  `tests/test_cli.py`. The evidence does not by itself authorize RFC
+  0046-RFC 0049 implementation; the AL-D002 acceptance decision and the
+  remaining nonblocking promotion items remain prerequisite.
 - RFC 0038 operator UI rework proposal and Striatum implementation workflow
   scaffold, derived from `ENGRAM_UI_REWORK_HANDOFF.md`, covering a three-lane
   UI implementation split plus the normal review cycle augmented with an

@@ -86,6 +86,40 @@ def _write_striatum_capture(
     return str(capture_id)
 
 
+def test_build_token_rejects_unknown_memory_capability() -> None:
+    """EG-000 baseline: --capability rejects unknown memory.* names.
+
+    The token vocabulary is closed; the CLI must not silently accept an
+    unrecognized capability and grant whatever the caller asked for.
+    """
+    import pytest
+
+    with pytest.raises(ValueError) as excinfo:
+        build_token(
+            argparse.Namespace(
+                tenant="striatum",
+                corpus="striatum",
+                capability=["memory.read_galaxy"],
+                allow_pair=[],
+            )
+        )
+    assert "memory.read_galaxy" in str(excinfo.value)
+    assert "memory.read_cross_tenant" in str(excinfo.value)
+
+
+def test_build_token_accepts_known_memory_capability() -> None:
+    """EG-000 baseline: known --capability values pass validation."""
+    token = build_token(
+        argparse.Namespace(
+            tenant="striatum",
+            corpus="striatum",
+            capability=["memory.read_cross_corpus"],
+            allow_pair=[],
+        )
+    )
+    assert "memory.read_cross_corpus" in token.capabilities
+
+
 def test_mcp_stdio_exposes_only_rfc0044_read_only_tools() -> None:
     assert [tool["name"] for tool in tool_definitions()] == [
         "engram.search",

@@ -388,3 +388,77 @@ def test_service_search_and_fetch_require_cross_tenant_for_personal_pair(
 
     assert allowed_service.search("Jennifer", tenant_id="personal", corpus_id="personal") == []
     assert allowed_service.fetch_reference(reference_id)["content"] == "Jennifer MBTI"
+
+
+EG000_FIXTURE_DIR = Path(__file__).parent / "fixtures" / "striatum_eg000"
+
+
+def test_eg000_committed_fixture_round_trip_ingest_and_read(
+    conn: psycopg.Connection,
+) -> None:
+    """EG-000 baseline: committed real-shape fixture survives ingest and
+    read-only retrieval.
+
+    The bundle at tests/fixtures/striatum_eg000/ is built from Engram's own
+    public RFC/decision-log/operator-report/changelog prose (see
+    `build_fixture.py`), so it exercises the
+    `striatum.corpus_export.v1` schema with non-synthetic content. The
+    smoke confirms that ingest+search+fetch+describe all work on this
+    real-shape fixture and stay inside the default striatum/striatum
+    boundary.
+    """
+    assert EG000_FIXTURE_DIR.exists(), "EG-000 fixture is missing"
+
+    result = ingest_striatum_bundle(conn, EG000_FIXTURE_DIR, repo="engram-eg000")
+
+    assert result.records_inserted == 5
+    assert result.records_seen == 5
+
+    service = MemoryService(conn)
+
+    # search inside the default striatum/striatum boundary. Ingested
+    # external_ids are namespaced as `<repo>:<sub_kind>:<original>`, so
+    # match by substring rather than equality.
+    rfc_hits = service.search("RFC 0044", limit=5)
+    assert any("rfc:0044#hardening-baseline" in hit["external_id"] for hit in rfc_hits)
+    decision_hits = service.search("subject_kind_hint", limit=5)
+    assert any("decision:D082" in hit["external_id"] for hit in decision_hits)
+
+    # fetch_reference re-authorizes the stored row
+    reference_id = rfc_hits[0]["reference_id"]
+    fetched = service.fetch_reference(reference_id)
+    assert fetched["tenant_id"] == "striatum"
+    assert fetched["corpus_id"] == "striatum"
+    assert fetched["source_kind"] == "striatum"
+
+    # describe_corpus reports the fixture counts
+    description = service.describe_corpus()
+    assert description["record_count"] == 5
+    assert description["bundle_count"] == 1
+    assert description["sub_kind_counts"]["rfc"] == 2
+    assert description["sub_kind_counts"]["decision_log_row"] == 1
+    assert description["sub_kind_counts"]["operator_report"] == 1
+    assert description["sub_kind_counts"]["changelog_entry"] == 1
+
+
+def test_health_schema_version_uses_applied_ordering_not_lex_max(
+    conn: psycopg.Connection,
+) -> None:
+    """EG-000 baseline: schema_version reflects applied ordering, not lex max.
+
+    Insert a synthetic later-applied migration whose filename loses
+    lexicographic comparison against existing migrations. health() must
+    report the synthetic one because it is the most recently applied,
+    proving the query is not `SELECT max(filename) FROM schema_migrations`.
+    """
+    conn.execute(
+        """
+        INSERT INTO schema_migrations (filename, applied_at, checksum)
+        VALUES ('0_synthetic_lex_loser.sql', NOW(), 'synthetic')
+        """
+    )
+    service = MemoryService(conn)
+
+    health = service.health()
+
+    assert health["schema_version"] == "0_synthetic_lex_loser.sql"

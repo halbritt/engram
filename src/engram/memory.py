@@ -15,6 +15,16 @@ CAPABILITY_READ_PERSONAL = "memory.read_personal"
 CAPABILITY_READ_CROSS_TENANT = "memory.read_cross_tenant"
 CAPABILITY_READ_CROSS_CORPUS = "memory.read_cross_corpus"
 
+KNOWN_MEMORY_CAPABILITIES: frozenset[str] = frozenset(
+    {
+        CAPABILITY_READ_STRIATUM,
+        CAPABILITY_DESCRIBE,
+        CAPABILITY_READ_PERSONAL,
+        CAPABILITY_READ_CROSS_TENANT,
+        CAPABILITY_READ_CROSS_CORPUS,
+    }
+)
+
 DEFAULT_TENANT_ID = "striatum"
 DEFAULT_CORPUS_ID = "striatum"
 
@@ -324,7 +334,15 @@ class MemoryService:
         """Return local DB and visible corpus readiness without leaking hidden corpora."""
         if CAPABILITY_DESCRIBE not in self.token.capabilities:
             raise MemoryCapabilityError('missing capability "memory.describe"')
-        schema_row = self.conn.execute("SELECT max(filename) FROM schema_migrations").fetchone()
+        # Sort by applied ordering (applied_at DESC, filename DESC as tiebreaker)
+        # instead of a fragile lexicographic max over filename — EG-000 baseline.
+        schema_row = self.conn.execute(
+            """
+            SELECT filename FROM schema_migrations
+            ORDER BY applied_at DESC, filename DESC
+            LIMIT 1
+            """
+        ).fetchone()
         if schema_row is None:
             raise MemoryReferenceError("could not read schema metadata")
         visible_pairs = []

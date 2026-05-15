@@ -308,6 +308,63 @@ def test_describe_corpus_dispatches_to_memory_service(
     }
 
 
+def test_describe_corpus_rejects_non_striatum_shorthand_without_tenant(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_cli_connect: Any,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """EG-000 baseline: positional shorthand only collapses for `striatum`.
+
+    Any other corpus value must require an explicit `--tenant`.
+    """
+    called: dict[str, Any] = {}
+
+    class FakeMemoryService:
+        def __init__(self, connection: Any) -> None:
+            called["conn"] = connection
+
+        def describe_corpus(self, *, tenant_id: str, corpus_id: str) -> dict[str, Any]:
+            called["tenant_id"] = tenant_id
+            called["corpus_id"] = corpus_id
+            return {"tenant_id": tenant_id, "corpus_id": corpus_id}
+
+    monkeypatch.setattr(cli, "MemoryService", FakeMemoryService)
+
+    rc = cli.main(["describe-corpus", "personal"])
+
+    assert rc == 2
+    assert "specify --tenant" in capsys.readouterr().err
+    assert called == {}
+
+
+def test_describe_corpus_accepts_non_striatum_corpus_with_explicit_tenant(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_cli_connect: Any,
+) -> None:
+    """EG-000 baseline: non-striatum corpus is allowed when --tenant is given."""
+    captured: dict[str, Any] = {}
+
+    class FakeMemoryService:
+        def __init__(self, connection: Any) -> None:
+            captured["conn"] = connection
+
+        def describe_corpus(self, *, tenant_id: str, corpus_id: str) -> dict[str, Any]:
+            captured["tenant_id"] = tenant_id
+            captured["corpus_id"] = corpus_id
+            return {"tenant_id": tenant_id, "corpus_id": corpus_id}
+
+    monkeypatch.setattr(cli, "MemoryService", FakeMemoryService)
+
+    rc = cli.main(["describe-corpus", "personal", "--tenant", "personal"])
+
+    assert rc == 0
+    assert captured == {
+        "conn": fake_cli_connect,
+        "tenant_id": "personal",
+        "corpus_id": "personal",
+    }
+
+
 # ---------------------------------------------------------------------------
 # segment
 # ---------------------------------------------------------------------------

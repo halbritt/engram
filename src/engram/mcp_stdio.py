@@ -11,6 +11,7 @@ from engram.memory import (
     CAPABILITY_READ_STRIATUM,
     DEFAULT_CORPUS_ID,
     DEFAULT_TENANT_ID,
+    KNOWN_MEMORY_CAPABILITIES,
     MemoryCapabilityError,
     MemoryReferenceError,
     MemoryService,
@@ -108,7 +109,13 @@ def call_tool(service: MemoryService, name: str, arguments: dict[str, Any]) -> d
 def build_token(args: argparse.Namespace) -> MemoryToken:
     """Build an Engram-local token from CLI options."""
     capabilities = {CAPABILITY_READ_STRIATUM, CAPABILITY_DESCRIBE}
-    capabilities.update(args.capability or [])
+    for value in args.capability or []:
+        if value not in KNOWN_MEMORY_CAPABILITIES:
+            raise ValueError(
+                f'unknown --capability "{value}"; expected one of: '
+                + ", ".join(sorted(KNOWN_MEMORY_CAPABILITIES))
+            )
+        capabilities.add(value)
     primary_pair = TenantCorpus(args.tenant, args.corpus)
     pairs = {primary_pair}
     for value in args.allow_pair or []:
