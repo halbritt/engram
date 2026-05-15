@@ -132,9 +132,8 @@ On 2026-05-15 the user pivoted off the RFC 0045-0049 promotion / spec
 paperwork track and onto building the e2e Striatum-memory pipeline
 incrementally. The active plan is
 [`STRIATUM_MEMORY_E2E_BACKLOG.md`](../STRIATUM_MEMORY_E2E_BACKLOG.md):
-five sequenced layers — projection (next), retrieval, packet builder,
-gates, e2e MCP smoke — each shipping as working code with tests on
-master before the next starts.
+five sequenced layers — projection, retrieval, packet builder, gates,
+e2e MCP smoke — each shipping as working code with tests on master.
 
 **Done so far on the new track:**
 
@@ -144,7 +143,18 @@ master before the next starts.
 - AL-D001 / EG-000 hardening baseline closed. Evidence at
   `docs/reviews/eg-000-evidence-2026-05-15/EG_000_EVIDENCE.md`.
   Committed non-private fixture at `tests/fixtures/striatum_eg000/`.
-  See the backlog doc for the next step.
+- Implementation checkpoint `25decf4` (`Build Striatum memory retrieval
+  layers`) landed Layer 1 projection, Layer 2 exact-reference retrieval,
+  Layer 3 packet building, first Layer 4 gates, and the Layer 5 MCP smoke.
+  Verification before that commit: `make test` 626 passed,
+  `make eval-gates` 12 passed, and `make e2e-striatum` 1 passed.
+- Current handoff is in `OPERATOR_REPORT.md`. The backlog doc is now partly
+  stale where it describes Layers 1-3 and the e2e smoke as future work; use
+  it as design/order reference until it is reconciled.
+- Remaining near-term work: refresh generated schema docs if desired, add the
+  real-bundle Striatum e2e runbook, complete the remaining named Layer 4
+  gates, and then decide whether to start source-ingestion expansion with the
+  source contract template plus local git/build-artifact importers.
 
 **Important:** treat RFC 0045-RFC 0049 as design *reference*, not as
 contract gates. The acceptance decisions (AL-D002, AL-D003, AL-D004)

@@ -1,6 +1,67 @@
 # Operator Report
 
-Last updated: 2026-05-14
+Last updated: 2026-05-15
+
+## Current Handover Summary
+
+- Primary branch state before this report update: `master` and
+  `origin/master` were fast-forwarded to implementation checkpoint
+  `25decf4ca8c595a31051ca9131a4a01e2fb2b7ca`
+  (`Build Striatum memory retrieval layers`). The worktree was clean after
+  that push.
+- Verification before checkpoint `25decf4`: `git diff --check` passed;
+  `make test` passed with 626 tests in 338.47s; `make eval-gates` passed
+  with 12 tests in 17.89s; `make e2e-striatum` passed with 1 test in 1.70s.
+- Striatum-memory e2e implementation now has working code for Layer 1
+  projection, Layer 2 exact-reference retrieval, Layer 3 packet building,
+  first Layer 4 gates, and a Layer 5 MCP smoke. The backlog document remains
+  a useful design/order reference, but its layer checklist is now stale where
+  it describes Layers 1-3 and the e2e smoke as future work.
+- Layer 1 landed migration 015, `src/engram/striatum_projection.py`,
+  `engram phase-projection run`, `make project`, projection generation
+  activation, active reference rows, idempotent re-projection, and tenant /
+  corpus / privacy inheritance tests.
+- Layer 2 landed `MemoryService.search(..., filters=...)` with
+  `filters.exact_refs`, projection-backed exact-reference search, lexical
+  fallback against `captures`, per-hit `dirty_working_tree` and `freshness`,
+  and MCP schema/parsing support for the new filters.
+- Layer 3 landed `MemoryService.build_packet`, closed omission-reason
+  vocabulary, privacy-safe `striatum_packet_audits`, `engram.build_packet`
+  MCP support, and tests proving selected items, citations, omitted entries,
+  audit rows, JSON-shaped filters, and cross-tenant failure behavior.
+- Layer 4 landed the first deterministic gate set: EG-010-style V2 fixture
+  library under `tests/fixtures/striatum_v2/` with `minimal`,
+  `multi_corpus_isolation`, `redaction`, and `tombstone` scenarios, plus
+  `make eval-gates` covering fixture validation, exact-reference retrieval,
+  dirty-row surfacing, packet building, and packet audit behavior.
+- Layer 5 landed `tests/test_pipeline_smoke_striatum.py` and
+  `make e2e-striatum`, proving raw EG-000 fixture ingest -> projection ->
+  MCP `engram.search` -> MCP `engram.build_packet`.
+- A source-ingestion expansion proposal landed at
+  `docs/design/source-ingestion-expansion-proposal-2026-05-15.md`, covering
+  chat logs, git history, build artifacts, notes/docs, project evidence,
+  media/location/life records, source contracts, privacy defaults, rollout
+  order, and evaluation gates.
+- Not done yet: no generated schema docs refresh was committed after
+  migrations 015/016; no runbook was added for the real-bundle Striatum e2e
+  path; the full Layer 4 gate matrix from the backlog remains incomplete
+  beyond the tests listed above; AL-D002, AL-D003, and AL-D004 remain human /
+  future-decision items; vector search remains deferred.
+- Next recommended doc cleanup: update `STRIATUM_MEMORY_E2E_BACKLOG.md` to
+  mark the landed layer portions as done and split the remaining Layer 4
+  gates/runbook work into current tasks.
+- Next recommended implementation slice: finish the missing Striatum e2e
+  runbook and remaining named gate coverage, then decide whether to start the
+  source-ingestion expansion with the source contract template plus local git
+  and build-artifact importers.
+- Operational posture is unchanged: use the repo-local Striatum SQLite
+  break-glass mode (`STRIATUM_DAEMON_REQUIRED=0`, `STRIATUM_TEST_HARNESS=1`)
+  if operating Striatum; do not restart the canceled promotion workflow or
+  use stdin-delivered `striatum supervise` lanes until the upstream stdin EOF
+  issue is fixed.
+
+Sections below are historical notes. When they conflict with the current
+summary above, use the 2026-05-15 current summary.
 
 ## Handover Summary
 
