@@ -85,6 +85,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operator-watchdog / runner-side timeouts gap. The scaffold remains
   valid for a fresh `striatum run prepare` once #18 lands or the
   workflow lane command is changed away from stdin delivery.
+- Migration 012 comment reverted from `D-082` to `D082` to match the
+  decision-ID style used by the rest of the migration and review docs
+  and to unblock the migration drift check (`make migrate` was refusing
+  because the on-disk hash diverged from the applied hash).
+- `ROADMAP.md` and `TODO.md` refreshed to reflect the actual Phase 2 and
+  Phase 3 state. Phase 2 segmentation/embedding is complete across the
+  full AI-conversation corpus (7916 conversations, 11266 active embedded
+  segments). Phase 3 primary extraction run is complete (43812 claims,
+  42558 beliefs, last extraction 2026-05-07). Step 5 (gold-set authoring)
+  is now the active step; Phase 3 cleanup of 149 unextracted active
+  segments and 22 failed extractions is residual.
 - RFC 0038 operator UI rework proposal and Striatum implementation workflow
   scaffold, derived from `ENGRAM_UI_REWORK_HANDOFF.md`, covering a three-lane
   UI implementation split plus the normal review cycle augmented with an

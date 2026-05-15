@@ -1,4 +1,4 @@
--- RFC 0028 / D-082: surface predicate intent across extraction and interview.
+-- RFC 0028 / D082: surface predicate intent across extraction and interview.
 -- The new hint is advisory metadata for prompts and review UX; it is not a
 -- constraint on claims or beliefs.
 

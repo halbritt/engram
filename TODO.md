@@ -15,15 +15,13 @@ Authoritative planning lives in:
 
 ## Current Work
 
-Step 4 from the roadmap: build the V1 pipeline through the smoke pre-pass.
+Step 5 from the roadmap: author the gold set against the now-extant
+claims and beliefs.
 
-Active implementation target:
+Residual cleanup that does not block step 5:
 
-- Phase 2 preflight probes from
-  [docs/reviews/v1/PRE_PHASE_2_ADVERSARIAL_SYNTHESIS_2026_04_30.md](docs/reviews/v1/PRE_PHASE_2_ADVERSARIAL_SYNTHESIS_2026_04_30.md).
-- Phase 2 — segmentation + embeddings.
-- Operational prompt:
-  [prompts/P007_phase_2_segments_embeddings.md](prompts/P007_phase_2_segments_embeddings.md).
+- Close 149 active segments without an extraction (Phase 3 gap).
+- Revisit 22 failed claim extractions.
 
 ## Already Landed
 
@@ -35,17 +33,23 @@ Active implementation target:
 - `privacy_tier` defaulting and reclassification vocabulary.
 - Phase 2 implementation prompt.
 - D026 pre-Phase-2 adversarial review and synthesis.
+- Phase 2 segmentation + embeddings over the full AI-conversation corpus
+  (7916/7916 conversations, 11266 active segments embedded; last activation
+  2026-05-08).
+- Phase 3 claim extraction + belief consolidation primary run (43812
+  claims, 42558 beliefs; last extraction 2026-05-07).
 
 ## Next Major Milestones
 
-- Phase 2 preflight probes.
-- Phase 2: topic segmentation + segment embeddings.
-- Phase 3: claims + bitemporal beliefs.
+- Gold set authoring (Step 5, in progress).
+- Adversarial round on V1 + principles + gold set + claim/belief inventory
+  (Step 6).
+- Phase 3 cleanup: 149 unextracted segments + 22 failed extractions.
 - Phase 4: entity canonicalization + belief review queue.
 - Phase 5: `context_for`, context snapshots / hot state, MCP serving, and
   `context_feedback`.
 - Smoke gate on a small corpus slice.
-- Gold-set authoring and validation.
+- Gold-set validation cycle.
 
 ## Explicit Non-TODOs For V1
 

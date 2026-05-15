@@ -6,13 +6,10 @@
 
 ## Right now
 
-**Step 4B: Full Phase 2 AI-conversation segmentation run.** Segment and embed
-the entire AI-conversation corpus: ChatGPT, Gemini, and Claude conversation
-history. This explicitly excludes Obsidian notes, live captures, and any other
-non-conversation source. See V1_ARCHITECTURE_DRAFT and
-[prompts/P007_phase_2_segments_embeddings.md](prompts/P007_phase_2_segments_embeddings.md)
-for the operational path. Done when the conversation-derived segments are
-embedded, active, resumability-clean, and browsable.
+**Step 5: Author the gold set.** 25–50 entries via GOLD_SET_TEMPLATE, against
+the now-extant claims and beliefs. *Trap to watch:* `expected_facts` come
+from my real-life answer, not from what extraction produced. Reference
+evidence by content, not by id. Done after a 24-hour-gap re-read.
 
 ## Already done
 
@@ -21,17 +18,18 @@ embedded, active, resumability-clean, and browsable.
 - Step 3: V1 re-pass against principles → V1_SYNTHESIS_DELTAS, DECISION_LOG D016–D022.
 - Step 4A: D026 pre-Phase-2 adversarial round → Gemini + Opus reviews,
   synthesis, DECISION_LOG D027-D033.
+- Step 4B: Full Phase 2 AI-conversation segmentation + embedding run.
+  7916/7916 conversations have active segment generations across ChatGPT
+  (3437), Claude (77), and Gemini (4264); 11266 active segments are
+  embedded (last activation 2026-05-08).
+- Step 4C: Phase 3 claim extraction + belief consolidation, primary run.
+  11169/11340 expected extractions succeeded (149 active segments without
+  an extraction remain, plus 22 failed extractions to revisit). 43812
+  claims, 42558 beliefs (last extraction 2026-05-07). The residual
+  149-segment gap and the 22 failed extractions are minor cleanup; they
+  do not block gold-set authoring.
 
 ## Up next, in order
-
-**Step 4C: Claim extraction + belief consolidation.** Run Phase 3 over the
-active Phase 2 segments. Done when claims and reviewable candidate/accepted
-beliefs exist with evidence back to raw messages.
-
-**Step 5: Author the gold set.** 25–50 entries via GOLD_SET_TEMPLATE, after
-claims and beliefs exist. *Trap to watch:* `expected_facts` come from my
-real-life answer, not from what extraction produced. Reference evidence by
-content, not by id. Done after a 24-hour-gap re-read.
 
 **Step 6: Adversarial round** on V1 + principles + gold set + claim/belief
 inventory.
