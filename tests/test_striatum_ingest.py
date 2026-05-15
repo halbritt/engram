@@ -29,6 +29,7 @@ from engram.striatum_ingest import (
     canonical_manifest_sha256,
     ingest_striatum_bundle,
 )
+from engram.striatum_projection import project_striatum_references
 
 
 def _row(sub_kind: str, external_id: str, content: str) -> dict[str, Any]:
@@ -434,11 +435,16 @@ def test_eg000_committed_fixture_round_trip_ingest_and_read(
     # describe_corpus reports the fixture counts
     description = service.describe_corpus()
     assert description["record_count"] == 5
+    assert description["projection_active_count"] == 0
     assert description["bundle_count"] == 1
     assert description["sub_kind_counts"]["rfc"] == 2
     assert description["sub_kind_counts"]["decision_log_row"] == 1
     assert description["sub_kind_counts"]["operator_report"] == 1
     assert description["sub_kind_counts"]["changelog_entry"] == 1
+
+    projection = project_striatum_references(conn)
+    assert projection.captures_seen == 5
+    assert service.describe_corpus()["projection_active_count"] == 5
 
 
 def test_health_schema_version_uses_applied_ordering_not_lex_max(

@@ -209,6 +209,24 @@ def main(argv: list[str] | None = None) -> int:
     describe_corpus_parser.add_argument("--tenant", default=None)
     describe_corpus_parser.set_defaults(invoked_command="describe-corpus")
 
+    phase_projection_parser = subparsers.add_parser(
+        "phase-projection",
+        help="Striatum projection commands",
+    )
+    phase_projection_subparsers = phase_projection_parser.add_subparsers(
+        dest="phase_projection_command", required=True
+    )
+    phase_projection_run_parser = phase_projection_subparsers.add_parser(
+        "run",
+        help="Fast-forward Striatum reference projections",
+    )
+    phase_projection_run_parser.add_argument("--tenant", default="striatum")
+    phase_projection_run_parser.add_argument("--corpus", default="striatum")
+    phase_projection_run_parser.set_defaults(
+        command="phase-projection-run",
+        invoked_command="phase-projection run",
+    )
+
     segment_parser = subparsers.add_parser(
         "segment",
         help="Deprecated; use `engram phase2 segment`",
@@ -755,6 +773,17 @@ def main(argv: list[str] | None = None) -> int:
                     corpus_id=args.corpus,
                 )
             print(json.dumps(description, indent=2, sort_keys=True))
+            return 0
+
+        if args.command == "phase-projection-run":
+            with connect() as conn:
+                result = run_phase_projection(
+                    conn,
+                    tenant_id=args.tenant,
+                    corpus_id=args.corpus,
+                )
+                conn.commit()
+            print_phase_projection_result(result, tenant_id=args.tenant, corpus_id=args.corpus)
             return 0
 
         if args.command == "segment":
@@ -1439,6 +1468,34 @@ def print_striatum_ingest_result(result) -> None:
         print(f"  sub_kind: {counts}")
 
 
+def print_phase_projection_result(result: Any, *, tenant_id: str, corpus_id: str) -> None:
+    """Print a compact summary for Striatum projection runs."""
+    fields = {
+        "generation_id": _projection_result_value(result, "generation_id"),
+        "captures_seen": _projection_result_value(result, "captures_seen"),
+        "captures_processed": _projection_result_value(result, "captures_processed"),
+        "references_seen": _projection_result_value(result, "references_seen"),
+        "references_inserted": _projection_result_value(result, "references_inserted"),
+        "references_created": _projection_result_value(result, "references_created"),
+        "references_activated": _projection_result_value(result, "references_activated"),
+        "references_active": _projection_result_value(result, "references_active"),
+        "reused_active_generation": _projection_result_value(result, "reused_active_generation"),
+        "activated": _projection_result_value(result, "activated"),
+    }
+    suffix = " ".join(f"{key}={value}" for key, value in fields.items() if value is not None)
+    line = f"phase-projection: tenant={tenant_id} corpus={corpus_id}"
+    if suffix:
+        line = f"{line} {suffix}"
+    print(line)
+
+
+def _projection_result_value(result: Any, key: str) -> Any:
+    """Read a projection result field from either a dataclass-like object or dict."""
+    if isinstance(result, dict):
+        return result.get(key)
+    return getattr(result, key, None)
+
+
 def print_embed_result(result) -> None:
     print(
         "embed: "
@@ -1471,6 +1528,13 @@ def print_phase4_smoke_result(result) -> None:
         f"edges_reused={result.edges_reused} "
         f"neighborhood_rows={result.neighborhood_rows}"
     )
+
+
+def run_phase_projection(conn: Any, *, tenant_id: str, corpus_id: str) -> Any:
+    """Run the Striatum projection worker."""
+    from engram.striatum_projection import project_striatum_references
+
+    return project_striatum_references(conn, tenant_id=tenant_id, corpus_id=corpus_id)
 
 
 def run_segment_batches(

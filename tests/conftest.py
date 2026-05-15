@@ -15,6 +15,7 @@ def conn():
     if not TEST_DATABASE_URL:
         pytest.skip("ENGRAM_TEST_DATABASE_URL is required for database tests")
     with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as admin:
+        admin.execute("CREATE SCHEMA IF NOT EXISTS public")
         admin.execute(
             """
             DROP VIEW IF EXISTS current_gold_label CASCADE;
@@ -28,6 +29,9 @@ def conn():
                 gold_label_sessions,
                 gold_label_verdict_vocabulary,
                 gold_label_strata_vocabulary,
+                striatum_packet_audits,
+                striatum_references,
+                striatum_projection_generations,
                 pinned_beliefs,
                 belief_review_actions,
                 entity_edges,
@@ -80,6 +84,12 @@ def conn():
         admin.execute(
             "DROP FUNCTION IF EXISTS fn_gold_label_active_learning_events_append_only() CASCADE"
         )
+        admin.execute(
+            "DROP FUNCTION IF EXISTS fn_striatum_packet_audit_has_payload_key(JSONB) CASCADE"
+        )
+        admin.execute("DROP FUNCTION IF EXISTS fn_striatum_packet_audits_validate() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_striatum_packet_audits_append_only() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_striatum_references_validate_parent() CASCADE")
         admin.execute("DROP TYPE IF EXISTS source_kind CASCADE")
         admin.execute("DROP TYPE IF EXISTS capture_type CASCADE")
         admin.execute("DROP TYPE IF EXISTS consolidation_status CASCADE")

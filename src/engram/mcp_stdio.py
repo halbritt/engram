@@ -12,8 +12,10 @@ from engram.memory import (
     DEFAULT_CORPUS_ID,
     DEFAULT_TENANT_ID,
     KNOWN_MEMORY_CAPABILITIES,
+    ExactRefFilter,
     MemoryCapabilityError,
     MemoryReferenceError,
+    MemorySearchFilters,
     MemoryService,
     MemoryToken,
     TenantCorpus,
@@ -24,7 +26,7 @@ MCP_PROTOCOL_VERSION = "2024-11-05"
 
 
 def tool_definitions() -> list[dict[str, Any]]:
-    """Return the exact RFC 0044 Phase 1 tool surface."""
+    """Return the local Engram MCP tool surface."""
     return [
         {
             "name": "engram.search",
@@ -37,6 +39,81 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "corpus": {"type": "string", "default": DEFAULT_CORPUS_ID},
                     "limit": {"type": "integer", "default": 10, "minimum": 1, "maximum": 50},
                     "k": {"type": "integer", "minimum": 1, "maximum": 50},
+                    "filters": {
+                        "anyOf": [
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "exact_refs": {
+                                        "anyOf": [
+                                            {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "ref_kind": {"type": "string"},
+                                                        "ref_value": {"type": "string"},
+                                                    },
+                                                    "required": ["ref_kind", "ref_value"],
+                                                    "additionalProperties": False,
+                                                },
+                                            },
+                                            {"type": "null"},
+                                        ],
+                                        "default": None,
+                                    }
+                                },
+                                "additionalProperties": False,
+                            },
+                            {"type": "null"},
+                        ],
+                        "default": None,
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "engram.build_packet",
+            "description": "Build a bounded cited local-memory packet for an authorized query.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "tenant": {"type": "string", "default": DEFAULT_TENANT_ID},
+                    "corpus": {"type": "string", "default": DEFAULT_CORPUS_ID},
+                    "budget": {"type": "integer", "default": 2000, "minimum": 1},
+                    "filters": {
+                        "anyOf": [
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "exact_refs": {
+                                        "anyOf": [
+                                            {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "ref_kind": {"type": "string"},
+                                                        "ref_value": {"type": "string"},
+                                                    },
+                                                    "required": ["ref_kind", "ref_value"],
+                                                    "additionalProperties": False,
+                                                },
+                                            },
+                                            {"type": "null"},
+                                        ],
+                                        "default": None,
+                                    }
+                                },
+                                "additionalProperties": False,
+                            },
+                            {"type": "null"},
+                        ],
+                        "default": None,
+                    },
                 },
                 "required": ["query"],
                 "additionalProperties": False,
@@ -89,8 +166,24 @@ def call_tool(service: MemoryService, name: str, arguments: dict[str, Any]) -> d
                 tenant_id=str(arguments.get("tenant") or DEFAULT_TENANT_ID),
                 corpus_id=str(arguments.get("corpus") or DEFAULT_CORPUS_ID),
                 limit=int(limit_value),
+                filters=parse_search_filters(arguments.get("filters")),
             )
         }
+    if name == "engram.build_packet":
+        query = arguments.get("query")
+        if not isinstance(query, str) or query.strip() == "":
+            raise ValueError('engram.build_packet requires non-empty "query"')
+        budget = arguments.get("budget", 2000)
+        build_packet = getattr(service, "build_packet", None)
+        if build_packet is None:
+            raise ValueError("engram.build_packet is unavailable")
+        return build_packet(
+            query,
+            budget=int(budget),
+            tenant_id=str(arguments.get("tenant") or DEFAULT_TENANT_ID),
+            corpus_id=str(arguments.get("corpus") or DEFAULT_CORPUS_ID),
+            filters=parse_search_filters(arguments.get("filters")),
+        )
     if name == "engram.fetch_reference":
         reference_id = arguments.get("reference_id")
         if not isinstance(reference_id, str) or reference_id.strip() == "":
@@ -104,6 +197,32 @@ def call_tool(service: MemoryService, name: str, arguments: dict[str, Any]) -> d
     if name == "engram.health":
         return service.health()
     raise ValueError(f"unknown Engram MCP tool: {name}")
+
+
+def parse_search_filters(value: Any) -> MemorySearchFilters | None:
+    """Parse optional MCP search filters into the typed memory API shape."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("engram.search filters must be an object or null")
+    exact_refs_value = value.get("exact_refs")
+    if exact_refs_value is None:
+        return MemorySearchFilters()
+    if not isinstance(exact_refs_value, list):
+        raise ValueError("engram.search filters.exact_refs must be an array or null")
+
+    exact_refs: list[ExactRefFilter] = []
+    for item in exact_refs_value:
+        if not isinstance(item, dict):
+            raise ValueError("engram.search filters.exact_refs entries must be objects")
+        ref_kind = item.get("ref_kind")
+        ref_value = item.get("ref_value")
+        if not isinstance(ref_kind, str) or ref_kind.strip() == "":
+            raise ValueError('engram.search filters.exact_refs entries require "ref_kind"')
+        if not isinstance(ref_value, str) or ref_value.strip() == "":
+            raise ValueError('engram.search filters.exact_refs entries require "ref_value"')
+        exact_refs.append(ExactRefFilter(ref_kind=ref_kind, ref_value=ref_value))
+    return MemorySearchFilters(exact_refs=tuple(exact_refs))
 
 
 def build_token(args: argparse.Namespace) -> MemoryToken:

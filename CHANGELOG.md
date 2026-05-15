@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Source ingestion expansion proposal covering chat logs, commit history,
+  build artifacts, notes/docs, project evidence, media/location/life records,
+  source contracts, privacy defaults, rollout order, and evaluation gates.
 - Striatum memory roadmap documenting how Engram should evolve from RFC 0044
   raw Striatum bundle ingestion into a full local memory system for Striatum
   operator logs, workflow agents, designs, reports, changelogs, git history,
@@ -132,6 +135,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/test_cli.py`. The evidence does not by itself authorize RFC
   0046-RFC 0049 implementation; the AL-D002 acceptance decision and the
   remaining nonblocking promotion items remain prerequisite.
+- Striatum-memory e2e implementation advanced through the first retrieval
+  layers. Layer 1 added migration 015 with `striatum_projection_generations`
+  and `striatum_references`, the deterministic Striatum projection worker,
+  `engram phase-projection run`, and the `make project` target. Layer 2 added
+  exact-reference retrieval via `filters.exact_refs`, MCP search filter
+  parsing/schema support, and per-hit `dirty_working_tree` / `freshness`
+  fields while preserving the lexical fallback. Layer 3 added packet building,
+  privacy-safe `striatum_packet_audits`, and the `engram.build_packet` MCP
+  tool. EG-010 fixture groundwork now lives under
+  `tests/fixtures/striatum_v2/` with a reusable builder/validator and
+  committed `minimal`, `multi_corpus_isolation`, `redaction`, and `tombstone`
+  scenarios. The `eval-gates` and `e2e-striatum` targets cover the current
+  fixture/retrieval/packet gates and the EG-000 ingest → projection → MCP
+  search/packet smoke.
 - RFC 0038 operator UI rework proposal and Striatum implementation workflow
   scaffold, derived from `ENGRAM_UI_REWORK_HANDOFF.md`, covering a three-lane
   UI implementation split plus the normal review cycle augmented with an

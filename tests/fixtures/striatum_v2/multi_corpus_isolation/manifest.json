@@ -1,0 +1,96 @@
+{
+  "schema_version": "striatum.corpus_export.v1",
+  "fixture_contract": "eg-010-v2-compatible",
+  "fixture_scenario": "multi_corpus_isolation",
+  "striatum_version": "eg-010-v2-fixture",
+  "repo_root": "/home/halbritt/git/engram",
+  "git_head": "eg010v2fixture000000000000000000000000000000",
+  "git_dirty": false,
+  "since_ref": "eg-010/multi_corpus_isolation",
+  "since_commit": "eg010v2fixture000000000000000000000000000000",
+  "generated_at": "2026-05-15T00:00:00Z",
+  "schema": {
+    "row_shape_version": "striatum.corpus_row.v2-compatible",
+    "sub_kinds": [
+      "rfc",
+      "decision_log_row",
+      "operator_report",
+      "run_summary",
+      "audit_chain_entry",
+      "changelog_entry",
+      "ubiquitous_language_term",
+      "harness_friction_pattern",
+      "commit"
+    ]
+  },
+  "source_kinds": [
+    "striatum"
+  ],
+  "tenant_id": "striatum",
+  "corpus_ids": [
+    "striatum",
+    "striatum:eg010"
+  ],
+  "row_counts": {
+    "rfc": 1,
+    "decision_log_row": 0,
+    "operator_report": 1,
+    "run_summary": 0,
+    "audit_chain_entry": 0,
+    "changelog_entry": 0,
+    "ubiquitous_language_term": 0,
+    "harness_friction_pattern": 0,
+    "commit": 0
+  },
+  "files": {
+    "rfcs.jsonl": {
+      "sha256": "b108ee33d98e4f7e64ad287af6e630fa8088487517af6a241a8a6746fd1da2fb",
+      "rows": 1,
+      "bytes": 1090
+    },
+    "decision_log_rows.jsonl": {
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "rows": 0,
+      "bytes": 1
+    },
+    "operator_reports.jsonl": {
+      "sha256": "7e1a02d613156b99025c3e3889de52fda0bd279ca15ef042b77268b199c5c6ec",
+      "rows": 1,
+      "bytes": 1208
+    },
+    "run_summaries.jsonl": {
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "rows": 0,
+      "bytes": 1
+    },
+    "audit_chain.jsonl": {
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "rows": 0,
+      "bytes": 1
+    },
+    "changelog.jsonl": {
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "rows": 0,
+      "bytes": 1
+    },
+    "ubiquitous_language.jsonl": {
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "rows": 0,
+      "bytes": 1
+    },
+    "harness_friction_patterns.jsonl": {
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "rows": 0,
+      "bytes": 1
+    },
+    "commits.jsonl": {
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "rows": 0,
+      "bytes": 1
+    }
+  },
+  "repo_local_schema_version": 14,
+  "missing_optional_sources": [],
+  "daemon_audit_included": false,
+  "bundle_sha256": "951bd9cc0e778b0ca3a5e8a7cc9a7b72dbe45fb88dc25279f9c5142e7540fb97"
+}

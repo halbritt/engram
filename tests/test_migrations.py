@@ -137,6 +137,30 @@ def test_rfc0044_migration_014_exists_on_disk() -> None:
     assert "captures_striatum_external_idx" in text
 
 
+def test_rfc0046_migration_015_exists_on_disk() -> None:
+    path = MIGRATIONS_DIR / "015_striatum_projection.sql"
+    assert path.exists(), f"missing migration: {path}"
+    text = path.read_text(encoding="utf-8")
+    assert "RFC 0046" in text
+    assert "striatum_projection_generations" in text
+    assert "striatum_references" in text
+    assert "striatum_projection_generations_active_parent_idx" in text
+    assert "striatum_references_exact_lookup_idx" in text
+    assert "fn_striatum_references_validate_parent" in text
+
+
+def test_rfc0048_migration_016_exists_on_disk() -> None:
+    path = MIGRATIONS_DIR / "016_striatum_packet_audits.sql"
+    assert path.exists(), f"missing migration: {path}"
+    text = path.read_text(encoding="utf-8")
+    assert "RFC 0048" in text
+    assert "striatum_packet_audits" in text
+    assert "striatum_packet_audits_packet_id_idx" in text
+    assert "striatum_packet_audits_omitted_gin_idx" in text
+    assert "fn_striatum_packet_audits_validate" in text
+    assert "fn_striatum_packet_audits_append_only" in text
+
+
 def test_rfc0021_migration_010_applies_via_conn_fixture(conn) -> None:
     """The conftest fixture already runs ``migrate(conn)``; presence of the
     new tables/views is the contract."""
@@ -259,6 +283,524 @@ def test_014_striatum_tenant_corpus_applies(conn) -> None:
         "SELECT to_regclass('public.captures_striatum_external_idx') IS NOT NULL"
     ).fetchone()
     assert index_row[0] is True
+
+
+def test_015_striatum_projection_schema_applies(conn) -> None:
+    for table in ("striatum_projection_generations", "striatum_references"):
+        row = conn.execute("SELECT to_regclass(%s) IS NOT NULL", (f"public.{table}",)).fetchone()
+        assert row[0] is True, f"table missing: {table}"
+
+    for index in (
+        "striatum_projection_generations_idempotency_idx",
+        "striatum_projection_generations_active_parent_idx",
+        "striatum_references_generation_ref_idx",
+        "striatum_references_exact_lookup_idx",
+        "striatum_references_generation_active_idx",
+    ):
+        row = conn.execute("SELECT to_regclass(%s) IS NOT NULL", (f"public.{index}",)).fetchone()
+        assert row[0] is True, f"index missing: {index}"
+
+
+def test_015_striatum_projection_constraints(conn) -> None:
+    manifest_hash = "a" * 64
+    content_hash = "b" * 64
+    generation_id = conn.execute(
+        """
+        INSERT INTO striatum_projection_generations (
+            tenant_id,
+            corpus_id,
+            parent_kind,
+            parent_id,
+            bundle_id,
+            contract_version,
+            projection_schema_version,
+            projection_code_version,
+            input_manifest_sha256,
+            input_item_count,
+            status,
+            activated_at
+        )
+        VALUES (
+            'striatum',
+            'striatum',
+            'bundle',
+            'bundle-1',
+            'bundle-1',
+            'striatum.v2',
+            'rfc0046.layer1.v1',
+            'projection.v1',
+            %s,
+            1,
+            'activated',
+            now()
+        )
+        RETURNING id
+        """,
+        (manifest_hash,),
+    ).fetchone()[0]
+
+    with pytest.raises(errors.UniqueViolation):
+        conn.execute(
+            """
+            INSERT INTO striatum_projection_generations (
+                tenant_id,
+                corpus_id,
+                parent_kind,
+                parent_id,
+                bundle_id,
+                contract_version,
+                projection_schema_version,
+                projection_code_version,
+                input_manifest_sha256,
+                input_item_count,
+                status,
+                activated_at
+            )
+            VALUES (
+                'striatum',
+                'striatum',
+                'bundle',
+                'bundle-1',
+                'bundle-2',
+                'striatum.v2',
+                'rfc0046.layer1.v1',
+                'projection.v1',
+                %s,
+                1,
+                'activated',
+                now()
+            )
+            """,
+            ("c" * 64,),
+        )
+    conn.rollback()
+
+    source_id = conn.execute(
+        """
+        INSERT INTO sources (
+            source_kind,
+            external_id,
+            raw_payload,
+            tenant_id,
+            corpus_id,
+            bundle_id
+        )
+        VALUES ('striatum', 'source-1', '{}'::jsonb, 'striatum', 'striatum', 'bundle-1')
+        RETURNING id
+        """
+    ).fetchone()[0]
+    capture_id = conn.execute(
+        """
+        INSERT INTO captures (
+            source_id,
+            source_kind,
+            external_id,
+            raw_payload,
+            capture_type,
+            tenant_id,
+            corpus_id,
+            bundle_id,
+            observed_at
+        )
+        VALUES (
+            %s,
+            'striatum',
+            'capture-1',
+            '{}'::jsonb,
+            'reference',
+            'striatum',
+            'striatum',
+            'bundle-1',
+            now()
+        )
+        RETURNING id
+        """,
+        (source_id,),
+    ).fetchone()[0]
+
+    conn.execute(
+        """
+        INSERT INTO striatum_references (
+            capture_id,
+            tenant_id,
+            corpus_id,
+            ref_kind,
+            ref_value,
+            ref_value_normalized,
+            content_hash,
+            generation_id,
+            is_active,
+            observed_at
+        )
+        VALUES (%s, 'striatum', 'striatum', 'rfc_id', 'RFC 0046', 'rfc 0046', %s, %s, true, now())
+        """,
+        (capture_id, content_hash, generation_id),
+    )
+
+    with pytest.raises(errors.UniqueViolation):
+        conn.execute(
+            """
+            INSERT INTO striatum_references (
+                capture_id,
+                tenant_id,
+                corpus_id,
+                ref_kind,
+                ref_value,
+                ref_value_normalized,
+                content_hash,
+                generation_id,
+                is_active,
+                observed_at
+            )
+            VALUES (
+                %s,
+                'striatum',
+                'striatum',
+                'rfc_id',
+                'RFC 0046',
+                'rfc 0046',
+                %s,
+                %s,
+                true,
+                now()
+            )
+            """,
+            (capture_id, content_hash, generation_id),
+        )
+    conn.rollback()
+
+    with pytest.raises(errors.CheckViolation):
+        conn.execute(
+            """
+            INSERT INTO striatum_references (
+                capture_id,
+                tenant_id,
+                corpus_id,
+                ref_kind,
+                ref_value,
+                ref_value_normalized,
+                content_hash,
+                generation_id,
+                is_active,
+                observed_at
+            )
+            VALUES (
+                %s,
+                'striatum',
+                'striatum',
+                'unbounded_kind',
+                'x',
+                'x',
+                %s,
+                %s,
+                false,
+                now()
+            )
+            """,
+            (capture_id, content_hash, generation_id),
+        )
+    conn.rollback()
+
+
+def _insert_striatum_projection_generation(
+    conn: psycopg.Connection,
+    *,
+    tenant_id: str = "striatum",
+    corpus_id: str = "striatum",
+) -> uuid.UUID:
+    return conn.execute(
+        """
+        INSERT INTO striatum_projection_generations (
+            tenant_id,
+            corpus_id,
+            parent_kind,
+            parent_id,
+            bundle_id,
+            contract_version,
+            projection_schema_version,
+            projection_code_version,
+            input_manifest_sha256,
+            input_item_count,
+            status,
+            activated_at
+        )
+        VALUES (
+            %s,
+            %s,
+            'bundle',
+            %s,
+            %s,
+            'striatum.v2',
+            'rfc0046.layer1.v1',
+            'projection.v1',
+            %s,
+            1,
+            'activated',
+            now()
+        )
+        RETURNING id
+        """,
+        (
+            tenant_id,
+            corpus_id,
+            f"bundle-{uuid4()}",
+            f"bundle-{uuid4()}",
+            "d" * 64,
+        ),
+    ).fetchone()[0]
+
+
+def test_016_striatum_packet_audits_schema_applies(conn) -> None:
+    row = conn.execute(
+        "SELECT to_regclass('public.striatum_packet_audits') IS NOT NULL"
+    ).fetchone()
+    assert row[0] is True
+
+    for index in (
+        "striatum_packet_audits_packet_id_idx",
+        "striatum_packet_audits_tenant_corpus_created_idx",
+        "striatum_packet_audits_generation_created_idx",
+        "striatum_packet_audits_status_created_idx",
+        "striatum_packet_audits_selected_gin_idx",
+        "striatum_packet_audits_omitted_gin_idx",
+    ):
+        row = conn.execute("SELECT to_regclass(%s) IS NOT NULL", (f"public.{index}",)).fetchone()
+        assert row[0] is True, f"index missing: {index}"
+
+
+def test_016_striatum_packet_audits_accept_privacy_safe_entries(conn) -> None:
+    generation_id = _insert_striatum_projection_generation(conn)
+    audit_id = conn.execute(
+        """
+        INSERT INTO striatum_packet_audits (
+            packet_id,
+            generation_id,
+            tenant_id,
+            corpus_id,
+            policy_version,
+            purpose,
+            status,
+            query,
+            budget,
+            selected,
+            omitted
+        )
+        VALUES (
+            gen_random_uuid(),
+            %s,
+            'striatum',
+            'striatum',
+            'rfc0048.layer3.v1',
+            'packet_prepare',
+            'ok',
+            'RFC 0048 packet audit',
+            '{"max_tokens": 1400}'::jsonb,
+            '[{
+                "candidate_id": "candidate-1",
+                "selected": true,
+                "lineage": {
+                    "projection_generation_id": "generation-visible",
+                    "reference_id": "ref-1",
+                    "item_id": "item-1",
+                    "logical_id": "logical-1",
+                    "version_id": "version-1"
+                }
+            }]'::jsonb,
+            '[{
+                "candidate_id": "candidate-2",
+                "selected": false,
+                "reason": "over_budget",
+                "lineage": {
+                    "projection_generation_id": "generation-visible",
+                    "reference_id": "ref-2"
+                },
+                "ranking": {
+                    "rank": 2,
+                    "score": 0.1
+                }
+            }]'::jsonb
+        )
+        RETURNING id
+        """,
+        (generation_id,),
+    ).fetchone()[0]
+
+    row = conn.execute(
+        """
+        SELECT selected -> 0 ->> 'candidate_id', omitted -> 0 ->> 'reason'
+        FROM striatum_packet_audits
+        WHERE id = %s
+        """,
+        (audit_id,),
+    ).fetchone()
+    assert row == ("candidate-1", "over_budget")
+
+
+def test_016_striatum_packet_audits_reject_invalid_status_reason_and_payload(conn) -> None:
+    generation_id = _insert_striatum_projection_generation(conn)
+
+    with pytest.raises(errors.CheckViolation):
+        conn.execute(
+            """
+            INSERT INTO striatum_packet_audits (
+                packet_id,
+                generation_id,
+                tenant_id,
+                corpus_id,
+                policy_version,
+                purpose,
+                status,
+                query
+            )
+            VALUES (
+                gen_random_uuid(),
+                %s,
+                'striatum',
+                'striatum',
+                'rfc0048.layer3.v1',
+                'packet_prepare',
+                'invented_status',
+                'query'
+            )
+            """,
+            (generation_id,),
+        )
+    conn.rollback()
+
+    with pytest.raises(errors.CheckViolation):
+        conn.execute(
+            """
+            INSERT INTO striatum_packet_audits (
+                packet_id,
+                generation_id,
+                tenant_id,
+                corpus_id,
+                policy_version,
+                purpose,
+                status,
+                query,
+                omitted
+            )
+            VALUES (
+                gen_random_uuid(),
+                %s,
+                'striatum',
+                'striatum',
+                'rfc0048.layer3.v1',
+                'packet_prepare',
+                'ok',
+                'query',
+                '[{
+                    "candidate_id": "candidate-1",
+                    "selected": false,
+                    "reason": "ad_hoc_reason"
+                }]'::jsonb
+            )
+            """,
+            (generation_id,),
+        )
+    conn.rollback()
+
+    with pytest.raises(errors.CheckViolation):
+        conn.execute(
+            """
+            INSERT INTO striatum_packet_audits (
+                packet_id,
+                generation_id,
+                tenant_id,
+                corpus_id,
+                policy_version,
+                purpose,
+                status,
+                query,
+                selected
+            )
+            VALUES (
+                gen_random_uuid(),
+                %s,
+                'striatum',
+                'striatum',
+                'rfc0048.layer3.v1',
+                'packet_prepare',
+                'ok',
+                'query',
+                '[{
+                    "candidate_id": "candidate-1",
+                    "selected": true,
+                    "raw_payload": {"content": "must not be copied into audit"}
+                }]'::jsonb
+            )
+            """,
+            (generation_id,),
+        )
+    conn.rollback()
+
+
+def test_016_striatum_packet_audits_match_generation_pair_and_append_only(conn) -> None:
+    generation_id = _insert_striatum_projection_generation(conn)
+
+    with pytest.raises(errors.CheckViolation):
+        conn.execute(
+            """
+            INSERT INTO striatum_packet_audits (
+                packet_id,
+                generation_id,
+                tenant_id,
+                corpus_id,
+                policy_version,
+                purpose,
+                status,
+                query
+            )
+            VALUES (
+                gen_random_uuid(),
+                %s,
+                'other',
+                'striatum',
+                'rfc0048.layer3.v1',
+                'packet_prepare',
+                'ok',
+                'query'
+            )
+            """,
+            (generation_id,),
+        )
+    conn.rollback()
+
+    audit_id = conn.execute(
+        """
+        INSERT INTO striatum_packet_audits (
+            packet_id,
+            generation_id,
+            tenant_id,
+            corpus_id,
+            policy_version,
+            purpose,
+            status,
+            query
+        )
+        VALUES (
+            gen_random_uuid(),
+            %s,
+            'striatum',
+            'striatum',
+            'rfc0048.layer3.v1',
+            'packet_prepare',
+            'ok',
+            'query'
+        )
+        RETURNING id
+        """,
+        (generation_id,),
+    ).fetchone()[0]
+
+    with pytest.raises(errors.RaiseException) as update_exc:
+        conn.execute(
+            "UPDATE striatum_packet_audits SET status = 'stale' WHERE id = %s",
+            (audit_id,),
+        )
+    assert update_exc.value.diag.sqlstate == "P0001"
+    conn.rollback()
 
 
 def test_migration_checksums_detect_changed_applied_file(conn, tmp_path):

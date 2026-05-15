@@ -365,6 +365,41 @@ def test_describe_corpus_accepts_non_striatum_corpus_with_explicit_tenant(
     }
 
 
+def test_phase_projection_run_dispatches_to_projection_worker(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_cli_connect: Any,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_run_projection(connection: Any, *, tenant_id: str, corpus_id: str) -> SimpleNamespace:
+        captured["conn"] = connection
+        captured["tenant_id"] = tenant_id
+        captured["corpus_id"] = corpus_id
+        return SimpleNamespace(
+            generation_id="gen-123",
+            captures_processed=2,
+            references_created=4,
+            references_activated=4,
+            references_active=4,
+        )
+
+    monkeypatch.setattr(cli, "run_phase_projection", fake_run_projection)
+
+    rc = cli.main(["phase-projection", "run", "--tenant", "striatum", "--corpus", "striatum"])
+
+    assert rc == 0
+    assert captured == {
+        "conn": fake_cli_connect,
+        "tenant_id": "striatum",
+        "corpus_id": "striatum",
+    }
+    captured_output = capsys.readouterr()
+    assert "phase-projection: tenant=striatum corpus=striatum" in captured_output.out
+    assert "captures_processed=2" in captured_output.out
+    assert "references_created=4" in captured_output.out
+
+
 # ---------------------------------------------------------------------------
 # segment
 # ---------------------------------------------------------------------------
