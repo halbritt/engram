@@ -473,11 +473,22 @@ def _insert_or_supersede(
         )
         active = cur.fetchone()
         was_tombstoned = False
+        active_id: str | None = None
         if active is not None:
             active_id, active_hash = str(active[0]), str(active[1])
             if active_hash == record.content_hash:
                 return active_id, False, False
-            # Content drift: tombstone the active row, fall through to insert.
+            # Content drift: tombstone the active row BEFORE inserting the new
+            # one so the partial unique index on (tenant, corpus, root, path)
+            # WHERE superseded_at IS NULL does not collide.
+            cur.execute(
+                """
+                UPDATE markdown_files
+                SET superseded_at = now()
+                WHERE id = %s
+                """,
+                (active_id,),
+            )
             was_tombstoned = True
 
         cur.execute(
@@ -509,14 +520,14 @@ def _insert_or_supersede(
         )
         new_id = str(cur.fetchone()[0])
 
-        if was_tombstoned:
+        if was_tombstoned and active_id is not None:
             cur.execute(
                 """
                 UPDATE markdown_files
-                SET superseded_at = now(), superseded_by = %s
+                SET superseded_by = %s
                 WHERE id = %s
                 """,
-                (new_id, active[0]),
+                (new_id, active_id),
             )
         return new_id, True, was_tombstoned
 

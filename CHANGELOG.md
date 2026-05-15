@@ -50,6 +50,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `engram import markdown <root>` CLI verb.
 - 18 new tests across build-artifact and Markdown importers (no-egress,
   idempotency, content drift, redaction, link detection).
+- Layer 4 EG-SI evaluation gates: `tests/test_source_ingestion_gates.py`
+  exercises EG-SI-000 (no-egress), EG-SI-010 (contract validator),
+  EG-SI-020 (idempotency + conflict), EG-SI-040 (redaction + sensitivity
+  promotion), EG-SI-050 (projection rebuild), EG-SI-060 (exact-reference
+  citation by commit_sha / artifact_hash / markdown path), EG-SI-080
+  (coverage gaps + tombstones), and EG-SI-100 (fixture matrix).
+  Surfaced via `make eval-source-ingestion-gates`.
 - Example source contracts at `docs/source-contracts/markdown_tree.yaml`
   (Layer 3) added alongside `git.yaml` and `build_artifact.yaml`.
 - Source ingestion expansion proposal covering chat logs, commit history,

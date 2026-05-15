@@ -29,11 +29,13 @@ CREATE TABLE IF NOT EXISTS markdown_files (
     CONSTRAINT markdown_files_tenant_nonempty CHECK (btrim(tenant_id) <> ''),
     CONSTRAINT markdown_files_corpus_nonempty CHECK (btrim(corpus_id) <> ''),
     CONSTRAINT markdown_files_root_nonempty CHECK (btrim(markdown_root_id) <> ''),
-    CONSTRAINT markdown_files_path_nonempty CHECK (btrim(relative_path) <> ''),
-    UNIQUE (tenant_id, corpus_id, markdown_root_id, relative_path, content_hash)
+    CONSTRAINT markdown_files_path_nonempty CHECK (btrim(relative_path) <> '')
 );
 
-CREATE INDEX IF NOT EXISTS markdown_files_active_idx
+-- Only one active row per (tenant, corpus, root, path); superseded rows
+-- remain for provenance and a re-imported file with the same content hash
+-- as a superseded row is still allowed to land a fresh active row.
+CREATE UNIQUE INDEX IF NOT EXISTS markdown_files_active_idx
     ON markdown_files (tenant_id, corpus_id, markdown_root_id, relative_path)
     WHERE superseded_at IS NULL;
 

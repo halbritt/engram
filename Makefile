@@ -8,7 +8,7 @@ SEGMENTER_MODEL ?=
 SEGMENTER_MODEL_ENV := $(if $(SEGMENTER_MODEL),ENGRAM_SEGMENTER_MODEL="$(SEGMENTER_MODEL)",)
 STRIATUM_REPO ?= $(HOME)/git/striatum
 
-.PHONY: install db-up db-down wait-db migrate migrate-docker phase1-ingest-chatgpt phase1-ingest-chatgpt-docker phase1-ingest-claude phase1-ingest-claude-docker phase1-ingest-gemini phase1-ingest-gemini-docker phase1-ingest-striatum phase1-ingest-striatum-docker describe-corpus phase-projection-run project ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker phase2-segment phase2-segment-docker phase2-embed phase2-embed-docker phase2-run phase2-run-docker phase2-run-isolated segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker phase3-extract phase3-extract-docker phase3-consolidate phase3-consolidate-docker phase3-run phase3-run-docker phase3-re-extract phase3-interview-start phase3-interview-resume phase3-interview-history phase3-interview-export phase3-interview-list-sessions phase3-interview-coverage phase3-interview-enable-active-learning phase3-interview-serve phase4-refresh phase4-build-entities phase4-smoke phase4-smoke-docker test test-db test-docker test-db-docker eval-gates e2e-striatum schema-docs check-refs lint format typecheck install-striatum striatum-init phase4-validate phase4-prepare phase4-status phase4-gate-validate phase4-gate-prepare phase4-gate-status phase4-gate-dashboard rfc25-validate rfc25-prepare rfc25-status rfc25-impl-validate rfc25-impl-prepare rfc25-impl-status
+.PHONY: install db-up db-down wait-db migrate migrate-docker phase1-ingest-chatgpt phase1-ingest-chatgpt-docker phase1-ingest-claude phase1-ingest-claude-docker phase1-ingest-gemini phase1-ingest-gemini-docker phase1-ingest-striatum phase1-ingest-striatum-docker describe-corpus phase-projection-run project ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker phase2-segment phase2-segment-docker phase2-embed phase2-embed-docker phase2-run phase2-run-docker phase2-run-isolated segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker phase3-extract phase3-extract-docker phase3-consolidate phase3-consolidate-docker phase3-run phase3-run-docker phase3-re-extract phase3-interview-start phase3-interview-resume phase3-interview-history phase3-interview-export phase3-interview-list-sessions phase3-interview-coverage phase3-interview-enable-active-learning phase3-interview-serve phase4-refresh phase4-build-entities phase4-smoke phase4-smoke-docker test test-db test-docker test-db-docker eval-gates eval-source-ingestion-gates e2e-striatum schema-docs check-refs lint format typecheck install-striatum striatum-init phase4-validate phase4-prepare phase4-status phase4-gate-validate phase4-gate-prepare phase4-gate-status phase4-gate-dashboard rfc25-validate rfc25-prepare rfc25-status rfc25-impl-validate rfc25-impl-prepare rfc25-impl-status
 
 install: .venv/.installed
 
@@ -261,6 +261,10 @@ eval-gates: install test-db
 		tests/test_striatum_v2_fixtures.py \
 		tests/test_memory_exact_refs.py \
 		tests/test_memory_packet.py
+
+eval-source-ingestion-gates: install test-db
+	ENGRAM_TEST_DATABASE_URL="$(TEST_DATABASE_URL)" $(PYTHON) -m pytest -vv \
+		tests/test_source_ingestion_gates.py
 
 e2e-striatum: install test-db
 	ENGRAM_TEST_DATABASE_URL="$(TEST_DATABASE_URL)" $(PYTHON) -m pytest -vv tests/test_pipeline_smoke_striatum.py
