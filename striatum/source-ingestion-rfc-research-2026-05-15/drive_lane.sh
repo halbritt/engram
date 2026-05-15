@@ -44,37 +44,53 @@ striatum --repo "$REPO" ack --session-id "$SESS" --message-id "$MSG_ID" --lease-
 
 PROMPT_PATH=$(python3 -c "import json;d=json.load(open('$PACKET'));print(d['data']['packet']['task_prompt'].get('path',''))" 2>/dev/null || true)
 ROLE_PATH=$(python3 -c "import json;d=json.load(open('$PACKET'));print(d['data']['packet']['role'].get('definition_path',''))" 2>/dev/null || true)
+ALLOWED_PATHS=$(python3 -c "import json;d=json.load(open('$PACKET'));[print('  -',p) for p in d['data']['packet']['write_scope'].get('allowed_paths',[])]" 2>/dev/null || echo "  - $ART_PATH")
+FORBIDDEN_PATHS=$(python3 -c "import json;d=json.load(open('$PACKET'));[print('  -',p) for p in d['data']['packet']['write_scope'].get('forbidden_paths',[])]" 2>/dev/null || echo "  - .striatum/")
 
 # Build a single self-contained prompt for the CLI agent.
 PROMPT=$(cat <<EOF
-You are the $ROLE_ID for lane $LANE_ID in the source-ingestion RFC research workflow.
+You are the $ROLE_ID for lane $LANE_ID. Job: $JOB_ID.
 
 CWD: $REPO
 
 REQUIRED READING (use your file-read tools):
 - Role: $ROLE_PATH
 - Task prompt: $PROMPT_PATH
-- Source design: docs/design/source-ingestion-expansion-proposal-2026-05-15.md
-- Project canon: AGENTS.md, README.md, HUMAN_REQUIREMENTS.md, SPEC.md, BUILD_PHASES.md, ROADMAP.md, docs/schema/README.md, STRIATUM_MEMORY_E2E_BACKLOG.md, docs/AGENT_CONTEXT_NOTES.md
 
-DELIVERABLE:
-Write a single Markdown file at exactly this path:
+The task prompt above contains the full deliverable definition. Read it
+first. Read its referenced inputs. Then act.
+
+EXPECTED HANDOFF ARTIFACT (REQUIRED):
   $ART_PATH
-The file must be your role's artifact, fully self-contained, following the task prompt instructions.
+This handoff is the workflow's required artifact for tracking. For
+implementation work, the handoff is a short notes file; the real
+deliverable is working code at the other allowed paths.
+
+WRITE SCOPE — ALL allowed paths:
+$ALLOWED_PATHS
+
+WRITE SCOPE — forbidden paths (do NOT write):
+$FORBIDDEN_PATHS
 
 CONSTRAINTS:
-- Allowed write paths: $ART_PATH (and only that path).
-- Forbidden write paths: .striatum/, src/, tests/, migrations/, docs/rfcs/, DECISION_LOG.md, CHANGELOG.md, BUILD_PHASES.md, ROADMAP.md.
 - No network access. No telemetry. No outbound calls.
 - Local-only operation; preserve Engram's no-cloud constraint.
-- Do not start the document with a markdown-byline-style "Author:" or "author:" line; striatum validates that field. Use "Lane: $LANE_ID" and "Role: $ROLE_ID" lines instead, and put any author/byline info inside a table or section body. Do not impersonate another lane in any byline.
-- This is a PROPOSAL document only. Do not promote, do not edit DECISION_LOG, do not edit the RFC index.
+- Do not start any markdown artifact with a "Author:" / "author:" line at
+  the top of the document body; striatum validates that field against the
+  expected work packet author line. Use "Lane: $LANE_ID" and
+  "Role: $ROLE_ID" lines instead. Do not impersonate another lane.
+- Follow the project Python coding standard
+  (docs/rfcs/0012-python-agentic-coding-standard.md) for any Python code.
 
 ACTIONS:
-1. Read the role definition and task prompt above.
-2. Read the required inputs.
-3. Write the deliverable to the artifact path.
-4. Verify the file exists and is non-empty before exiting.
+1. Read the role definition and task prompt.
+2. Read every input the task prompt references.
+3. Produce every deliverable listed in the task prompt at the allowed
+   paths above. For code deliverables, run \`make test\` (or the
+   relevant test subset) before completing.
+4. Write the required handoff artifact at $ART_PATH last; summarize what
+   you produced and any open issues.
+5. Verify the handoff file exists and is non-empty before exiting.
 EOF
 )
 

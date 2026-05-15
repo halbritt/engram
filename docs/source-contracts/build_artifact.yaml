@@ -1,0 +1,92 @@
+source_kind: build_artifact
+source_family: project_execution
+
+sub_kinds:
+  - junit_xml
+  - coverage_report
+  - benchmark_json
+  - lint_report
+  - log_file
+
+raw_artifact_boundary:
+  description: local artifact directory plus adapter manifest
+  acquisition:
+    - local filesystem
+    - explicit user-provided export
+  network_policy: no outbound calls
+
+identity:
+  source_instance_id: artifact_root_identity
+  item_identity_keys:
+    - artifact_root_id
+    - relative_path
+    - content_hash
+  logical_identity_keys:
+    - run_id
+    - artifact_kind
+
+temporal_fields:
+  observed_at: artifact_mtime
+  recorded_at: import_time
+
+deduplication:
+  idempotency_key:
+    - source_kind
+    - artifact_root_id
+    - relative_path
+    - content_hash
+  conflict_policy: raise_on_changed_raw_artifact_hash
+
+privacy:
+  privacy_tier_default: 1
+  sensitivity_class_default: routine_project
+
+projection_families:
+  - execution_artifact
+  - artifact_reference
+
+operational_families:
+  - coverage_gap
+  - source_audit
+
+extraction_eligibility:
+  default: metadata_only
+  participant_third_party: false
+  opt_in_required_for:
+    - full_log_body
+    - secret_shaped_content
+
+raw_retention:
+  required:
+    - artifact content hash
+    - artifact kind
+    - relative path
+    - reporter version
+  optional:
+    - full log body
+    - structured findings list
+
+provenance:
+  required:
+    - source_id
+    - raw row id
+    - artifact_root_id
+    - content_hash
+    - adapter_version
+
+rebuild:
+  projection_generation: required
+  reproject_from_raw: required
+  stale_projection_policy: fail_closed_or_label_stale
+
+tests:
+  - contract_validator
+  - idempotent_reimport
+  - conflict_on_changed_raw_hash
+  - raw_evidence_immutable
+  - projection_rebuild_from_raw
+  - no_network_access
+  - privacy_inheritance
+  - exact_reference_citation
+  - redaction_pattern_promotion
+  - log_body_opt_in

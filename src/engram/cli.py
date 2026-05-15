@@ -92,6 +92,10 @@ from engram.striatum_ingest import (
     StriatumBundleError,
     ingest_striatum_bundle,
 )
+from engram.git_import import (
+    GitImportError,
+    import_git_repo,
+)
 
 
 class Phase3SchemaPreflightError(RuntimeError):
@@ -200,6 +204,32 @@ def main(argv: list[str] | None = None) -> int:
     striatum_parser.add_argument("--bundle", type=Path, required=True)
     striatum_parser.add_argument("--repo", default="striatum")
     striatum_parser.set_defaults(invoked_command="ingest-striatum")
+
+    # RFC 0050 Layer 1: `engram import git <repo-path>`.
+    import_parser = subparsers.add_parser(
+        "import",
+        help="RFC 0050 source-contract importers",
+    )
+    import_subparsers = import_parser.add_subparsers(dest="import_command", required=True)
+    import_git_parser = import_subparsers.add_parser(
+        "git",
+        help="Import commit metadata + diff stats from a local git repository",
+    )
+    import_git_parser.add_argument("path", type=Path)
+    import_git_parser.add_argument("--tenant-id", default="personal")
+    import_git_parser.add_argument("--corpus-id", default="personal")
+    import_git_parser.add_argument("--repo-label", default=None)
+    import_git_parser.add_argument("--allow-dirty", action="store_true")
+    import_git_parser.add_argument("--dry-run", action="store_true")
+    import_git_parser.add_argument(
+        "--full-patch",
+        default="false",
+        choices=("false",),
+        help="Reserved for a future opt-in slice (RFC 0050 OQ-SI-001); Layer 1 only accepts 'false'.",
+    )
+    import_git_parser.set_defaults(
+        command="import-git", invoked_command="import git"
+    )
 
     describe_corpus_parser = subparsers.add_parser(
         "describe-corpus",
@@ -751,6 +781,35 @@ def main(argv: list[str] | None = None) -> int:
             with connect() as conn:
                 result = ingest_striatum_bundle(conn, args.bundle, repo=args.repo)
             print_striatum_ingest_result(result)
+            return 0
+
+        if args.command == "import-git":
+            with connect() as conn:
+                result = import_git_repo(
+                    conn,
+                    args.path,
+                    tenant_id=args.tenant_id,
+                    corpus_id=args.corpus_id,
+                    repo_label=args.repo_label,
+                    allow_dirty=bool(args.allow_dirty),
+                    dry_run=bool(args.dry_run),
+                )
+            print(
+                json.dumps(
+                    {
+                        "source_id": result.source_id,
+                        "repository_id": result.repository_id,
+                        "commits_inserted": result.commits_inserted,
+                        "commits_seen": result.commits_seen,
+                        "commits_skipped": result.commits_skipped,
+                        "paths_inserted": result.paths_inserted,
+                        "coverage_gap_count": result.coverage_gap_count,
+                        "dirty_worktree": result.dirty_worktree,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
             return 0
 
         if args.command == "describe-corpus":

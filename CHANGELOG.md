@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- RFC 0050 source-ingestion expansion proposal landed via multi-lane research
+  workflow (claude/codex/gemini drafts, codex prior-art research, claude
+  privacy + gemini project-judgment reviews, codex findings ledger and
+  synthesis). Output is proposal-status; acceptance is a separate operator
+  decision.
+- `SOURCE_INGESTION_BACKLOG.md` layer-by-layer execution plan derived from
+  RFC 0050.
+- Source-contract template at `docs/source-contracts/README.md` and example
+  contracts (`git.yaml`, `build_artifact.yaml`).
+- Source-contract validator (`src/engram/source_contract.py`) with a closed
+  error vocabulary.
+- Migration `017_source_kind_git.sql` adds `source_kind='git'` plus
+  append-only `git_commits` and `git_commit_paths` tables.
+- Local git metadata + diff-stat importer (`src/engram/git_import.py`) with
+  closed git-verb allowlist, no-egress invariant, idempotent re-import,
+  rename detection, and coverage-gap emission.
+- `engram import git <repo-path>` CLI verb with `--dry-run`, `--allow-dirty`,
+  `--repo-label`, tenant/corpus overrides, and reserved `--full-patch=false`.
+- 32 new tests across contract validation, git import behaviour, and
+  no-egress invariants.
 - Source ingestion expansion proposal covering chat logs, commit history,
   build artifacts, notes/docs, project evidence, media/location/life records,
   source contracts, privacy defaults, rollout order, and evaluation gates.
