@@ -428,8 +428,37 @@ class MemoryService:
         corpus_id: str,
         limit: int,
     ) -> list[dict[str, Any]]:
-        """Search projected Striatum references inside one authorized boundary."""
+        """Search projected Striatum and project-execution references."""
         normalized_refs = normalize_exact_refs(exact_refs)
+        if not normalized_refs:
+            return []
+        striatum_hits = self._search_striatum_exact_refs(
+            normalized_refs,
+            query=query,
+            tenant_id=tenant_id,
+            corpus_id=corpus_id,
+            limit=limit,
+        )
+        project_hits = self._search_project_execution_exact_refs(
+            normalized_refs,
+            tenant_id=tenant_id,
+            corpus_id=corpus_id,
+            limit=limit,
+        )
+        combined = list(striatum_hits) + list(project_hits)
+        combined.sort(key=lambda hit: (-int(hit.get("score") or 0), hit.get("external_id") or ""))
+        return combined[:limit]
+
+    def _search_striatum_exact_refs(
+        self,
+        normalized_refs: Sequence[ExactRefFilter],
+        *,
+        query: str,
+        tenant_id: str,
+        corpus_id: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Search projected Striatum references inside one authorized boundary."""
         if not normalized_refs:
             return []
 
@@ -505,6 +534,189 @@ class MemoryService:
         hits = [build_exact_ref_search_hit(row, query=query, tokens=tokens) for row in rows]
         hits.sort(key=lambda item: (-item.score, item.external_id))
         return [hit.to_json() for hit in hits[:limit]]
+
+    def _search_project_execution_exact_refs(
+        self,
+        normalized_refs: Sequence[ExactRefFilter],
+        *,
+        tenant_id: str,
+        corpus_id: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Search git/build-artifact projections by exact ref kind.
+
+        Returns a list of hits shaped like the Striatum exact-ref path
+        (id, tenant_id, corpus_id, source_kind, external_id, content,
+        observed_at, imported_at, score, freshness). RFC 0050 Layer 5.
+        """
+        hits: list[dict[str, Any]] = []
+        for ref in normalized_refs:
+            if ref.ref_kind == "commit_sha":
+                hits.extend(self._lookup_git_commits(ref.ref_value, tenant_id, corpus_id))
+            elif ref.ref_kind == "source_hash":
+                hits.extend(
+                    self._lookup_build_artifacts_by_hash(
+                        ref.ref_value, tenant_id, corpus_id
+                    )
+                )
+            elif ref.ref_kind == "run_id":
+                hits.extend(
+                    self._lookup_build_artifacts_by_run(
+                        ref.ref_value, tenant_id, corpus_id
+                    )
+                )
+            elif ref.ref_kind == "path":
+                hits.extend(
+                    self._lookup_markdown_files_by_path(
+                        ref.ref_value, tenant_id, corpus_id
+                    )
+                )
+        return hits[:limit]
+
+    def _lookup_git_commits(
+        self, sha: str, tenant_id: str, corpus_id: str
+    ) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT id::text, tenant_id, corpus_id, repository_id, commit_sha,
+                   subject, committer_date, imported_at, refs, content_hash
+            FROM git_commits
+            WHERE tenant_id = %s
+              AND corpus_id = %s
+              AND commit_sha = %s
+            ORDER BY committer_date DESC
+            """,
+            (tenant_id, corpus_id, sha.lower()),
+        ).fetchall()
+        return [
+            {
+                "id": row[0],
+                "tenant_id": row[1],
+                "corpus_id": row[2],
+                "source_kind": "git",
+                "external_id": f"{row[3]}:{row[4]}",
+                "content": row[5] or "",
+                "observed_at": format_datetime(row[6]),
+                "imported_at": format_datetime(row[7]),
+                "score": 100,
+                "freshness": "fresh",
+                "dirty_working_tree": False,
+                "raw_payload": {"refs": list(row[8] or []), "content_hash": row[9]},
+            }
+            for row in rows
+        ]
+
+    def _lookup_build_artifacts_by_hash(
+        self, content_hash: str, tenant_id: str, corpus_id: str
+    ) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT id::text, tenant_id, corpus_id, artifact_root_id, relative_path,
+                   artifact_kind, imported_at, content_hash, sensitivity_class
+            FROM build_artifacts
+            WHERE tenant_id = %s
+              AND corpus_id = %s
+              AND content_hash = %s
+            ORDER BY imported_at DESC
+            """,
+            (tenant_id, corpus_id, content_hash.lower()),
+        ).fetchall()
+        return [
+            {
+                "id": row[0],
+                "tenant_id": row[1],
+                "corpus_id": row[2],
+                "source_kind": "build_artifact",
+                "external_id": f"{row[3]}:{row[4]}",
+                "content": "",
+                "observed_at": None,
+                "imported_at": format_datetime(row[6]),
+                "score": 100,
+                "freshness": "fresh",
+                "dirty_working_tree": False,
+                "raw_payload": {
+                    "artifact_kind": row[5],
+                    "content_hash": row[7],
+                    "sensitivity_class": row[8],
+                },
+            }
+            for row in rows
+        ]
+
+    def _lookup_build_artifacts_by_run(
+        self, run_id: str, tenant_id: str, corpus_id: str
+    ) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT id::text, tenant_id, corpus_id, artifact_root_id, relative_path,
+                   artifact_kind, imported_at, content_hash, run_id
+            FROM build_artifacts
+            WHERE tenant_id = %s
+              AND corpus_id = %s
+              AND run_id = %s
+            ORDER BY imported_at DESC
+            """,
+            (tenant_id, corpus_id, run_id),
+        ).fetchall()
+        return [
+            {
+                "id": row[0],
+                "tenant_id": row[1],
+                "corpus_id": row[2],
+                "source_kind": "build_artifact",
+                "external_id": f"{row[3]}:{row[4]}",
+                "content": "",
+                "observed_at": None,
+                "imported_at": format_datetime(row[6]),
+                "score": 100,
+                "freshness": "fresh",
+                "dirty_working_tree": False,
+                "raw_payload": {
+                    "artifact_kind": row[5],
+                    "content_hash": row[7],
+                    "run_id": row[8],
+                },
+            }
+            for row in rows
+        ]
+
+    def _lookup_markdown_files_by_path(
+        self, path: str, tenant_id: str, corpus_id: str
+    ) -> list[dict[str, Any]]:
+        # ``path`` is already normalized (lowercased, forward-slashed) by
+        # ``normalize_ref_value``; match case-insensitively against the
+        # stored relative_path so authors can cite README.md or readme.md
+        # interchangeably.
+        rows = self.conn.execute(
+            """
+            SELECT id::text, tenant_id, corpus_id, markdown_root_id, relative_path,
+                   title, content_hash, imported_at
+            FROM markdown_files
+            WHERE tenant_id = %s
+              AND corpus_id = %s
+              AND lower(relative_path) = %s
+              AND superseded_at IS NULL
+            ORDER BY imported_at DESC
+            """,
+            (tenant_id, corpus_id, path),
+        ).fetchall()
+        return [
+            {
+                "id": row[0],
+                "tenant_id": row[1],
+                "corpus_id": row[2],
+                "source_kind": "markdown_tree",
+                "external_id": f"{row[3]}:{row[4]}",
+                "content": row[5] or "",
+                "observed_at": None,
+                "imported_at": format_datetime(row[7]),
+                "score": 100,
+                "freshness": "fresh",
+                "dirty_working_tree": False,
+                "raw_payload": {"content_hash": row[6]},
+            }
+            for row in rows
+        ]
 
     def fetch_reference(self, reference_id: str) -> dict[str, Any]:
         """Fetch one referenced row after re-authorizing its stored boundary."""

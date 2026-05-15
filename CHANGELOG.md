@@ -50,6 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `engram import markdown <root>` CLI verb.
 - 18 new tests across build-artifact and Markdown importers (no-egress,
   idempotency, content drift, redaction, link detection).
+- Layer 5 exact-reference retrieval extension: `MemoryService.search`
+  filter `exact_refs` now surfaces project-execution rows (`commit_sha`
+  -> `git_commits`, `source_hash` -> `build_artifacts.content_hash`,
+  `run_id` -> `build_artifacts.run_id`, `path` -> active
+  `markdown_files`) alongside the existing Striatum projection path,
+  without introducing vector search. 5 new tests.
 - Layer 4 EG-SI evaluation gates: `tests/test_source_ingestion_gates.py`
   exercises EG-SI-000 (no-egress), EG-SI-010 (contract validator),
   EG-SI-020 (idempotency + conflict), EG-SI-040 (redaction + sensitivity
