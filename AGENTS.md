@@ -15,6 +15,10 @@ Read these first, in order:
 5. ROADMAP.md
 6. SPEC.md
 7. docs/schema/README.md
+8. docs/AGENT_CONTEXT_NOTES.md — durable operator discipline + active
+   project context that does not survive in per-session memory.
+9. STRIATUM_MEMORY_E2E_BACKLOG.md — current execution plan, where it
+   exists.
 
 Treat older review, brainstorm, and prior-art docs as context, not current
 architecture, unless they are referenced from the canonical docs.

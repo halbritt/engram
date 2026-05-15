@@ -96,6 +96,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   42558 beliefs, last extraction 2026-05-07). Step 5 (gold-set authoring)
   is now the active step; Phase 3 cleanup of 149 unextracted active
   segments and 22 failed extractions is residual.
+- Durable agent context notes landed at
+  `docs/AGENT_CONTEXT_NOTES.md`. Replaces per-session auto-memory for
+  cross-session continuity: behavioral feedback rules (no fabricated
+  provenance, subprocess delegation discipline, supervisor watchdog
+  must catch heartbeat stalls, doc-only branch policy), active project
+  context (2026-05-15 e2e pivot, Striatum daemon transition in
+  test-harness mode, pipeline state, RFC 0027 UI polish deferred,
+  predicate-intent polish queued), references (Striatum repo
+  location, upstream bug pointers), and maintenance rules.
+  `AGENTS.md` start-here list now points at it.
 - Striatum-memory e2e backlog execution plan landed at
   `STRIATUM_MEMORY_E2E_BACKLOG.md`, superseding the paper-promotion
   sequencing for execution order: build forward layer by layer
