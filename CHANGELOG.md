@@ -28,6 +28,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--repo-label`, tenant/corpus overrides, and reserved `--full-patch=false`.
 - 32 new tests across contract validation, git import behaviour, and
   no-egress invariants.
+- Migration `018_source_kind_build_artifact.sql` adds
+  `source_kind='build_artifact'` plus append-only `build_artifacts` and
+  `build_artifact_findings` tables.
+- Build-artifact importer (`src/engram/build_artifact_import.py`) parses
+  JUnit XML, coverage JSON, benchmark JSON, ruff/eslint/pyright lint
+  output, and plain logs; emits redaction markers and promotes
+  sensitivity to `credential_or_secret_reference` when secret-shaped
+  content is detected; emits `coverage_gap` rows for unrecognized
+  artifact kinds.
+- `engram import build-artifacts <dir>` CLI verb with `--run-id`,
+  `--commit-sha`, `--repo-label`, and `--dry-run`.
+- Migration `019_source_kind_markdown_tree.sql` adds
+  `source_kind='markdown_tree'` plus append-only `markdown_files` /
+  `markdown_file_chunks` / `markdown_file_links` tables with
+  tombstone+supersede lifecycle for content drift and file deletion.
+- Markdown importer (`src/engram/markdown_import.py`) walks a directory
+  tree, splits frontmatter, projects heading anchors, chunks, inline /
+  reference / wiki / autolink / image / tag links; tombstones missing
+  files; recognizes title from frontmatter or H1.
+- `engram import markdown <root>` CLI verb.
+- 18 new tests across build-artifact and Markdown importers (no-egress,
+  idempotency, content drift, redaction, link detection).
+- Example source contracts at `docs/source-contracts/markdown_tree.yaml`
+  (Layer 3) added alongside `git.yaml` and `build_artifact.yaml`.
 - Source ingestion expansion proposal covering chat logs, commit history,
   build artifacts, notes/docs, project evidence, media/location/life records,
   source contracts, privacy defaults, rollout order, and evaluation gates.

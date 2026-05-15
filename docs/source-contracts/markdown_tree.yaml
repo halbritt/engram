@@ -1,0 +1,87 @@
+source_kind: markdown_tree
+source_family: documents
+
+sub_kinds:
+  - markdown_file
+  - markdown_chunk
+  - markdown_link
+  - frontmatter
+
+raw_artifact_boundary:
+  description: local Markdown directory tree plus adapter manifest
+  acquisition:
+    - local filesystem
+    - explicit user-provided export
+  network_policy: no outbound calls
+
+identity:
+  source_instance_id: markdown_root_identity
+  item_identity_keys:
+    - markdown_root_id
+    - relative_path
+    - content_hash
+  logical_identity_keys:
+    - markdown_root_id
+    - relative_path
+
+temporal_fields:
+  observed_at: file_mtime
+  recorded_at: import_time
+
+deduplication:
+  idempotency_key:
+    - source_kind
+    - markdown_root_id
+    - relative_path
+    - content_hash
+  conflict_policy: tombstone_and_replace
+
+privacy:
+  privacy_tier_default: 1
+  sensitivity_class_default: routine_project
+
+projection_families:
+  - document_record
+
+operational_families:
+  - coverage_gap
+  - source_audit
+
+extraction_eligibility:
+  default: metadata_only
+  participant_third_party: false
+  opt_in_required_for:
+    - personal_vault_extraction
+    - journal_extraction
+
+raw_retention:
+  required:
+    - markdown bytes
+    - relative path
+    - content hash
+    - mtime
+  optional: []
+
+provenance:
+  required:
+    - source_id
+    - raw row id
+    - markdown_root_id
+    - relative_path
+    - content_hash
+    - adapter_version
+
+rebuild:
+  projection_generation: required
+  reproject_from_raw: required
+  stale_projection_policy: fail_closed_or_label_stale
+
+tests:
+  - contract_validator
+  - idempotent_reimport
+  - conflict_on_changed_raw_hash
+  - raw_evidence_immutable
+  - projection_rebuild_from_raw
+  - no_network_access
+  - privacy_inheritance
+  - exact_reference_citation
