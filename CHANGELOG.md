@@ -67,13 +67,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and does not authorize implementation.
 - Engram Striatum control plane migrated from repo-local SQLite
   (`.striatum/state.sqlite3`) to daemon-backed PostgreSQL on
-  `2026-05-14`. The prior SQLite was tombstoned at
-  `.striatum/state.sqlite3.tombstone` after a fresh empty migration
-  (`repository_id = repo_b63673a288c64bb987d29bafffaed578`); the prior
-  state from the alignment run is preserved in
-  `.striatum/state.sqlite3.bak` for offline inspection only. Workflow
-  execution requires the daemon's client-token to be re-issued before the
-  promotion run can be prepared and started.
+  `2026-05-14`, then rolled back to repo-local SQLite under
+  `STRIATUM_TEST_HARNESS=1` after daemon client-token bootstrap issues.
+  Pre-migration SQLite restored from `.striatum/state.sqlite3.bak`; the
+  Postgres-side registration `repo_b63673a288c64bb987d29bafffaed578`
+  remains but is unused.
+- Striatum memory RFC promotion run
+  `run_c16bd15778f6473e800af5378d609449` was prepared on master, started
+  under `STRIATUM_TEST_HARNESS=1`, and reached step 1 with four codex
+  author sessions claimed and supervised before stalling on a Striatum
+  supervisor-stdin-EOF integration bug. The four hung lanes were
+  SIGTERM'd and the run was canceled with reason
+  `blocked_on_striatum_18_codex_stdin_eof; new run after fix`. Filed
+  upstream as [striatum#18](https://github.com/halbritt/striatum/issues/18)
+  for the supervisor stdin fix and
+  [striatum#20](https://github.com/halbritt/striatum/issues/20) for the
+  operator-watchdog / runner-side timeouts gap. The scaffold remains
+  valid for a fresh `striatum run prepare` once #18 lands or the
+  workflow lane command is changed away from stdin delivery.
 - RFC 0038 operator UI rework proposal and Striatum implementation workflow
   scaffold, derived from `ENGRAM_UI_REWORK_HANDOFF.md`, covering a three-lane
   UI implementation split plus the normal review cycle augmented with an

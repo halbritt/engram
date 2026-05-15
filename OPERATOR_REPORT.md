@@ -37,8 +37,15 @@ Last updated: 2026-05-14
   of `.striatum/scratch/sup_*/stdin.pipe`. All four codex processes hung
   in `ep_poll` on fd 0 for **4h42m** with zero progress and no
   heartbeats. SIGTERM cleanup completed at `2026-05-15T00:42:40Z`. The
-  run is paused at `run_c16bd15778f6473e800af5378d609449` and can be
-  resumed once the integration bug is fixed.
+  run is **canceled** as of `2026-05-15` with reason
+  `blocked_on_striatum_18_codex_stdin_eof; new run after fix`. Filed
+  upstream as [striatum#18](https://github.com/halbritt/striatum/issues/18)
+  with the operator-watchdog/runner-timeout gap filed separately at
+  [striatum#20](https://github.com/halbritt/striatum/issues/20).
+- The scaffold at `striatum/striatum-memory-rfc-promotion-2026-05-14/`
+  remains valid; a fresh `striatum run prepare` against it will start
+  cleanly once #18 lands or the workflow's lane command is changed to a
+  non-stdin delivery path.
 - Unblock options for the next operator: (a) fix the Striatum supervisor
   to close the stdin write end after delivering the packet, (b) change
   the workflow lane command to deliver the packet as a positional
