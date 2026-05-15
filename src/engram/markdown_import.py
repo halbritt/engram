@@ -27,6 +27,8 @@ import psycopg
 import yaml  # type: ignore[import-not-found]
 from psycopg.types.json import Jsonb
 
+from engram.source_audit import compute_input_signature, record_source_audit
+
 SOURCE_KIND = "markdown_tree"
 ADAPTER_VERSION = "markdown_import.v1"
 DEFAULT_TENANT_ID = "personal"
@@ -204,6 +206,29 @@ def import_markdown_tree(
                         link=link,
                     ):
                         links_inserted += 1
+
+        record_source_audit(
+            conn,
+            tenant_id=tenant_id,
+            corpus_id=corpus_id,
+            source_kind=SOURCE_KIND,
+            source_id=source_id,
+            adapter_version=ADAPTER_VERSION,
+            input_signature=compute_input_signature(
+                [markdown_root_id, *sorted(r.content_hash for r in records)]
+            ),
+            outcome="ok",
+            rows_inserted=inserted,
+            rows_skipped=skipped,
+            rows_tombstoned=tombstoned,
+            completed_at=datetime.now(tz=timezone.utc),
+            raw_payload={
+                "markdown_root_path": str(root_path),
+                "files_seen": len(records),
+                "chunks_inserted": chunks_inserted,
+                "links_inserted": links_inserted,
+            },
+        )
 
     return MarkdownImportResult(
         source_id=source_id,

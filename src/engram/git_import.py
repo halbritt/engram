@@ -31,12 +31,14 @@ import json
 import os
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import psycopg
 from psycopg.types.json import Jsonb
+
+from engram.source_audit import compute_input_signature, record_source_audit
 
 SOURCE_KIND = "git"
 DEFAULT_TENANT_ID = "personal"
@@ -272,6 +274,29 @@ def import_git_repo(
                 reason="dirty_worktree",
             )
             coverage_gap_count += 1
+
+        record_source_audit(
+            conn,
+            tenant_id=tenant_id,
+            corpus_id=corpus_id,
+            source_kind=SOURCE_KIND,
+            source_id=source_id,
+            adapter_version=ADAPTER_VERSION,
+            input_signature=compute_input_signature([repository_id, root_commit, remote_url]),
+            outcome="ok" if inserted == len(commits) or skipped > 0 else "partial",
+            rows_inserted=inserted,
+            rows_skipped=skipped,
+            coverage_gap_count=coverage_gap_count,
+            completed_at=datetime.now(tz=timezone.utc),
+            raw_payload={
+                "repo_path": str(repo),
+                "remote_url": remote_url,
+                "root_commit_sha": root_commit,
+                "commits_seen": len(commits),
+                "paths_inserted": paths_inserted,
+                "dirty_worktree": dirty,
+            },
+        )
 
     return GitImportResult(
         source_id=source_id,

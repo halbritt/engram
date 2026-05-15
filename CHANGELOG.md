@@ -50,6 +50,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `engram import markdown <root>` CLI verb.
 - 18 new tests across build-artifact and Markdown importers (no-egress,
   idempotency, content drift, redaction, link detection).
+- Layer 6 source_audits + EG-SI-090 audit reconstruction: migration 020
+  adds append-only `source_audits` capturing every importer invocation
+  (source_kind, source_id, adapter_version, input_signature, outcome,
+  rows_inserted/skipped/tombstoned, coverage_gap_count, started_at,
+  completed_at, raw_payload). All three Layer 1-3 importers
+  (`git_import`, `build_artifact_import`, `markdown_import`) record one
+  audit row per invocation inside the same transaction as the inserts.
+  EG-SI-090 reconstructs the importer outcome history without reading
+  importer raw_payload bodies. No-derived-product-leak test asserts
+  body text never lands in the audit payload.
 - Layer 5 exact-reference retrieval extension: `MemoryService.search`
   filter `exact_refs` now surfaces project-execution rows (`commit_sha`
   -> `git_commits`, `source_hash` -> `build_artifacts.content_hash`,

@@ -29,6 +29,7 @@ def conn():
                 gold_label_sessions,
                 gold_label_verdict_vocabulary,
                 gold_label_strata_vocabulary,
+                source_audits,
                 build_artifact_findings,
                 build_artifacts,
                 markdown_file_links,
@@ -108,6 +109,7 @@ def conn():
         )
         admin.execute("DROP FUNCTION IF EXISTS prevent_markdown_chunks_mutation() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS prevent_markdown_links_mutation() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS prevent_source_audits_mutation() CASCADE")
         admin.execute("DROP TYPE IF EXISTS source_kind CASCADE")
         admin.execute("DROP TYPE IF EXISTS capture_type CASCADE")
         admin.execute("DROP TYPE IF EXISTS consolidation_status CASCADE")

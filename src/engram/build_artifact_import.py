@@ -19,12 +19,14 @@ import os
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone  # noqa: I001 — used by record_source_audit timestamp
 from pathlib import Path
 from typing import Any
 
 import psycopg
 from psycopg.types.json import Jsonb
+
+from engram.source_audit import compute_input_signature, record_source_audit
 
 SOURCE_KIND = "build_artifact"
 ADAPTER_VERSION = "build_artifact_import.v1"
@@ -217,6 +219,31 @@ def import_build_artifacts(
                     reason="unrecognized_artifact_kind",
                 )
                 coverage_gap_count += 1
+
+        record_source_audit(
+            conn,
+            tenant_id=tenant_id,
+            corpus_id=corpus_id,
+            source_kind=SOURCE_KIND,
+            source_id=source_id,
+            adapter_version=ADAPTER_VERSION,
+            input_signature=compute_input_signature(
+                [artifact_root_id, *sorted(r.content_hash for r in records)]
+            ),
+            outcome="ok",
+            rows_inserted=inserted,
+            rows_skipped=skipped,
+            coverage_gap_count=coverage_gap_count,
+            completed_at=datetime.now(tz=timezone.utc),
+            raw_payload={
+                "artifact_root_path": str(root_path),
+                "artifacts_seen": len(records),
+                "findings_inserted": findings_inserted,
+                "redacted_artifacts": redacted,
+                "run_id": run_id,
+                "commit_sha": commit_sha,
+            },
+        )
 
     return BuildArtifactImportResult(
         source_id=source_id,
