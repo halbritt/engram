@@ -4,42 +4,52 @@ Last updated: 2026-05-14
 
 ## Handover Summary
 
-- Current branch state: `master` is at `f7090b1`
-  (`Apply Striatum memory alignment nonblocking findings`), pushed.
-  Alignment-findings nonblocking items `AL-N001`, `AL-N002`, `AL-N003`,
-  `AL-N004`, `AL-N005`, `AL-N006`, and `AL-N009` are applied as
-  proposal-text edits to RFC 0046-RFC 0049 (delegated to seven parallel
-  worktree-isolated coordinator-spawned agents; no Striatum role-session
-  bylines or workflow verdicts were produced or claimed). `make check-refs`
-  returns 0 errors and the same five pre-existing warnings.
-- The Striatum memory RFC promotion workflow scaffold is queued at
-  `striatum/striatum-memory-rfc-promotion-2026-05-14/`. Four
+- Current branch state: `master` is at `a2e7761`
+  (`Scaffold Striatum memory RFC promotion workflow`), pushed. Alignment-
+  findings nonblocking items `AL-N001`, `AL-N002`, `AL-N003`, `AL-N004`,
+  `AL-N005`, `AL-N006`, and `AL-N009` are applied as proposal-text edits
+  to RFC 0046-RFC 0049 (delegated to seven parallel worktree-isolated
+  coordinator-spawned agents; no Striatum role-session bylines or workflow
+  verdicts were produced or claimed). `make check-refs` returns 0 errors
+  and the same five pre-existing warnings.
+- The Striatum memory RFC promotion workflow is scaffolded at
+  `striatum/striatum-memory-rfc-promotion-2026-05-14/`: four
   promotion-recommendation lanes (one per RFC, codex), three independent
   reviewer lanes (codex contract coherence, claude privacy/no-egress
   boundary, gemini operator ergonomics), findings ledger, and final
   synthesis. The workflow does not edit RFC text and does not record an
   AL-D002 acceptance decision.
-- Engram Striatum control plane has been migrated from repo-local SQLite to
-  daemon-backed PostgreSQL on `2026-05-14`. The prior alignment run state
-  is preserved offline at `.striatum/state.sqlite3.bak`; the migrated
-  empty SQLite was tombstoned at `.striatum/state.sqlite3.tombstone`. The
-  daemon registered the engram repo as
-  `repo_b63673a288c64bb987d29bafffaed578` in Postgres.
-- Promotion workflow execution is currently blocked on
-  `daemon authorization failed: token_missing`. The daemon's
-  `/run/user/1000/striatum/client-token` was unintentionally removed during
-  daemon-lifecycle thrashing and subsequent daemon restarts have not
-  reissued it. The next operator must either (a) reissue/locate the
-  daemon's client token, (b) restore the prior daemon's token state, or
-  (c) restore the pre-migration SQLite from `.bak` and resume in
-  `STRIATUM_TEST_HARNESS=1` mode if the daemon path remains blocked.
-- Once auth is restored: `striatum workflow validate
-  striatum/striatum-memory-rfc-promotion-2026-05-14/workflow.json` then
-  `workflow prepare` and `workflow start`. The promotion-author lanes are
-  daemon-driven `codex` lanes; reviewer lanes fan out to `codex`, `claude`,
-  and `gemini`.
-- The Striatum alignment run `run_169531d5568248ff8f0dfc803d955311` remains
-  completed; the ledger artifacts under
+- Engram Striatum control plane was migrated from repo-local SQLite to
+  daemon-backed PostgreSQL on `2026-05-14`, then rolled back at user
+  direction to repo-local SQLite under `STRIATUM_TEST_HARNESS=1` mode
+  after daemon client-token issues. The pre-migration SQLite was restored
+  from `.striatum/state.sqlite3.bak` and the migration artifacts
+  (tombstone, lock) were cleaned. The Postgres-side registration
+  `repo_b63673a288c64bb987d29bafffaed578` remains but is not in use.
+- Promotion run `run_c16bd15778f6473e800af5378d609449` was prepared on
+  master and started under `STRIATUM_TEST_HARNESS=1` at `2026-05-14
+  T19:58Z`. Four step-1 codex author sessions were registered, supervised,
+  and claimed (`promote_rfc0046/0047/0048/0049`); each received its work
+  packet (~5K bytes) over the supervisor stdin pipe.
+- **Execution blocker (Striatum integration bug)**: the workflow lane
+  command `codex exec --model gpt-5.5 -` reads from stdin until EOF, but
+  the Striatum supervisor wrote the packet without closing the write end
+  of `.striatum/scratch/sup_*/stdin.pipe`. All four codex processes hung
+  in `ep_poll` on fd 0 for **4h42m** with zero progress and no
+  heartbeats. SIGTERM cleanup completed at `2026-05-15T00:42:40Z`. The
+  run is paused at `run_c16bd15778f6473e800af5378d609449` and can be
+  resumed once the integration bug is fixed.
+- Unblock options for the next operator: (a) fix the Striatum supervisor
+  to close the stdin write end after delivering the packet, (b) change
+  the workflow lane command to deliver the packet as a positional
+  argument (`codex exec --prompt "$PACKET"`) or via a temp file rather
+  than stdin, or (c) drive the lanes manually without supervisor (read
+  the packet from `claim-next`, pipe it directly to a fresh codex
+  process, then call `publish-artifact` and `complete` from the
+  operator). Option (a) is the canonical fix; (b) is the lowest-friction
+  workaround inside this repo.
+- The Striatum alignment run `run_169531d5568248ff8f0dfc803d955311`
+  remains completed; the ledger artifacts under
   `docs/reviews/striatum-memory-rfc-alignment-2026-05-14/` are unchanged.
 - The RFC package remains proposal/default-off. The scaffold does not
   authorize implementation, schemas, migrations, generated docs, runtime
