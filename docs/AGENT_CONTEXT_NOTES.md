@@ -126,7 +126,32 @@ branch for a typo fix is friction.
 
 ## 2. Active project context
 
-### Striatum-memory e2e pivot (2026-05-15)
+### Source-ingestion expansion (2026-05-15 late)
+
+After the Striatum-memory e2e pipeline (Layers 1-5) landed and was
+committed to master, the user invoked a sequenced "scaffold + build"
+plan from `docs/design/source-ingestion-expansion-proposal-2026-05-15.md`:
+
+1. Scaffold and run a multi-lane research workflow to produce a usable
+   Engram RFC — landed as **RFC 0050** at
+   `docs/rfcs/0050-source-ingestion-expansion.md` (850 lines, proposal
+   status). Workflow at
+   `striatum/source-ingestion-rfc-research-2026-05-15/`.
+2. Author a layered execution backlog — landed at
+   `SOURCE_INGESTION_BACKLOG.md`.
+3. Build all six layers on the branch `engram/source-ingestion-rfc-research`:
+   Layer 1 source contract + git importer; Layer 2 build-artifact
+   importer; Layer 3 Markdown importer; Layer 4 EG-SI gates; Layer 5
+   exact-reference retrieval extension; Layer 6 `source_audits` +
+   EG-SI-090 reconstruction.
+4. Full suite at branch tip: `make test` 702 passed (was 626 at the
+   start of the session). 76 new tests across the six layers.
+
+The RFC is proposal status only; promotion to accepted requires an
+operator-recorded decision in `DECISION_LOG.md`. The branch has not
+been merged into master in this session.
+
+### Striatum-memory e2e pivot (2026-05-15 — earlier)
 
 On 2026-05-15 the user pivoted off the RFC 0045-0049 promotion / spec
 paperwork track and onto building the e2e Striatum-memory pipeline
@@ -173,21 +198,54 @@ described the transition as a "trainwreck" — the daemon, MCP, and
 Postgres pieces were not sequenced well, and operators hit compounding
 integration bugs.
 
-**Current working configuration on Engram:** `STRIATUM_DAEMON_REQUIRED=0
-STRIATUM_TEST_HARNESS=1` against the repo-local SQLite at
-`.striatum/state.sqlite3`. The `OPERATOR_BOUNDARY_PROMPT` in the
-Striatum repo calls this "test-only / break-glass" but it is the
-user's actual production mode during the transition.
+**Current working configuration on Engram (updated 2026-05-15 late):**
+
+- Striatum CLI is at 1.54.0 (engram venv + `~/.local/bin`). Source at
+  `~/git/striatum` HEAD `dd9f0b2` is the up-to-date checkout.
+- The systemd-managed daemon (`striatumd.service`) is healthy on
+  PostgreSQL schema v5; daemon doctor returns ok.
+- The engram repo is registered with the daemon as
+  `repo_b63673a288c64bb987d29bafffaed578`. The daemon-side `striatumd.
+  clients` table was re-bootstrapped this session; the admin client
+  token cache lives at `/run/user/1000/striatum/client-token`.
+- Workflow lifecycle verbs (`run prepare`, `claim-next`,
+  `publish-artifact`, `complete`, `release`, `verdict`) are still
+  SQLite-backed in striatum 1.54.0 (`daemon doctor --explain` shows
+  `run.prepare: pg_backed=false` with a `sqlite_fallback_route`). The
+  engram repo therefore continues to use `.striatum/state.sqlite3` for
+  workflow state, even though the repo is registered with the daemon.
+  The 2026-05-14 attempt to migrate workflow state to Postgres still
+  fails on the same `sessions_repository_id_parent_session_id_fkey`
+  insert-ordering bug; v1.54.0 did not close it.
+- Operating mode is therefore: `STRIATUM_DAEMON_REQUIRED=0
+  STRIATUM_TEST_HARNESS=1` for engram-side striatum verbs, plus a
+  healthy daemon for daemon-global verbs (`repo list`, `daemon
+  status/doctor/health`).
+- The 2026-05-14 stale SQLite backup is at
+  `.striatum/state.sqlite3.bak-20260515-140014` (2.9 MB, pre-RFC-0050
+  state). The fresh SQLite from this session is the active state.
 
 **How to apply:**
 
-- Do not propose migrating Engram to daemon-backed Postgres unless the
-  user explicitly asks. The 2026-05-14 attempt produced an FK orphan
-  error and a multi-hour cleanup.
+- Do not retry the daemon migration (`daemon migrate-repo-local --from
+  sqlite --to pg`) on engram until striatum upstream closes the
+  `sessions_repository_id_parent_session_id_fkey` ordering bug AND ports
+  `run.prepare` / `claim-next` / `publish-artifact` to PG. Today the
+  migration succeeds for the table copy but downstream verbs cannot
+  execute against the resulting PG state.
 - Do not kick off a Striatum run that uses `cmd ... -` (stdin) lane
   commands until issue #18 is fixed. Use positional-prompt or temp-
   file delivery, or drive the lanes inline without `striatum supervise`.
 - Do not silently restart the cancelled promotion run.
+- The driver script at
+  `striatum/source-ingestion-rfc-research-2026-05-15/drive_lane.sh` is a
+  durable reference for driving multi-lane workflows by hand via
+  `register-session` → `claim-next` → `ack` → run subprocess →
+  `publish-artifact` → `complete`. It reads the work packet's
+  `write_scope.allowed_paths` / `forbidden_paths` and the
+  `expected_artifacts[0].kind` dynamically, and uses
+  `--allow-no-process-execution --override-rationale` to bypass the
+  RFC 0046 lane-evidence guard when not running under `striatum supervise`.
 
 **Test database:** `postgresql:///engram_test` exists with the
 `vector` extension already created as superuser. Tests run with
