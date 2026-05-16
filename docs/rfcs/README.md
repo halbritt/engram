@@ -57,16 +57,18 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0037](0037-outputguard-segmentation-structured-output.md) | proposal | none | OutputGuard for segmentation structured output |
 | [0038](0038-operator-ui-rework.md) | proposal | none | Operator UI rework for interview and bench-review surfaces |
 | [0045](0045-striatum-corpus-contract-v2.md) | proposal | none | Striatum Corpus Contract V2 |
-| [0046](0046-striatum-projection-index-schema.md) | proposal | none | Engram Striatum projection and index schema |
-| [0047](0047-striatum-retrieval-augmentation-boundary.md) | proposal | none | Striatum retrieval augmentation boundary |
-| [0048](0048-striatum-context-injection-policy.md) | proposal | none | Striatum context-injection policy |
-| [0049](0049-striatum-evaluation-gates.md) | proposal | none | Striatum evaluation, no-egress, and retrieval-quality gates |
+| [0046](0046-striatum-projection-index-schema.md) | accepted_as_design_reference | landed via Layers 1-5 of `STRIATUM_MEMORY_E2E_BACKLOG.md` (migration 015, `MemoryService`) | Engram Striatum projection and index schema |
+| [0047](0047-striatum-retrieval-augmentation-boundary.md) | accepted_as_design_reference | landed via `MemoryService.search` filters.exact_refs | Striatum retrieval augmentation boundary |
+| [0048](0048-striatum-context-injection-policy.md) | accepted_as_design_reference | landed via `MemoryService.build_packet`, `engram.build_packet` MCP tool, `striatum_packet_audits` | Striatum context-injection policy |
+| [0049](0049-striatum-evaluation-gates.md) | accepted_as_design_reference | landed in part via `make eval-gates`; full gate matrix is incremental | Striatum evaluation, no-egress, and retrieval-quality gates |
+| [0050](0050-source-ingestion-expansion.md) | accepted_as_design_reference | landed via Layers 1-6 of `SOURCE_INGESTION_BACKLOG.md` (migrations 017-020) | Source-ingestion expansion and source-contract template |
 
-Index note: RFC 0045-RFC 0049 are 2026-05-14 Striatum memory roadmap
-proposals and review provenance only. They do not authorize implementation,
-migrations, runtime behavior, or default-on Striatum memory. Current follow-up
-is RFC alignment for RFC 0047, RFC 0046, RFC 0048, and RFC 0049 plus RFC 0044
-hardening and EG-000 evidence.
+Index note: RFC 0045 stays proposal-only. RFC 0046-0050 are accepted as
+the design reference for their respective implementation lanes per
+[D083](../../DECISION_LOG.md#d083) and [D084](../../DECISION_LOG.md#d084).
+Acceptance as design reference does not freeze the proposal text against
+future implementation drift — when code diverges, the RFC text gets a
+patch, not a new acceptance.
 
 ## Implementation notes
 

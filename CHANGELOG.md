@@ -50,6 +50,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `engram import markdown <root>` CLI verb.
 - 18 new tests across build-artifact and Markdown importers (no-egress,
   idempotency, content drift, redaction, link detection).
+- DECISION_LOG entries D083-D086 record operator acceptance: RFC 0046-0049
+  and RFC 0050 as design reference (resolves AL-D002 / AL-D004), default-on
+  Level 3 Striatum operator memory authorization within the Striatum
+  tenant boundary (resolves AL-D003), and an explicit deferral of the
+  generated-product contract until a concrete forcing use case lands
+  (AL-D004 deferred). RFC index status updated to
+  `accepted_as_design_reference` for RFC 0046-0050.
 - Layer 6 source_audits + EG-SI-090 audit reconstruction: migration 020
   adds append-only `source_audits` capturing every importer invocation
   (source_kind, source_id, adapter_version, input_signature, outcome,
