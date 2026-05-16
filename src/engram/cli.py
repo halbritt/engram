@@ -92,6 +92,18 @@ from engram.striatum_ingest import (
     StriatumBundleError,
     ingest_striatum_bundle,
 )
+from engram.git_import import (
+    GitImportError,
+    import_git_repo,
+)
+from engram.build_artifact_import import (
+    BuildArtifactImportError,
+    import_build_artifacts,
+)
+from engram.markdown_import import (
+    MarkdownImportError,
+    import_markdown_tree,
+)
 
 
 class Phase3SchemaPreflightError(RuntimeError):
@@ -200,6 +212,58 @@ def main(argv: list[str] | None = None) -> int:
     striatum_parser.add_argument("--bundle", type=Path, required=True)
     striatum_parser.add_argument("--repo", default="striatum")
     striatum_parser.set_defaults(invoked_command="ingest-striatum")
+
+    # RFC 0050 Layer 1: `engram import git <repo-path>`.
+    import_parser = subparsers.add_parser(
+        "import",
+        help="RFC 0050 source-contract importers",
+    )
+    import_subparsers = import_parser.add_subparsers(dest="import_command", required=True)
+    import_git_parser = import_subparsers.add_parser(
+        "git",
+        help="Import commit metadata + diff stats from a local git repository",
+    )
+    import_git_parser.add_argument("path", type=Path)
+    import_git_parser.add_argument("--tenant-id", default="personal")
+    import_git_parser.add_argument("--corpus-id", default="personal")
+    import_git_parser.add_argument("--repo-label", default=None)
+    import_git_parser.add_argument("--allow-dirty", action="store_true")
+    import_git_parser.add_argument("--dry-run", action="store_true")
+    import_git_parser.add_argument(
+        "--full-patch",
+        default="false",
+        choices=("false",),
+        help="Reserved for a future opt-in slice (RFC 0050 OQ-SI-001); Layer 1 only accepts 'false'.",
+    )
+    import_git_parser.set_defaults(
+        command="import-git", invoked_command="import git"
+    )
+    import_build_parser = import_subparsers.add_parser(
+        "build-artifacts",
+        help="Import a local build/test/lint/coverage/benchmark artifact directory",
+    )
+    import_build_parser.add_argument("path", type=Path)
+    import_build_parser.add_argument("--tenant-id", default="personal")
+    import_build_parser.add_argument("--corpus-id", default="personal")
+    import_build_parser.add_argument("--run-id", default=None)
+    import_build_parser.add_argument("--commit-sha", default=None)
+    import_build_parser.add_argument("--repo-label", default=None)
+    import_build_parser.add_argument("--dry-run", action="store_true")
+    import_build_parser.set_defaults(
+        command="import-build-artifacts", invoked_command="import build-artifacts"
+    )
+    import_md_parser = import_subparsers.add_parser(
+        "markdown",
+        help="Import a local Markdown / project-doc tree",
+    )
+    import_md_parser.add_argument("path", type=Path)
+    import_md_parser.add_argument("--tenant-id", default="personal")
+    import_md_parser.add_argument("--corpus-id", default="personal")
+    import_md_parser.add_argument("--repo-label", default=None)
+    import_md_parser.add_argument("--dry-run", action="store_true")
+    import_md_parser.set_defaults(
+        command="import-markdown", invoked_command="import markdown"
+    )
 
     describe_corpus_parser = subparsers.add_parser(
         "describe-corpus",
@@ -751,6 +815,94 @@ def main(argv: list[str] | None = None) -> int:
             with connect() as conn:
                 result = ingest_striatum_bundle(conn, args.bundle, repo=args.repo)
             print_striatum_ingest_result(result)
+            return 0
+
+        if args.command == "import-markdown":
+            with connect() as conn:
+                result = import_markdown_tree(
+                    conn,
+                    args.path,
+                    tenant_id=args.tenant_id,
+                    corpus_id=args.corpus_id,
+                    repo_label=args.repo_label,
+                    dry_run=bool(args.dry_run),
+                )
+            print(
+                json.dumps(
+                    {
+                        "source_id": result.source_id,
+                        "markdown_root_id": result.markdown_root_id,
+                        "files_inserted": result.files_inserted,
+                        "files_seen": result.files_seen,
+                        "files_skipped": result.files_skipped,
+                        "files_tombstoned": result.files_tombstoned,
+                        "chunks_inserted": result.chunks_inserted,
+                        "links_inserted": result.links_inserted,
+                        "coverage_gap_count": result.coverage_gap_count,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+
+        if args.command == "import-build-artifacts":
+            with connect() as conn:
+                result = import_build_artifacts(
+                    conn,
+                    args.path,
+                    tenant_id=args.tenant_id,
+                    corpus_id=args.corpus_id,
+                    run_id=args.run_id,
+                    commit_sha=args.commit_sha,
+                    repo_label=args.repo_label,
+                    dry_run=bool(args.dry_run),
+                )
+            print(
+                json.dumps(
+                    {
+                        "source_id": result.source_id,
+                        "artifact_root_id": result.artifact_root_id,
+                        "artifacts_inserted": result.artifacts_inserted,
+                        "artifacts_seen": result.artifacts_seen,
+                        "artifacts_skipped": result.artifacts_skipped,
+                        "findings_inserted": result.findings_inserted,
+                        "coverage_gap_count": result.coverage_gap_count,
+                        "redacted_artifacts": result.redacted_artifacts,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+
+        if args.command == "import-git":
+            with connect() as conn:
+                result = import_git_repo(
+                    conn,
+                    args.path,
+                    tenant_id=args.tenant_id,
+                    corpus_id=args.corpus_id,
+                    repo_label=args.repo_label,
+                    allow_dirty=bool(args.allow_dirty),
+                    dry_run=bool(args.dry_run),
+                )
+            print(
+                json.dumps(
+                    {
+                        "source_id": result.source_id,
+                        "repository_id": result.repository_id,
+                        "commits_inserted": result.commits_inserted,
+                        "commits_seen": result.commits_seen,
+                        "commits_skipped": result.commits_skipped,
+                        "paths_inserted": result.paths_inserted,
+                        "coverage_gap_count": result.coverage_gap_count,
+                        "dirty_worktree": result.dirty_worktree,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
             return 0
 
         if args.command == "describe-corpus":

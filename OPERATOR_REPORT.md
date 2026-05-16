@@ -1,8 +1,78 @@
 # Operator Report
 
-Last updated: 2026-05-15
+Last updated: 2026-05-15 (late)
 
-## Current Handover Summary
+## Current Handover Summary (Source-Ingestion Expansion Landed)
+
+- Branch state: `engram/source-ingestion-rfc-research` carries RFC 0050 +
+  Layers 1-6 of the source-ingestion expansion. `master` is unchanged
+  (still at `25decf4`).
+- Verification: `make test` 702 passed (up from 626) in 537s. No regressions.
+- RFC 0050 (`docs/rfcs/0050-source-ingestion-expansion.md`) landed via a
+  multi-lane research workflow (claude/codex/gemini author drafts, codex
+  prior-art research, claude privacy + gemini project-judgment reviews,
+  codex findings ledger and synthesis). 850 lines, proposal status only.
+  Acceptance is a separate operator decision.
+- `SOURCE_INGESTION_BACKLOG.md` derived from RFC 0050, six layers; all
+  six landed on the branch as working code with tests:
+  - **Layer 1** — Source contract template + git importer (migration 017;
+    `src/engram/source_contract.py`, `git_import.py`; `engram import git`
+    CLI verb; 32 tests).
+  - **Layer 2** — Build-artifact importer (migration 018;
+    `build_artifact_import.py`; JUnit XML, coverage JSON, benchmark JSON,
+    ruff/eslint/pyright lint output, plain logs; secret-shaped content
+    triggers in-text redaction and sensitivity promotion to
+    `credential_or_secret_reference`; `engram import build-artifacts`; 8 tests).
+  - **Layer 3** — Markdown importer (migration 019; `markdown_import.py`;
+    frontmatter, heading anchors, chunks, links (inline/wiki/autolink/
+    image/tag); tombstone+supersede lifecycle for content drift and file
+    deletion; `engram import markdown`; 10 tests).
+  - **Layer 4** — EG-SI evaluation gates
+    (`tests/test_source_ingestion_gates.py`, `make eval-source-ingestion-gates`):
+    EG-SI-000 (no-egress Level A for all three), EG-SI-010 (contract validator),
+    EG-SI-020 (idempotency + conflict), EG-SI-040 (redaction +
+    sensitivity promotion), EG-SI-050 (projection rebuild), EG-SI-060
+    (exact-reference citation), EG-SI-080 (coverage gaps + tombstones),
+    EG-SI-100 (fixture matrix). 16 tests.
+  - **Layer 5** — Exact-reference retrieval extension: `MemoryService.search`
+    `filters.exact_refs` now surfaces project-execution rows (`commit_sha`
+    -> `git_commits`, `source_hash` -> `build_artifacts.content_hash`,
+    `run_id` -> `build_artifacts.run_id`, `path` -> active
+    `markdown_files`) alongside the existing Striatum projection path.
+    No vector search introduced. 5 tests.
+  - **Layer 6** — `source_audits` table + EG-SI-090 reconstruction
+    (migration 020). Every importer invocation records one append-only
+    audit row capturing input signature, outcome, counts, and timestamps
+    inside the same transaction as its inserts. Audit reconstruction
+    rebuilds importer history without reading importer raw_payload
+    bodies. No-derived-product-leak invariant test asserts body text
+    never lands in audit payload. 5 tests.
+- Striatum daemon transition: `update striatum` upgraded the engram
+  venv and the system CLI from 1.48.2 / 1.53.0 to 1.54.0. The systemd-
+  managed daemon is healthy on PostgreSQL schema v5. The engram repo is
+  registered with the daemon as `repository_id = repo_b63673a288c64bb987d29bafffaed578`
+  and now uses repo-local SQLite (`.striatum/state.sqlite3`) for `run
+  prepare` / `claim-next` / `publish-artifact` (the daemon's PG mutation
+  surface does not yet cover the workflow lifecycle verbs; striatum
+  doctor explain shows `run.prepare: pg_backed=false`). The previous
+  break-glass tombstone migration (2026-05-14) is unblocked but
+  documented as "wait for PG mutation surface" before retrying.
+- Operational posture: continue to set `STRIATUM_TEST_HARNESS=1
+  STRIATUM_DAEMON_REQUIRED=0` for engram-side striatum verbs. The
+  bootstrap admin client token cache lives at `/run/user/1000/striatum/
+  client-token`; the daemon-postgres clients table was re-bootstrapped
+  this session (the prior token from 2026-05-14 was lost to journal).
+- Not done: AL-D001/AL-D002/AL-D003/AL-D004 acceptance decisions remain
+  human-only checkpoints; `make schema-docs` was NOT run after
+  migrations 017-020 (regenerate before any spec promotion); no
+  real-bundle Striatum e2e runbook landed; Stage 3-5 source families
+  (chat exports, observation/life sources, live capture) remain deferred
+  per RFC 0050.
+
+Sections below are historical notes. When they conflict with the current
+summary above, use the 2026-05-15 (late) current summary.
+
+## Prior Handover Summary (Striatum-Memory E2E)
 
 - Primary branch state before this report update: `master` and
   `origin/master` were fast-forwarded to implementation checkpoint

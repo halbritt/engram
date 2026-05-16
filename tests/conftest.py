@@ -29,6 +29,14 @@ def conn():
                 gold_label_sessions,
                 gold_label_verdict_vocabulary,
                 gold_label_strata_vocabulary,
+                source_audits,
+                build_artifact_findings,
+                build_artifacts,
+                markdown_file_links,
+                markdown_file_chunks,
+                markdown_files,
+                git_commit_paths,
+                git_commits,
                 striatum_packet_audits,
                 striatum_references,
                 striatum_projection_generations,
@@ -90,6 +98,18 @@ def conn():
         admin.execute("DROP FUNCTION IF EXISTS fn_striatum_packet_audits_validate() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS fn_striatum_packet_audits_append_only() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS fn_striatum_references_validate_parent() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS prevent_git_commits_mutation() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS prevent_git_commit_paths_mutation() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS prevent_build_artifacts_mutation() CASCADE")
+        admin.execute(
+            "DROP FUNCTION IF EXISTS prevent_build_artifact_findings_mutation() CASCADE"
+        )
+        admin.execute(
+            "DROP FUNCTION IF EXISTS prevent_markdown_files_destructive_mutation() CASCADE"
+        )
+        admin.execute("DROP FUNCTION IF EXISTS prevent_markdown_chunks_mutation() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS prevent_markdown_links_mutation() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS prevent_source_audits_mutation() CASCADE")
         admin.execute("DROP TYPE IF EXISTS source_kind CASCADE")
         admin.execute("DROP TYPE IF EXISTS capture_type CASCADE")
         admin.execute("DROP TYPE IF EXISTS consolidation_status CASCADE")

@@ -1,0 +1,177 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "source-ingestion-layer1-2026-05-15",
+  "workflow_version": "2026-05-15+scaffold",
+  "name": "Source-Ingestion Layer 1 Build (Contract Template + Git Importer)",
+  "branch": {
+    "mode": "confirm",
+    "allow_dirty": true,
+    "suggested_name": "engram/source-ingestion-rfc-research"
+  },
+  "coordinator": {
+    "lane_id": "codex",
+    "role_id": "synthesizer"
+  },
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 1,
+    "require_disjoint_write_scopes": false
+  },
+  "cycles": [],
+  "lanes": {
+    "claude": {
+      "adapter": "process",
+      "display_model": "Claude Opus",
+      "command": ["claude", "--model", "opus", "-p"],
+      "capabilities": ["write", "review", "synthesis"],
+      "constraints": {
+        "network": "forbidden",
+        "repo_scope": "local_only",
+        "transcripts": "off"
+      }
+    },
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--model", "gpt-5.5"],
+      "capabilities": ["write", "review", "synthesis"],
+      "constraints": {
+        "network": "forbidden",
+        "repo_scope": "local_only",
+        "transcripts": "off"
+      }
+    }
+  },
+  "roles": {
+    "implementer": {
+      "definition_path": "striatum/source-ingestion-layer1-2026-05-15/roles/implementer.md"
+    },
+    "reviewer": {
+      "definition_path": "striatum/source-ingestion-layer1-2026-05-15/roles/reviewer.md"
+    },
+    "synthesizer": {
+      "definition_path": "striatum/source-ingestion-layer1-2026-05-15/roles/synthesizer.md"
+    }
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "SPEC.md", "required": true},
+    {"path": "docs/AGENT_CONTEXT_NOTES.md", "required": true},
+    {"path": "docs/rfcs/0012-python-agentic-coding-standard.md", "required": true},
+    {"path": "docs/rfcs/0050-source-ingestion-expansion.md", "required": true},
+    {"path": "SOURCE_INGESTION_BACKLOG.md", "required": true}
+  ],
+  "jobs": [
+    {
+      "id": "implement_layer1",
+      "type": "draft",
+      "lane_id": "claude",
+      "role_id": "implementer",
+      "title": "Implement Layer 1: contract template + git importer",
+      "objective": "Land source contract template, validator, migration, git importer, tests, and CLI verb per SOURCE_INGESTION_BACKLOG.md Layer 1.",
+      "task_prompt": {"path": "striatum/source-ingestion-layer1-2026-05-15/prompts/implement.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0050-source-ingestion-expansion.md"},
+        {"kind": "backlog", "path": "SOURCE_INGESTION_BACKLOG.md"},
+        {"kind": "standard", "path": "docs/rfcs/0012-python-agentic-coding-standard.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/source-contracts/README.md",
+          "docs/source-contracts/git.yaml",
+          "docs/source-contracts/build_artifact.yaml",
+          "src/engram/source_contract.py",
+          "src/engram/git_import.py",
+          "src/engram/__main__.py",
+          "src/engram/cli.py",
+          "migrations/017_source_kind_git.sql",
+          "tests/test_source_contract_validator.py",
+          "tests/test_git_importer.py",
+          "tests/test_git_importer_no_egress.py",
+          "tests/fixtures/source_contract_git/.gitkeep",
+          "docs/reviews/source-ingestion-layer1-2026-05-15/IMPLEMENTATION_NOTES.md"
+        ],
+        "forbidden_paths": [".striatum/", "DECISION_LOG.md", "CHANGELOG.md", "BUILD_PHASES.md", "ROADMAP.md", "docs/rfcs/", "SPEC.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "implementation_notes",
+          "kind": "handoff",
+          "path": "docs/reviews/source-ingestion-layer1-2026-05-15/IMPLEMENTATION_NOTES.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_layer1",
+      "type": "review",
+      "lane_id": "codex",
+      "role_id": "reviewer",
+      "fresh_session_required": true,
+      "title": "Review Layer 1 implementation",
+      "objective": "Verify Layer 1 code meets the RFC 0050 contract, the project Python standard, and the backlog acceptance criteria.",
+      "task_prompt": {"path": "striatum/source-ingestion-layer1-2026-05-15/prompts/review.md"},
+      "inputs": [
+        {"kind": "handoff", "path": "docs/reviews/source-ingestion-layer1-2026-05-15/IMPLEMENTATION_NOTES.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0050-source-ingestion-expansion.md"},
+        {"kind": "backlog", "path": "SOURCE_INGESTION_BACKLOG.md"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/source-ingestion-layer1-2026-05-15/REVIEW.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "docs/source-contracts/", "DECISION_LOG.md", "CHANGELOG.md", "BUILD_PHASES.md", "ROADMAP.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "layer1_review",
+          "kind": "finding",
+          "path": "docs/reviews/source-ingestion-layer1-2026-05-15/REVIEW.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "synthesize_layer1",
+      "type": "synthesis",
+      "lane_id": "claude",
+      "role_id": "synthesizer",
+      "fresh_session_required": true,
+      "title": "Apply Layer 1 review findings",
+      "objective": "Apply accepted findings, ensure make test passes, update CHANGELOG.",
+      "task_prompt": {"path": "striatum/source-ingestion-layer1-2026-05-15/prompts/synthesis.md"},
+      "inputs": [
+        {"kind": "review", "path": "docs/reviews/source-ingestion-layer1-2026-05-15/REVIEW.md"},
+        {"kind": "backlog", "path": "SOURCE_INGESTION_BACKLOG.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/",
+          "tests/",
+          "migrations/",
+          "docs/source-contracts/",
+          "CHANGELOG.md",
+          "docs/reviews/source-ingestion-layer1-2026-05-15/SYNTHESIS_NOTES.md"
+        ],
+        "forbidden_paths": [".striatum/", "DECISION_LOG.md", "BUILD_PHASES.md", "ROADMAP.md", "docs/rfcs/", "SPEC.md", "HUMAN_REQUIREMENTS.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "synthesis_notes",
+          "kind": "synthesis",
+          "path": "docs/reviews/source-ingestion-layer1-2026-05-15/SYNTHESIS_NOTES.md",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {"from": "implement_layer1", "on": "completed", "to": "review_layer1"},
+    {"from": "review_layer1", "on": "completed", "to": "synthesize_layer1", "required_verdicts": ["accept", "accept_with_findings"]}
+  ]
+}

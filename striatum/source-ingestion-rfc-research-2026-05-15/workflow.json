@@ -1,0 +1,367 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "source-ingestion-rfc-research-2026-05-15",
+  "workflow_version": "2026-05-15+scaffold",
+  "name": "Source-Ingestion Expansion RFC Research",
+  "branch": {
+    "mode": "confirm",
+    "allow_dirty": true,
+    "suggested_name": "engram/source-ingestion-rfc-research"
+  },
+  "coordinator": {
+    "lane_id": "codex",
+    "role_id": "synthesizer"
+  },
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 4,
+    "require_disjoint_write_scopes": true
+  },
+  "cycles": [],
+  "lanes": {
+    "codex": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review", "synthesis"],
+      "constraints": {
+        "network": "forbidden",
+        "repo_scope": "local_only",
+        "transcripts": "off"
+      }
+    },
+    "claude": {
+      "adapter": "process",
+      "display_model": "Claude Opus",
+      "command": ["claude", "--model", "opus", "-p"],
+      "capabilities": ["write", "review"],
+      "constraints": {
+        "network": "forbidden",
+        "repo_scope": "local_only",
+        "transcripts": "off"
+      }
+    },
+    "gemini": {
+      "adapter": "process",
+      "display_model": "Gemini 3.1 Pro Preview",
+      "command": ["gemini", "--model", "gemini-3.1-pro-preview"],
+      "capabilities": ["write", "review"],
+      "constraints": {
+        "network": "forbidden",
+        "repo_scope": "local_only",
+        "transcripts": "off"
+      }
+    }
+  },
+  "roles": {
+    "author": {
+      "definition_path": "striatum/source-ingestion-rfc-research-2026-05-15/roles/author.md"
+    },
+    "researcher": {
+      "definition_path": "striatum/source-ingestion-rfc-research-2026-05-15/roles/researcher.md"
+    },
+    "reviewer": {
+      "definition_path": "striatum/source-ingestion-rfc-research-2026-05-15/roles/reviewer.md"
+    },
+    "ledger": {
+      "definition_path": "striatum/source-ingestion-rfc-research-2026-05-15/roles/ledger.md"
+    },
+    "synthesizer": {
+      "definition_path": "striatum/source-ingestion-rfc-research-2026-05-15/roles/synthesizer.md"
+    }
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "HUMAN_REQUIREMENTS.md", "required": true},
+    {"path": "DECISION_LOG.md", "required": true},
+    {"path": "BUILD_PHASES.md", "required": true},
+    {"path": "ROADMAP.md", "required": true},
+    {"path": "SPEC.md", "required": true},
+    {"path": "STRIATUM_MEMORY_E2E_BACKLOG.md", "required": true},
+    {"path": "docs/AGENT_CONTEXT_NOTES.md", "required": true},
+    {"path": "docs/ingestion.md", "required": true},
+    {"path": "docs/schema/README.md", "required": true},
+    {"path": "docs/rfcs/README.md", "required": true},
+    {"path": "docs/process/multi-agent-review-loop.md", "required": true},
+    {"path": "docs/process/project-judgment.md", "required": true},
+    {"path": "docs/design/source-ingestion-expansion-proposal-2026-05-15.md", "required": true}
+  ],
+  "jobs": [
+    {
+      "id": "draft_rfc_codex",
+      "type": "draft",
+      "lane_id": "codex",
+      "role_id": "author",
+      "parallel_group": "author_drafts",
+      "title": "Draft source-ingestion RFC (codex lane)",
+      "objective": "Independent RFC draft from the source design document, by the codex lane.",
+      "task_prompt": {"path": "striatum/source-ingestion-rfc-research-2026-05-15/prompts/draft_rfc.md"},
+      "inputs": [
+        {"kind": "design", "path": "docs/design/source-ingestion-expansion-proposal-2026-05-15.md"},
+        {"kind": "ingestion", "path": "docs/ingestion.md"},
+        {"kind": "backlog", "path": "STRIATUM_MEMORY_E2E_BACKLOG.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/reviews/source-ingestion-rfc-research-2026-05-15/DRAFT_codex.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "DECISION_LOG.md", "CHANGELOG.md", "BUILD_PHASES.md", "ROADMAP.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "draft_rfc_codex",
+          "kind": "handoff",
+          "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/DRAFT_codex.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "draft_rfc_claude",
+      "type": "draft",
+      "lane_id": "claude",
+      "role_id": "author",
+      "parallel_group": "author_drafts",
+      "title": "Draft source-ingestion RFC (claude lane)",
+      "objective": "Independent RFC draft from the source design document, by the claude lane.",
+      "task_prompt": {"path": "striatum/source-ingestion-rfc-research-2026-05-15/prompts/draft_rfc.md"},
+      "inputs": [
+        {"kind": "design", "path": "docs/design/source-ingestion-expansion-proposal-2026-05-15.md"},
+        {"kind": "ingestion", "path": "docs/ingestion.md"},
+        {"kind": "backlog", "path": "STRIATUM_MEMORY_E2E_BACKLOG.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/reviews/source-ingestion-rfc-research-2026-05-15/DRAFT_claude.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "DECISION_LOG.md", "CHANGELOG.md", "BUILD_PHASES.md", "ROADMAP.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "draft_rfc_claude",
+          "kind": "handoff",
+          "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/DRAFT_claude.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "draft_rfc_gemini",
+      "type": "draft",
+      "lane_id": "gemini",
+      "role_id": "author",
+      "parallel_group": "author_drafts",
+      "title": "Draft source-ingestion RFC (gemini lane)",
+      "objective": "Independent RFC draft from the source design document, by the gemini lane.",
+      "task_prompt": {"path": "striatum/source-ingestion-rfc-research-2026-05-15/prompts/draft_rfc.md"},
+      "inputs": [
+        {"kind": "design", "path": "docs/design/source-ingestion-expansion-proposal-2026-05-15.md"},
+        {"kind": "ingestion", "path": "docs/ingestion.md"},
+        {"kind": "backlog", "path": "STRIATUM_MEMORY_E2E_BACKLOG.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/reviews/source-ingestion-rfc-research-2026-05-15/DRAFT_gemini.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "DECISION_LOG.md", "CHANGELOG.md", "BUILD_PHASES.md", "ROADMAP.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "draft_rfc_gemini",
+          "kind": "handoff",
+          "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/DRAFT_gemini.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "research_prior_art",
+      "type": "draft",
+      "lane_id": "codex",
+      "role_id": "researcher",
+      "parallel_group": "author_drafts",
+      "title": "Prior-art research dossier for source-ingestion RFC",
+      "objective": "Map existing source kinds, importer patterns, adjacent RFC coverage, and privacy posture for the drafters and reviewers.",
+      "task_prompt": {"path": "striatum/source-ingestion-rfc-research-2026-05-15/prompts/research_prior_art.md"},
+      "inputs": [
+        {"kind": "design", "path": "docs/design/source-ingestion-expansion-proposal-2026-05-15.md"},
+        {"kind": "ingestion", "path": "docs/ingestion.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0033-multimodal-observation-layer.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0034-photo-library-ingestion.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0035-location-timeline-place-model.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0036-daily-biography-compiler.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0045-striatum-corpus-contract-v2.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0046-striatum-projection-index-schema.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0047-striatum-retrieval-augmentation-boundary.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0048-striatum-context-injection-policy.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0049-striatum-evaluation-gates.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/reviews/source-ingestion-rfc-research-2026-05-15/PRIOR_ART_DOSSIER.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "DECISION_LOG.md", "CHANGELOG.md", "BUILD_PHASES.md", "ROADMAP.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "prior_art_dossier",
+          "kind": "handoff",
+          "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/PRIOR_ART_DOSSIER.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_privacy_boundary",
+      "type": "review",
+      "lane_id": "claude",
+      "role_id": "reviewer",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "title": "Review source-ingestion RFC drafts for privacy and no-egress boundary",
+      "objective": "Verify no draft introduces a path that could exfiltrate user data, even by default; verify no importer proposes hosted services without explicit user gating.",
+      "task_prompt": {"path": "striatum/source-ingestion-rfc-research-2026-05-15/prompts/review.md"},
+      "inputs": [
+        {"kind": "draft", "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/DRAFT_codex.md"},
+        {"kind": "draft", "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/DRAFT_claude.md"},
+        {"kind": "draft", "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/DRAFT_gemini.md"},
+        {"kind": "dossier", "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/PRIOR_ART_DOSSIER.md"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/source-ingestion-rfc-research-2026-05-15/REVIEW_privacy_boundary.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "review_privacy_boundary",
+          "kind": "finding",
+          "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/REVIEW_privacy_boundary.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "review_project_judgment",
+      "type": "review",
+      "lane_id": "gemini",
+      "role_id": "reviewer",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "title": "Review source-ingestion RFC drafts for project judgment and scope",
+      "objective": "Verify the drafts honor scope discipline, do not invent unrequested architecture, and do not overshoot the design document.",
+      "task_prompt": {"path": "striatum/source-ingestion-rfc-research-2026-05-15/prompts/review.md"},
+      "inputs": [
+        {"kind": "draft", "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/DRAFT_codex.md"},
+        {"kind": "draft", "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/DRAFT_claude.md"},
+        {"kind": "draft", "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/DRAFT_gemini.md"},
+        {"kind": "dossier", "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/PRIOR_ART_DOSSIER.md"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/source-ingestion-rfc-research-2026-05-15/REVIEW_project_judgment.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "review_project_judgment",
+          "kind": "finding",
+          "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/REVIEW_project_judgment.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "findings_ledger",
+      "type": "ledger",
+      "lane_id": "codex",
+      "role_id": "ledger",
+      "fresh_session_required": true,
+      "title": "Record source-ingestion RFC findings ledger",
+      "objective": "Normalize independent reviews into one findings ledger with acceptance disposition.",
+      "task_prompt": {"path": "striatum/source-ingestion-rfc-research-2026-05-15/prompts/findings_ledger.md"},
+      "inputs": [
+        {"kind": "review", "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/REVIEW_privacy_boundary.md"},
+        {"kind": "review", "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/REVIEW_project_judgment.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/source-ingestion-rfc-research-2026-05-15/FINDINGS_LEDGER.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "findings_ledger",
+          "kind": "findings_ledger",
+          "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/FINDINGS_LEDGER.md",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "final_rfc_synthesis",
+      "type": "synthesis",
+      "lane_id": "codex",
+      "role_id": "synthesizer",
+      "fresh_session_required": true,
+      "title": "Synthesize final source-ingestion RFC",
+      "objective": "Produce a usable proposal-grade RFC at docs/rfcs/0050-source-ingestion-expansion.md from the three drafts, the dossier, and the accepted findings.",
+      "task_prompt": {"path": "striatum/source-ingestion-rfc-research-2026-05-15/prompts/synthesis.md"},
+      "inputs": [
+        {"kind": "draft", "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/DRAFT_codex.md"},
+        {"kind": "draft", "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/DRAFT_claude.md"},
+        {"kind": "draft", "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/DRAFT_gemini.md"},
+        {"kind": "dossier", "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/PRIOR_ART_DOSSIER.md"},
+        {"kind": "ledger", "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/FINDINGS_LEDGER.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/rfcs/0050-source-ingestion-expansion.md",
+          "docs/reviews/source-ingestion-rfc-research-2026-05-15/SYNTHESIS_NOTES.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "CHANGELOG.md", "DECISION_LOG.md", "BUILD_PHASES.md", "ROADMAP.md", "docs/rfcs/README.md"]
+      },
+      "expected_artifacts": [
+        {
+          "logical_name": "final_rfc",
+          "kind": "handoff",
+          "path": "docs/rfcs/0050-source-ingestion-expansion.md",
+          "required": true
+        },
+        {
+          "logical_name": "synthesis_notes",
+          "kind": "synthesis",
+          "path": "docs/reviews/source-ingestion-rfc-research-2026-05-15/SYNTHESIS_NOTES.md",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {"from": "draft_rfc_codex", "on": "completed", "to": "review_privacy_boundary"},
+    {"from": "draft_rfc_claude", "on": "completed", "to": "review_privacy_boundary"},
+    {"from": "draft_rfc_gemini", "on": "completed", "to": "review_privacy_boundary"},
+    {"from": "research_prior_art", "on": "completed", "to": "review_privacy_boundary"},
+    {"from": "draft_rfc_codex", "on": "completed", "to": "review_project_judgment"},
+    {"from": "draft_rfc_claude", "on": "completed", "to": "review_project_judgment"},
+    {"from": "draft_rfc_gemini", "on": "completed", "to": "review_project_judgment"},
+    {"from": "research_prior_art", "on": "completed", "to": "review_project_judgment"},
+    {"from": "review_privacy_boundary", "on": "completed", "to": "findings_ledger", "required_verdicts": ["accept", "accept_with_findings"]},
+    {"from": "review_project_judgment", "on": "completed", "to": "findings_ledger", "required_verdicts": ["accept", "accept_with_findings"]},
+    {"from": "findings_ledger", "on": "completed", "to": "final_rfc_synthesis"}
+  ]
+}

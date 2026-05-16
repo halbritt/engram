@@ -1,0 +1,89 @@
+source_kind: git
+source_family: project_execution
+
+sub_kinds:
+  - commit
+  - branch
+  - tag
+  - diff_stat
+
+raw_artifact_boundary:
+  description: local repository object database plus adapter manifest
+  acquisition:
+    - local filesystem
+    - explicit user-provided export
+  network_policy: no outbound calls
+
+identity:
+  source_instance_id: repository_root_identity
+  item_identity_keys:
+    - repository_id
+    - commit_sha
+  logical_identity_keys:
+    - repository_id
+    - ref_name
+
+temporal_fields:
+  observed_at: committer_date
+  recorded_at: import_time
+
+deduplication:
+  idempotency_key:
+    - source_kind
+    - repository_id
+    - commit_sha
+  conflict_policy: raise_on_changed_raw_artifact_hash
+
+privacy:
+  privacy_tier_default: 1
+  sensitivity_class_default: routine_project
+
+projection_families:
+  - project_event
+  - code_reference
+
+operational_families:
+  - coverage_gap
+  - source_audit
+
+extraction_eligibility:
+  default: metadata_only
+  participant_third_party: false
+  opt_in_required_for:
+    - patch_body
+    - private_author_email
+    - uncommitted_worktree
+
+raw_retention:
+  required:
+    - object ids
+    - commit metadata
+    - changed path summaries
+    - manifest hash
+  optional:
+    - patch body
+
+provenance:
+  required:
+    - source_id
+    - raw row id
+    - repository_id
+    - commit_sha
+    - content_hash
+    - adapter_version
+
+rebuild:
+  projection_generation: required
+  reproject_from_raw: required
+  stale_projection_policy: fail_closed_or_label_stale
+
+tests:
+  - contract_validator
+  - idempotent_reimport
+  - conflict_on_changed_raw_hash
+  - raw_evidence_immutable
+  - projection_rebuild_from_raw
+  - no_network_access
+  - privacy_inheritance
+  - third_party_extraction_off_by_default
+  - exact_reference_citation

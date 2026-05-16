@@ -8,6 +8,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- RFC 0050 source-ingestion expansion proposal landed via multi-lane research
+  workflow (claude/codex/gemini drafts, codex prior-art research, claude
+  privacy + gemini project-judgment reviews, codex findings ledger and
+  synthesis). Output is proposal-status; acceptance is a separate operator
+  decision.
+- `SOURCE_INGESTION_BACKLOG.md` layer-by-layer execution plan derived from
+  RFC 0050.
+- Source-contract template at `docs/source-contracts/README.md` and example
+  contracts (`git.yaml`, `build_artifact.yaml`).
+- Source-contract validator (`src/engram/source_contract.py`) with a closed
+  error vocabulary.
+- Migration `017_source_kind_git.sql` adds `source_kind='git'` plus
+  append-only `git_commits` and `git_commit_paths` tables.
+- Local git metadata + diff-stat importer (`src/engram/git_import.py`) with
+  closed git-verb allowlist, no-egress invariant, idempotent re-import,
+  rename detection, and coverage-gap emission.
+- `engram import git <repo-path>` CLI verb with `--dry-run`, `--allow-dirty`,
+  `--repo-label`, tenant/corpus overrides, and reserved `--full-patch=false`.
+- 32 new tests across contract validation, git import behaviour, and
+  no-egress invariants.
+- Migration `018_source_kind_build_artifact.sql` adds
+  `source_kind='build_artifact'` plus append-only `build_artifacts` and
+  `build_artifact_findings` tables.
+- Build-artifact importer (`src/engram/build_artifact_import.py`) parses
+  JUnit XML, coverage JSON, benchmark JSON, ruff/eslint/pyright lint
+  output, and plain logs; emits redaction markers and promotes
+  sensitivity to `credential_or_secret_reference` when secret-shaped
+  content is detected; emits `coverage_gap` rows for unrecognized
+  artifact kinds.
+- `engram import build-artifacts <dir>` CLI verb with `--run-id`,
+  `--commit-sha`, `--repo-label`, and `--dry-run`.
+- Migration `019_source_kind_markdown_tree.sql` adds
+  `source_kind='markdown_tree'` plus append-only `markdown_files` /
+  `markdown_file_chunks` / `markdown_file_links` tables with
+  tombstone+supersede lifecycle for content drift and file deletion.
+- Markdown importer (`src/engram/markdown_import.py`) walks a directory
+  tree, splits frontmatter, projects heading anchors, chunks, inline /
+  reference / wiki / autolink / image / tag links; tombstones missing
+  files; recognizes title from frontmatter or H1.
+- `engram import markdown <root>` CLI verb.
+- 18 new tests across build-artifact and Markdown importers (no-egress,
+  idempotency, content drift, redaction, link detection).
+- Layer 6 source_audits + EG-SI-090 audit reconstruction: migration 020
+  adds append-only `source_audits` capturing every importer invocation
+  (source_kind, source_id, adapter_version, input_signature, outcome,
+  rows_inserted/skipped/tombstoned, coverage_gap_count, started_at,
+  completed_at, raw_payload). All three Layer 1-3 importers
+  (`git_import`, `build_artifact_import`, `markdown_import`) record one
+  audit row per invocation inside the same transaction as the inserts.
+  EG-SI-090 reconstructs the importer outcome history without reading
+  importer raw_payload bodies. No-derived-product-leak test asserts
+  body text never lands in the audit payload.
+- Layer 5 exact-reference retrieval extension: `MemoryService.search`
+  filter `exact_refs` now surfaces project-execution rows (`commit_sha`
+  -> `git_commits`, `source_hash` -> `build_artifacts.content_hash`,
+  `run_id` -> `build_artifacts.run_id`, `path` -> active
+  `markdown_files`) alongside the existing Striatum projection path,
+  without introducing vector search. 5 new tests.
+- Layer 4 EG-SI evaluation gates: `tests/test_source_ingestion_gates.py`
+  exercises EG-SI-000 (no-egress), EG-SI-010 (contract validator),
+  EG-SI-020 (idempotency + conflict), EG-SI-040 (redaction + sensitivity
+  promotion), EG-SI-050 (projection rebuild), EG-SI-060 (exact-reference
+  citation by commit_sha / artifact_hash / markdown path), EG-SI-080
+  (coverage gaps + tombstones), and EG-SI-100 (fixture matrix).
+  Surfaced via `make eval-source-ingestion-gates`.
+- Example source contracts at `docs/source-contracts/markdown_tree.yaml`
+  (Layer 3) added alongside `git.yaml` and `build_artifact.yaml`.
 - Source ingestion expansion proposal covering chat logs, commit history,
   build artifacts, notes/docs, project evidence, media/location/life records,
   source contracts, privacy defaults, rollout order, and evaluation gates.
