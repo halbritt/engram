@@ -891,8 +891,8 @@ def main(argv: list[str] | None = None) -> int:
     entity_grounding_process_parser.add_argument("--grant-id")
     entity_grounding_process_parser.add_argument("--target-adapter", default=None)
     entity_grounding_process_parser.epilog = (
-        f"Set {ENTITY_GROUNDING_BROKER_DATABASE_URL_ENV} to run the network-capable "
-        "materializer through a restricted broker database role."
+        f"Requires {ENTITY_GROUNDING_BROKER_DATABASE_URL_ENV}; the network-capable "
+        "materializer always runs through the restricted broker database role."
     )
     entity_grounding_process_parser.set_defaults(command="entity-grounding-process-approved")
     entity_grounding_daemon_parser = entity_grounding_subparsers.add_parser(
@@ -1811,7 +1811,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "entity-grounding-process-approved":
-            with connect(url=entity_grounding_broker_database_url()) as conn:
+            broker_database_url = entity_grounding_broker_database_url()
+            if broker_database_url is None:
+                raise EntityGroundingCliError(
+                    "process-approved requires "
+                    f"{ENTITY_GROUNDING_BROKER_DATABASE_URL_ENV} to be set"
+                )
+            with connect(url=broker_database_url) as conn:
                 result = run_entity_grounding_process_approved(
                     conn,
                     tenant_id=args.tenant,

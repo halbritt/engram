@@ -772,6 +772,11 @@ def test_entity_grounding_process_approved_dispatches_and_redacts_secrets(
 ) -> None:
     captured: dict[str, Any] = {}
 
+    monkeypatch.setenv(
+        cli.ENTITY_GROUNDING_BROKER_DATABASE_URL_ENV,
+        "postgresql://engram_grounding_broker@localhost/engram",
+    )
+
     def fake_run_entity_grounding_process_approved(
         connection: Any,
         **kwargs: Any,
@@ -830,6 +835,19 @@ def test_entity_grounding_process_approved_dispatches_and_redacts_secrets(
     output = json.loads(output_text)
     assert output["provider"]["api_key"] == "[redacted]"
     assert output["provider"]["nested"]["authorization_token"] == "[redacted]"
+
+
+def test_entity_grounding_process_approved_refuses_without_broker_database_url(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.delenv(cli.ENTITY_GROUNDING_BROKER_DATABASE_URL_ENV, raising=False)
+
+    rc = cli.main(["entity-grounding", "process-approved", "--limit", "1"])
+
+    assert rc != 0
+    err = capsys.readouterr().err
+    assert cli.ENTITY_GROUNDING_BROKER_DATABASE_URL_ENV in err
 
 
 def test_entity_grounding_process_approved_uses_broker_database_url(

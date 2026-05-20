@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- `engram entity-grounding process-approved` now refuses to start when
+  `ENGRAM_ENTITY_GROUNDING_BROKER_DATABASE_URL` is unset, matching
+  `broker-daemon`. The previous operator-DSN fallback is closed; the
+  network-capable materializer always runs through the restricted broker
+  role. Decision recorded in
+  `docs/reviews/grounding-stack-architectural-review-2026-05-20/SYNTHESIS.md`
+  (D3).
 - Hardened RFC 0054/0055 entity grounding after adversarial review: entity
   surface network grants now require byte-exact `search_query == surface_form`
   validation before persistence and adapter dispatch; materialization re-filters
