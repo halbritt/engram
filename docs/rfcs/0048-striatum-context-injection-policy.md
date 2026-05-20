@@ -6,8 +6,8 @@
 |-------|-------|
 | RFC | RFC-0048 |
 | Title | Striatum Context Injection Policy |
-| Status | proposal |
-| Implementation | none |
+| Status | accepted_as_design_reference |
+| Implementation | landed via `MemoryService.build_packet`, `engram.build_packet` MCP tool, and `striatum_packet_audits` |
 | Created | 2026-05-14 |
 | Source | `STRIATUM_MEMORY_ROADMAP.md` |
 | Context | RFC 0044, RFC 0045, RFC 0046, RFC 0047, `STRIATUM_MEMORY_ROADMAP.md` |
@@ -15,7 +15,8 @@
 
 ## Summary
 
-This RFC defines when retrieved Engram memory may enter Striatum operator and
+This RFC is accepted as the design reference for when retrieved Engram memory
+may enter Striatum operator and
 workflow-agent context. It turns RFC 0048 from a scaffold into a reviewable
 policy handoff for section labels, precedence, instruction safety, citations,
 tenant/corpus filters, privacy filters, token budgets, stale-memory handling,
@@ -36,19 +37,18 @@ packets, explicit operator instructions, Striatum daemon state, workflow JSON,
 git history, `.striatum/state.sqlite3`, operator reports, changelogs, decision
 logs, or accepted specs.
 
-This RFC does not implement code, migrations, MCP tools, prompt templates, or
-Striatum UI. It is a proposal package for review before promotion into an
-accepted spec or decision.
+This RFC began as a proposal package. D083 accepted it as design reference after
+packet building, MCP wiring, and packet audits landed.
 
 ## Roadmap Position
 
 RFC 0048 follows RFC 0045, RFC 0046, and RFC 0047:
 
 - RFC 0045 proposes the Striatum Corpus Contract V2 disk bundle.
-- RFC 0046 proposes rebuildable Engram projections and indexes over that
-  bundle.
-- RFC 0047 proposes the retrieval augmentation boundary and response status
-  contract.
+- RFC 0046 is accepted as design reference for the landed rebuildable Engram
+  projections and indexes over that bundle.
+- RFC 0047 is accepted as design reference for the landed retrieval
+  augmentation boundary and response status contract.
 
 RFC 0048 narrows the last step before routine operator use: given cited local
 retrieval results, decide what can be injected into operator and agent context,
@@ -432,9 +432,11 @@ Code semantics:
 - `duplicate`: the candidate duplicates a higher-precedence entry.
 - `unsupported_surface`: the candidate's surface is not eligible for the
   requested purpose.
-- `generated_product_blocked`: the candidate is a generated memory product
-  ineligible for Level 2 or Level 3 injection until the separate accepted
-  generated-product contract exists.
+- `generated_product_blocked`: the candidate is a generated memory product.
+  Generated products remain retrieval-invisible and injection-ineligible until
+  a downstream generated-product implementation spec from RFC 0051 is accepted
+  per D089, covering privacy inheritance, provenance/citation, audit,
+  rebuildability, and eval gates.
 
 ### Extension Rule
 
@@ -533,8 +535,9 @@ Overall authority order:
 7. Unsynthesized reviews and raw findings.
 8. Raw logs, run summaries, handoffs, packets, and operator notes.
 9. Generated memory products that cite raw evidence and carry audit metadata,
-   but only after a separate accepted generated-product privacy, citation,
-   audit, and gate contract exists.
+   but only after a downstream generated-product implementation spec from RFC
+   0051 is accepted per D089, covering privacy inheritance,
+   provenance/citation, audit, rebuildability, and eval gates.
 10. Older brainstorms, prior-art notes, stale plans, and historical context.
 
 Within memory retrieval, exact identifier matches outrank semantic matches, and
@@ -589,10 +592,11 @@ Every injected memory item must include:
 Packet-local summaries assembled from selected cited results must cite the raw
 items they summarize and must carry confidence when they add synthesis beyond a
 short excerpt. Future stored or generated memory products are not eligible for
-Level 2 or Level 3 injection until a separate accepted privacy-inheritance,
-citation, audit, and gate contract exists. Direct raw evidence may use
-`confidence=null` only when the source itself has no meaningful confidence
-value.
+Level 2 or Level 3 injection until a downstream generated-product
+implementation spec from RFC 0051 is accepted per D089, covering privacy
+inheritance, provenance/citation, audit, rebuildability, and eval gates. Direct
+raw evidence may use `confidence=null` only when the source itself has no
+meaningful confidence value.
 
 If an agent uses memory to justify a finding, implementation choice, review
 recommendation, or handoff note, the artifact should preserve the citation next
@@ -954,8 +958,9 @@ instructions.
 - RFC 0049 gates and accepted/promoted upstream RFC successors are required
   before routine default-on automatic injection.
 - Generated memory products remain blocked from Level 2 and Level 3 injection
-  until a separate accepted privacy-inheritance, citation, audit, and gate
-  contract exists.
+  until a downstream generated-product implementation spec from RFC 0051 is
+  accepted per D089, covering privacy inheritance, provenance/citation, audit,
+  rebuildability, and eval gates.
 - Upstream dependencies and open decisions from RFC 0045, RFC 0046, and RFC
   0047 are named rather than assumed accepted.
 
@@ -972,8 +977,8 @@ instructions.
 5. Whether stale memory should be automatically included for
    `operator_startup` or only for `review_prepare` and `blocker_recovery`
    needs ergonomics review.
-6. Which separate accepted privacy-inheritance, citation, audit, and gate
-   contract will permit generated memory products to enter future injection
-   remains deferred; until then they cannot enter Level 2 or Level 3 injection.
+6. Which downstream generated-product implementation spec from RFC 0051 will
+   permit generated memory products to enter future injection remains deferred;
+   until then they cannot enter Level 2 or Level 3 injection.
 7. Whether memory-section citations should be inline text only or also a
    structured sidecar depends on the future packet format.

@@ -6,8 +6,8 @@
 |-------|-------|
 | RFC | RFC-0049 |
 | Title | Striatum Evaluation, No-Egress, And Retrieval-Quality Gates |
-| Status | proposal |
-| Implementation | none |
+| Status | accepted_as_design_reference |
+| Implementation | landed in part via `make eval-gates`; full gate matrix remains incremental |
 | Created | 2026-05-14 |
 | Source | `STRIATUM_MEMORY_ROADMAP.md` |
 | Context | RFC 0044, RFC 0045, RFC 0046, RFC 0047, RFC 0048 |
@@ -15,7 +15,8 @@
 
 ## Summary
 
-This RFC defines the evidence gates required before Engram-backed Striatum
+This RFC is accepted as the design reference for the evidence gates required
+before Engram-backed Striatum
 memory can become routine operator infrastructure. The gates cover deterministic
 fixture bundles, V2 validation, tenant/corpus isolation, personal-memory
 negative tests, no-egress evidence, stale-index behavior, reference
@@ -23,11 +24,10 @@ authorization, malformed and uncited result handling, redaction, latency,
 retrieval quality, prompt-injection containment, audit reconstruction, disable
 controls, and Striatum compatibility when Engram is absent.
 
-This is an evaluation and promotion contract. It does not implement code,
-migrations, schema docs, tests, exporters, ingesters, projections, retrieval
-ranking, context injection, or Striatum UI. It also does not accept RFC 0045,
-RFC 0046, RFC 0047, or RFC 0048 as binding architecture. Those RFCs remain
-upstream proposal material unless promoted through the normal decision process.
+This began as an evaluation and promotion contract. D083 later accepted RFC
+0046-RFC 0049 as design reference for the landed Striatum-memory e2e pipeline.
+The full gate matrix remains incremental; implemented gates are described in
+the RFC index and backlog.
 
 The central promotion rule is:
 
@@ -47,23 +47,21 @@ RFC 0049 is Phase 7 of the Striatum memory roadmap. It follows:
 - RFC 0044, which accepted Engram-side Phase 1 Striatum raw retrieval with
   hardening findings;
 - RFC 0045, which proposes the Striatum Corpus Contract V2 disk bundle;
-- RFC 0046, which proposes rebuildable Striatum projections and indexes;
-- RFC 0047, which proposes retrieval as optional local augmentation;
-- RFC 0048, which proposes context-injection policy and budgets.
+- RFC 0046, which is accepted as design reference for landed rebuildable
+  Striatum projections and indexes;
+- RFC 0047, which is accepted as design reference for landed retrieval as
+  optional local augmentation;
+- RFC 0048, which is accepted as design reference for landed context-injection
+  policy and budgets.
 
 RFC 0049 is not a shortcut around those dependencies. If RFC 0045, RFC 0046,
 RFC 0047, or RFC 0048 changes before acceptance, the gates here must be revised
 where their fields, statuses, projection health checks, or packet policies no
 longer match.
 
-Until RFC 0045, RFC 0046, RFC 0047, and RFC 0048, or accepted successors, are
-accepted/promoted, every gate that depends on their proposal-only field names,
-statuses, projection health checks, retrieval contracts, or packet policies
-reports `blocked_upstream` for Level 3 default-on automatic injection. Level 2
-experimental automatic injection may proceed only under
-`accepted_with_scope_limit` when the report names the reviewed compatibility
-surface, the exact upstream proposal assumptions used, and the automatic
-purposes still blocked.
+RFC 0045 remains proposal-only. RFC 0046-RFC 0048 are accepted as design
+reference per D083, so gates depending on their landed projection, retrieval,
+and packet contracts are no longer blocked solely by upstream status.
 
 ## Goals
 
@@ -211,8 +209,8 @@ Open RFC 0047/RFC 0048 decisions that can change this RFC:
 1. exact context-injection packet format and sidecar format;
 2. exact disable-control CLI/UI names;
 3. whether stale memory is automatically included for any purpose;
-4. which separate accepted generated-product privacy/audit gate must exist
-   before generated memory products can be injected;
+4. which downstream generated-product implementation spec from RFC 0051 must be
+   accepted before generated memory products can be injected;
 5. whether automatic injection becomes default-on for all five non-search
    purposes or only a subset after gate evidence.
 
@@ -328,7 +326,7 @@ surface is covered and which promotion level is still blocked.
 | EG-110 audit reconstruction | Reconstruct what memory was shown or omitted without leaking hidden state. | no unless manual insertion produces packet sections | yes | yes | `fail` leaves the purpose ineligible; `blocked_upstream` until packet/audit fields are accepted; scope limits must name the exact reconstructed purposes and redacted fields. |
 | EG-120 disable controls | Allow memory to be disabled visibly. | manual mode must remain possible | yes | yes | `fail` blocks automatic injection; `accepted_with_scope_limit` may permit manual-only operation; `blocked_upstream` if disable-control names are unaccepted. |
 | EG-130 Striatum without Engram | Prove augmentation is not dependency. | yes | yes | yes | `fail` blocks supported memory claims that make Engram required; scope limits must keep Striatum baseline workflows independent. |
-| EG-140 generated memory product privacy/audit placeholder | Prevent derived memory products from entering injection before privacy inheritance and audit gates exist. | no for retrieval of cited source evidence | yes for any generated-product injection | yes | `blocked_upstream` for generated products until a separate accepted gate/RFC exists; `accepted_with_scope_limit` means generated products are omitted. |
+| EG-140 generated memory product privacy/audit placeholder | Prevent derived memory products from entering injection before privacy inheritance and audit gates exist. | no for retrieval of cited source evidence | yes for any generated-product injection | yes | Generated products remain retrieval-invisible and injection-ineligible until a downstream generated-product implementation spec from RFC 0051 is accepted per D089, covering privacy inheritance, provenance/citation, audit, rebuildability, and eval gates; `accepted_with_scope_limit` means generated products are omitted. |
 
 ## EG-000: RFC 0044 Hardening Baseline
 
@@ -1087,13 +1085,14 @@ Generated memory products from the roadmap, such as known-friction ledgers,
 prior-decision indexes, reusable implementation-pattern indexes, blocker
 summaries, agent-performance notes, project-trajectory summaries, and RFC
 lineage maps, are derived products. They are not raw evidence and they are not
-eligible for Level 2 or Level 3 injection until a separate accepted gate or RFC
-defines their privacy inheritance, citation, and audit contract.
+eligible for Level 2 or Level 3 injection until a downstream generated-product
+implementation spec from RFC 0051 is accepted per D089, covering privacy
+inheritance, provenance/citation, audit, rebuildability, and eval gates.
 
 Current gate action:
 
 - any attempt to inject a generated memory product reports `blocked_upstream`
-  until the generated-product gate/RFC is accepted;
+  until the downstream generated-product implementation spec is accepted;
 - `accepted_with_scope_limit` may permit source-evidence retrieval while
   explicitly omitting generated products;
 - Level 1 manual search of the cited source evidence remains governed by
@@ -1193,7 +1192,8 @@ without disable controls.
   state.
 - Disable controls exist for run, session, packet, purpose, and manual modes.
 - Generated memory products remain `blocked_upstream` for injection until a
-  separate accepted privacy-inheritance and audit gate exists.
+  downstream generated-product implementation spec from RFC 0051 is accepted
+  per D089.
 - Striatum remains usable without Engram installed, configured, healthy, or
   reachable.
 - Manual search and automatic injection promotion criteria are explicit.
@@ -1217,8 +1217,9 @@ without disable controls.
 7. Exact Striatum CLI/UI names for disable controls.
 8. Whether stale memory is default-eligible for `operator_startup` or only for
    `review_prepare` and `blocker_recovery`.
-9. Which separate accepted gate or RFC will define generated memory product
-   privacy inheritance, citation, and audit evidence before those products can
-   enter automatic injection.
+9. Which downstream generated-product implementation spec from RFC 0051 will
+   define generated memory product privacy inheritance, citation, audit,
+   rebuildability, and eval evidence before those products can enter automatic
+   injection.
 10. Where long-lived gate reports should live after Striatum has a durable
     memory-evaluation artifact convention.

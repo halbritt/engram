@@ -23,6 +23,19 @@ def conn():
             DROP MATERIALIZED VIEW IF EXISTS current_beliefs CASCADE;
             DROP TABLE IF EXISTS
                 schema_migrations,
+                claim_grounding_links,
+                claim_grounding_responses,
+                claim_grounding_grant_uses,
+                claim_grounding_network_dispatches,
+                claim_grounding_grants,
+                claim_grounding_requests,
+                entity_identity_review_actions,
+                entity_grounding_evidence,
+                evidence_refs,
+                evidence_items,
+                context_feedback,
+                context_snapshots,
+                memory_events,
                 gold_label_active_learning_events,
                 gold_labels,
                 gold_label_session_targets,
@@ -101,15 +114,17 @@ def conn():
         admin.execute("DROP FUNCTION IF EXISTS prevent_git_commits_mutation() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS prevent_git_commit_paths_mutation() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS prevent_build_artifacts_mutation() CASCADE")
-        admin.execute(
-            "DROP FUNCTION IF EXISTS prevent_build_artifact_findings_mutation() CASCADE"
-        )
+        admin.execute("DROP FUNCTION IF EXISTS prevent_build_artifact_findings_mutation() CASCADE")
         admin.execute(
             "DROP FUNCTION IF EXISTS prevent_markdown_files_destructive_mutation() CASCADE"
         )
         admin.execute("DROP FUNCTION IF EXISTS prevent_markdown_chunks_mutation() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS prevent_markdown_links_mutation() CASCADE")
         admin.execute("DROP FUNCTION IF EXISTS prevent_source_audits_mutation() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_context_serving_append_only() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_claim_grounding_append_only() CASCADE")
+        admin.execute("DROP FUNCTION IF EXISTS fn_entity_grounding_append_only() CASCADE")
+        admin.execute("DROP SEQUENCE IF EXISTS memory_epoch_seq CASCADE")
         admin.execute("DROP TYPE IF EXISTS source_kind CASCADE")
         admin.execute("DROP TYPE IF EXISTS capture_type CASCADE")
         admin.execute("DROP TYPE IF EXISTS consolidation_status CASCADE")

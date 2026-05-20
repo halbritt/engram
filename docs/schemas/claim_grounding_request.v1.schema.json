@@ -1,0 +1,294 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engram.local/schemas/claim_grounding_request.v1.schema.json",
+  "title": "Engram Claim Grounding Request",
+  "description": "RFC 0053 request from a no-egress claim extractor to a constrained grounding broker.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "claim_grounding.request.v1"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "corpus_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "extraction_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "extraction_prompt_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "extraction_model_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "surface_form": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "mention_role": {
+      "enum": ["subject", "object", "context"]
+    },
+    "candidate_entity_kinds": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "person",
+          "product",
+          "place",
+          "organization",
+          "media_work",
+          "tool",
+          "concept",
+          "unknown"
+        ]
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "source_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/source_ref"
+      },
+      "minItems": 1
+    },
+    "local_context_capsule": {
+      "$ref": "#/$defs/local_context_capsule"
+    },
+    "allowed_modes": {
+      "type": "array",
+      "items": {
+        "enum": ["local_lookup", "network_fetch"]
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "default": ["local_lookup"]
+    },
+    "network_grant": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/network_grant"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "privacy_tier_ceiling": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5,
+      "default": 1
+    },
+    "sensitivity_ceiling": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    },
+    "requested_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "schema_version",
+    "request_id",
+    "tenant_id",
+    "corpus_id",
+    "extraction_run_id",
+    "extraction_prompt_version",
+    "extraction_model_version",
+    "surface_form",
+    "mention_role",
+    "candidate_entity_kinds",
+    "source_refs",
+    "requested_at"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "required": ["allowed_modes"],
+        "properties": {
+          "allowed_modes": {
+            "contains": {
+              "const": "network_fetch"
+            }
+          }
+        }
+      },
+      "then": {
+        "required": ["network_grant"],
+        "properties": {
+          "network_grant": {
+            "$ref": "#/$defs/network_grant"
+          },
+          "local_context_capsule": {
+            "properties": {
+              "text": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["network_grant"],
+        "properties": {
+          "network_grant": {
+            "$ref": "#/$defs/network_grant"
+          }
+        }
+      },
+      "then": {
+        "required": ["allowed_modes"],
+        "properties": {
+          "allowed_modes": {
+            "contains": {
+              "const": "network_fetch"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "source_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "target_table": {
+          "enum": ["messages", "segments", "captures", "notes", "claims"]
+        },
+        "target_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "span_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "span_start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "span_end": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": ["target_table", "target_id"]
+    },
+    "local_context_capsule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": ["none", "local_only_redacted_hint"],
+          "default": "none"
+        },
+        "text": {
+          "type": ["string", "null"],
+          "maxLength": 280,
+          "default": null
+        }
+      },
+      "required": ["mode", "text"],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "none"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "text": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "network_grant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "grant_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "granted_by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "granted_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "purpose": {
+          "const": "entity_grounding"
+        },
+        "search_query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "query_text_class": {
+          "const": "entity_surface_form"
+        },
+        "query_privacy_tier": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "allowed_network_targets": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "internet_search",
+              "public_dataset_api"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "grant_id",
+        "granted_by",
+        "granted_at",
+        "purpose",
+        "search_query",
+        "query_text_class",
+        "query_privacy_tier",
+        "allowed_network_targets"
+      ]
+    }
+  }
+}

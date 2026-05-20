@@ -1,8 +1,67 @@
 # Operator Report
 
-Last updated: 2026-05-15 (late)
+Last updated: 2026-05-17
 
-## Current Handover Summary (Source-Ingestion Expansion Landed)
+## Current Handover Summary (Architecture Follow-Up Executed Through A9 Slice)
+
+- `ARCHITECTURE_RECOMMENDATION_EXECUTION_PLAN_2026-05-16.md` is now the active
+  architecture-followup supplement in `ROADMAP.md`.
+- The 2026-05-17 decision interview is recorded as D087-D094. The
+  `context_for` V1 shape and `context_eval.item.v1` schema are accepted;
+  `docs/specs/context-serving-eval-v1.md` records the public contract; RFC 0051
+  and RFC 0052 are now accepted as design reference for narrow implementation
+  slices; generated products require a downstream spec; and future RFC 0050
+  Stage 3+ source-family expansion is chosen from real context-eval failures.
+- A0-A9 now have working code for the narrow serving path: drift repair,
+  authority lint, schema docs,
+  unified `MemoryHit`, non-capture `fetch_reference`, no-egress probe/run,
+  minimal personal `context_for`, fixture context eval runner, and append-only
+  context events/snapshots/feedback with warm snapshot lookup. MCP stdio now
+  exposes guarded `engram.context_for`, Phase 4 review actions emit sanitized
+  `belief_changed` memory events, and packet building uses the central policy
+  module for tier/sensitivity omissions. The shared interview/bench-review web
+  tier guard and Phase 3 interview export tier filter also route through
+  `engram.policy`. Migration 022 adds
+  `evidence_items` / `evidence_refs`, `src/engram/evidence.py` rebuilds
+  current-source references, `engram evidence refresh-index` / `make
+  evidence-refresh` expose the rebuild, and exact-reference search reads the
+  generic index before source-specific fallback; migration 023 adds append-only
+  `entity_grounding_evidence` and `entity_identity_review_actions`, with MCP
+  `engram.ground_entity` providing authorized local lookup and rejecting
+  network grounding fetch requests.
+- Stage 3+ source-family expansion from RFC 0050 stays deferred until Step 5
+  produces an owner-authored gold set and a real local `engram eval context`
+  run. Fixture eval support exists; the private eval signal does not. The
+  private eval dataset is external to the repo and discovered through
+  `--dataset-path` or `ENGRAM_EVAL_DATASET_PATH`; committed schema/fixtures are
+  public and synthetic only.
+- A10/A11 now have proposal-level spec drafts, not accepted implementation
+  contracts: `docs/specs/local-backup-key-tier5-design-v1.md` and
+  `docs/specs/blob-vault-local-s3-exploration-v1.md`. Durable high-risk
+  source-family expansion still needs an accepted backup/key/Tier 5 design; the
+  blob vault still needs local S3-compatible endpoint exploration.
+- No-egress runtime is implemented but reports `unsupported` on this host
+  because user-namespace network isolation fails with
+  `unshare: write failed /proc/self/uid_map: Operation not permitted`.
+- Verification after the latest A8/A9 slice:
+  `make test` passed 798 tests in 704.41s; focused
+  `tests/test_migrations.py tests/test_evidence_index.py tests/test_mcp_stdio.py
+  tests/test_memory_exact_refs.py tests/test_memory_exact_refs_project_execution.py
+  tests/test_cli.py` passed 99 tests in 73.91s; `make eval-gates` passed 14
+  tests in 22.52s;
+  `make eval-source-ingestion-gates` passed 16 tests in 38.38s; `make
+  e2e-striatum` passed 1 test in 2.42s; touched-file `ruff check`,
+  `scripts/authority_lint.py`, `make no-egress-smoke`, and `git diff --check`
+  passed. `make no-egress-smoke` passed by reporting unsupported honestly on
+  this host.
+- Historical sections below remain useful context, but where they conflict with
+  this section, use the current handover summary above.
+
+## Historical Handover Summary (Source-Ingestion Expansion Landed)
+
+This section is retained as the 2026-05-15 handoff trail. It is superseded by
+the current handover summary above where branch, RFC status, schema-doc, or
+acceptance-decision details conflict.
 
 - Branch state: `engram/source-ingestion-rfc-research` carries RFC 0050 +
   Layers 1-6 of the source-ingestion expansion. `master` is unchanged
@@ -11,8 +70,8 @@ Last updated: 2026-05-15 (late)
 - RFC 0050 (`docs/rfcs/0050-source-ingestion-expansion.md`) landed via a
   multi-lane research workflow (claude/codex/gemini author drafts, codex
   prior-art research, claude privacy + gemini project-judgment reviews,
-  codex findings ledger and synthesis). 850 lines, proposal status only.
-  Acceptance is a separate operator decision.
+  codex findings ledger and synthesis). It was later accepted as design
+  reference by D084.
 - `SOURCE_INGESTION_BACKLOG.md` derived from RFC 0050, six layers; all
   six landed on the branch as working code with tests:
   - **Layer 1** — Source contract template + git importer (migration 017;
@@ -62,15 +121,12 @@ Last updated: 2026-05-15 (late)
   bootstrap admin client token cache lives at `/run/user/1000/striatum/
   client-token`; the daemon-postgres clients table was re-bootstrapped
   this session (the prior token from 2026-05-14 was lost to journal).
-- Not done: AL-D001/AL-D002/AL-D003/AL-D004 acceptance decisions remain
-  human-only checkpoints; `make schema-docs` was NOT run after
-  migrations 017-020 (regenerate before any spec promotion); no
-  real-bundle Striatum e2e runbook landed; Stage 3-5 source families
-  (chat exports, observation/life sources, live capture) remain deferred
-  per RFC 0050.
+- Not done as of this historical handoff: no real-bundle Striatum e2e
+  runbook landed; Stage 3-5 source families (chat exports, observation/life
+  sources, live capture) remained deferred per RFC 0050.
 
 Sections below are historical notes. When they conflict with the current
-summary above, use the 2026-05-15 (late) current summary.
+summary above, use the 2026-05-17 current handover summary.
 
 ## Prior Handover Summary (Striatum-Memory E2E)
 
@@ -131,7 +187,7 @@ summary above, use the 2026-05-15 (late) current summary.
   issue is fixed.
 
 Sections below are historical notes. When they conflict with the current
-summary above, use the 2026-05-15 current summary.
+summary above, use the 2026-05-17 current handover summary.
 
 ## Handover Summary
 
@@ -405,9 +461,14 @@ summary above, use the 2026-05-15 current summary.
   blockers, no human checkpoints, and no lost, stale, timed-out, or running
   processes.
 
-## Live Operator Addendum: Striatum Memory RFC Scaffolding
+## Historical Operator Addendum: Striatum Memory RFC Scaffolding
 
-- The Striatum memory roadmap RFCs are now scaffolded as proposal-only files:
+This section records the 2026-05-14 scaffold state. The current status is the
+handover summary at the top of this file: RFC 0046-RFC 0049 and RFC 0050 are
+accepted as design references, RFC 0051-RFC 0052 are accepted as local-first
+substrate RFCs, and RFC 0045 remains proposal-only.
+
+- The Striatum memory roadmap RFCs were scaffolded as proposal-only files:
   `docs/rfcs/0045-striatum-corpus-contract-v2.md`,
   `docs/rfcs/0046-striatum-projection-index-schema.md`,
   `docs/rfcs/0047-striatum-retrieval-augmentation-boundary.md`,

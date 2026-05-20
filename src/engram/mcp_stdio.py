@@ -5,9 +5,22 @@ import json
 import sys
 from typing import Any, BinaryIO
 
+from engram.claim_grounding import ClaimGroundingError, ground_claim_entity_locally
+from engram.context import (
+    DEFAULT_CONTEXT_CORPUS_ID,
+    DEFAULT_CONTEXT_TENANT_ID,
+    DEFAULT_CONTEXT_WORD_BUDGET,
+    DEFAULT_PRIVACY_TIER_CEILING,
+    MAX_CONTEXT_CANDIDATES_PER_LANE,
+    ContextForError,
+    ContextForRequest,
+    context_for,
+)
 from engram.db import connect
+from engram.entity_grounding import search_grounding_evidence
 from engram.memory import (
     CAPABILITY_DESCRIBE,
+    CAPABILITY_READ_PERSONAL,
     CAPABILITY_READ_STRIATUM,
     DEFAULT_CORPUS_ID,
     DEFAULT_TENANT_ID,
@@ -120,6 +133,84 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "engram.context_for",
+            "description": (
+                "Compile a cited local personal context package after explicit "
+                "memory.read_personal authorization."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "tenant": {"type": "string", "default": DEFAULT_CONTEXT_TENANT_ID},
+                    "corpus": {"type": "string", "default": DEFAULT_CONTEXT_CORPUS_ID},
+                    "word_budget": {
+                        "type": "integer",
+                        "default": DEFAULT_CONTEXT_WORD_BUDGET,
+                        "minimum": 1,
+                    },
+                    "privacy_tier_max": {
+                        "type": "integer",
+                        "default": DEFAULT_PRIVACY_TIER_CEILING,
+                        "minimum": 0,
+                        "maximum": 5,
+                    },
+                    "include_recent": {"type": "boolean", "default": True},
+                    "max_items_per_lane": {
+                        "type": "integer",
+                        "default": MAX_CONTEXT_CANDIDATES_PER_LANE,
+                        "minimum": 1,
+                        "maximum": MAX_CONTEXT_CANDIDATES_PER_LANE,
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "engram.ground_entity",
+            "description": (
+                "Search already-local entity grounding evidence for an authorized "
+                "tenant/corpus. Network grounding fetch is unsupported."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "tenant": {"type": "string", "default": DEFAULT_CONTEXT_TENANT_ID},
+                    "corpus": {"type": "string", "default": DEFAULT_CONTEXT_CORPUS_ID},
+                    "limit": {"type": "integer", "default": 5, "minimum": 1, "maximum": 50},
+                    "mode": {
+                        "type": "string",
+                        "default": "local_lookup",
+                        "enum": ["local_lookup"],
+                    },
+                    "allow_network": {"type": "boolean", "default": False},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "engram.claim_ground_entity",
+            "description": (
+                "Resolve a claim_grounding.request.v1 against already-local grounding "
+                "evidence. Network fetch remains unsupported."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "request": {
+                        "type": "object",
+                        "description": "RFC 0053 claim_grounding.request.v1 payload.",
+                    },
+                    "limit": {"type": "integer", "default": 5, "minimum": 1, "maximum": 50},
+                },
+                "required": ["request"],
+                "additionalProperties": False,
+            },
+        },
+        {
             "name": "engram.fetch_reference",
             "description": "Fetch a previously returned Engram reference after re-authorization.",
             "inputSchema": {
@@ -184,6 +275,12 @@ def call_tool(service: MemoryService, name: str, arguments: dict[str, Any]) -> d
             corpus_id=str(arguments.get("corpus") or DEFAULT_CORPUS_ID),
             filters=parse_search_filters(arguments.get("filters")),
         )
+    if name == "engram.context_for":
+        return call_context_for_tool(service, arguments)
+    if name == "engram.ground_entity":
+        return call_ground_entity_tool(service, arguments)
+    if name == "engram.claim_ground_entity":
+        return call_claim_ground_entity_tool(service, arguments)
     if name == "engram.fetch_reference":
         reference_id = arguments.get("reference_id")
         if not isinstance(reference_id, str) or reference_id.strip() == "":
@@ -197,6 +294,338 @@ def call_tool(service: MemoryService, name: str, arguments: dict[str, Any]) -> d
     if name == "engram.health":
         return service.health()
     raise ValueError(f"unknown Engram MCP tool: {name}")
+
+
+def call_context_for_tool(service: MemoryService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Compile personal context through the MCP authorization boundary."""
+    query = arguments.get("query")
+    if not isinstance(query, str) or query.strip() == "":
+        raise ValueError('engram.context_for requires non-empty "query"')
+
+    query_text = query.strip()
+    tenant_id = parse_string_argument(
+        arguments,
+        name="tenant",
+        default=DEFAULT_CONTEXT_TENANT_ID,
+    )
+    corpus_id = parse_string_argument(
+        arguments,
+        name="corpus",
+        default=DEFAULT_CONTEXT_CORPUS_ID,
+    )
+    word_budget = parse_int_argument(
+        arguments,
+        name="word_budget",
+        default=DEFAULT_CONTEXT_WORD_BUDGET,
+        minimum=1,
+    )
+    privacy_tier_max = parse_int_argument(
+        arguments,
+        name="privacy_tier_max",
+        default=DEFAULT_PRIVACY_TIER_CEILING,
+        minimum=0,
+        maximum=5,
+    )
+    include_recent = parse_bool_argument(arguments, name="include_recent", default=True)
+    max_items_per_lane = parse_int_argument(
+        arguments,
+        name="max_items_per_lane",
+        default=MAX_CONTEXT_CANDIDATES_PER_LANE,
+        minimum=1,
+        maximum=MAX_CONTEXT_CANDIDATES_PER_LANE,
+    )
+
+    token = getattr(service, "token", None)
+    conn = getattr(service, "conn", None)
+    if not isinstance(token, MemoryToken) or conn is None:
+        raise ValueError("engram.context_for is unavailable")
+
+    if CAPABILITY_READ_PERSONAL not in token.capabilities:
+        raise MemoryCapabilityError('missing capability "memory.read_personal"')
+    token.authorize_read(TenantCorpus(tenant_id=tenant_id, corpus_id=corpus_id))
+
+    request = ContextForRequest(
+        query_text=query_text,
+        tenant_id=tenant_id,
+        corpus_id=corpus_id,
+        word_budget=word_budget,
+        privacy_tier_ceiling=privacy_tier_max,
+    )
+    result = context_for(conn, request).to_json()
+    return apply_context_for_mcp_limits(
+        result,
+        include_recent=include_recent,
+        max_items_per_lane=max_items_per_lane,
+    )
+
+
+def call_ground_entity_tool(service: MemoryService, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Search local entity-grounding evidence through MCP authorization."""
+    query = arguments.get("query")
+    if not isinstance(query, str) or query.strip() == "":
+        raise ValueError('engram.ground_entity requires non-empty "query"')
+
+    mode = parse_tool_string_argument(
+        arguments,
+        tool_name="engram.ground_entity",
+        name="mode",
+        default="local_lookup",
+    )
+    allow_network = parse_tool_bool_argument(
+        arguments,
+        tool_name="engram.ground_entity",
+        name="allow_network",
+        default=False,
+    )
+    if mode != "local_lookup" or allow_network:
+        raise ValueError(
+            "engram.ground_entity supports local_lookup only; "
+            "network grounding fetch is unavailable"
+        )
+
+    tenant_id = parse_tool_string_argument(
+        arguments,
+        tool_name="engram.ground_entity",
+        name="tenant",
+        default=DEFAULT_CONTEXT_TENANT_ID,
+    )
+    corpus_id = parse_tool_string_argument(
+        arguments,
+        tool_name="engram.ground_entity",
+        name="corpus",
+        default=DEFAULT_CONTEXT_CORPUS_ID,
+    )
+    limit = parse_tool_int_argument(
+        arguments,
+        tool_name="engram.ground_entity",
+        name="limit",
+        default=5,
+        minimum=1,
+        maximum=50,
+    )
+
+    token = getattr(service, "token", None)
+    conn = getattr(service, "conn", None)
+    if not isinstance(token, MemoryToken) or conn is None:
+        raise ValueError("engram.ground_entity is unavailable")
+
+    token.authorize_read(TenantCorpus(tenant_id=tenant_id, corpus_id=corpus_id))
+    return {
+        "mode": "local_lookup",
+        "network_fetch": "unsupported",
+        "tenant_id": tenant_id,
+        "corpus_id": corpus_id,
+        "query": query.strip(),
+        "results": search_grounding_evidence(
+            conn,
+            query_text=query.strip(),
+            tenant_id=tenant_id,
+            corpus_id=corpus_id,
+            limit=limit,
+        ),
+    }
+
+
+def call_claim_ground_entity_tool(
+    service: MemoryService,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    """Resolve an RFC 0053 request through the local-only broker helper."""
+    request = arguments.get("request")
+    if not isinstance(request, dict):
+        raise ValueError('engram.claim_ground_entity requires object "request"')
+    limit = parse_tool_int_argument(
+        arguments,
+        tool_name="engram.claim_ground_entity",
+        name="limit",
+        default=5,
+        minimum=1,
+        maximum=50,
+    )
+
+    token = getattr(service, "token", None)
+    conn = getattr(service, "conn", None)
+    if not isinstance(token, MemoryToken) or conn is None:
+        raise ValueError("engram.claim_ground_entity is unavailable")
+
+    tenant_id = request.get("tenant_id")
+    corpus_id = request.get("corpus_id")
+    if not isinstance(tenant_id, str) or tenant_id.strip() == "":
+        raise ValueError('engram.claim_ground_entity request requires "tenant_id"')
+    if not isinstance(corpus_id, str) or corpus_id.strip() == "":
+        raise ValueError('engram.claim_ground_entity request requires "corpus_id"')
+    token.authorize_read(TenantCorpus(tenant_id=tenant_id.strip(), corpus_id=corpus_id.strip()))
+
+    return ground_claim_entity_locally(conn, request, limit=limit).to_json()
+
+
+def parse_tool_string_argument(
+    arguments: dict[str, Any],
+    *,
+    tool_name: str,
+    name: str,
+    default: str,
+) -> str:
+    """Parse a non-empty string argument for an MCP tool."""
+    value = arguments.get(name, default)
+    if not isinstance(value, str) or value.strip() == "":
+        raise ValueError(f"{tool_name} {name} must be a non-empty string")
+    return value.strip()
+
+
+def parse_tool_int_argument(
+    arguments: dict[str, Any],
+    *,
+    tool_name: str,
+    name: str,
+    default: int,
+    minimum: int,
+    maximum: int | None = None,
+) -> int:
+    """Parse a bounded integer argument for an MCP tool."""
+    value = arguments.get(name, default)
+    if isinstance(value, bool):
+        raise ValueError(f"{tool_name} {name} must be an integer")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{tool_name} {name} must be an integer") from exc
+    if parsed < minimum:
+        raise ValueError(f"{tool_name} {name} must be >= {minimum}")
+    if maximum is not None and parsed > maximum:
+        raise ValueError(f"{tool_name} {name} must be <= {maximum}")
+    return parsed
+
+
+def parse_tool_bool_argument(
+    arguments: dict[str, Any],
+    *,
+    tool_name: str,
+    name: str,
+    default: bool,
+) -> bool:
+    """Parse a boolean argument for an MCP tool without string coercion."""
+    value = arguments.get(name, default)
+    if not isinstance(value, bool):
+        raise ValueError(f"{tool_name} {name} must be a boolean")
+    return value
+
+
+def parse_string_argument(arguments: dict[str, Any], *, name: str, default: str) -> str:
+    """Parse a non-empty string MCP argument."""
+    value = arguments.get(name, default)
+    if not isinstance(value, str) or value.strip() == "":
+        raise ValueError(f"engram.context_for {name} must be a non-empty string")
+    return value.strip()
+
+
+def parse_int_argument(
+    arguments: dict[str, Any],
+    *,
+    name: str,
+    default: int,
+    minimum: int,
+    maximum: int | None = None,
+) -> int:
+    """Parse a bounded integer MCP argument without accepting booleans."""
+    value = arguments.get(name, default)
+    if isinstance(value, bool):
+        raise ValueError(f"engram.context_for {name} must be an integer")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"engram.context_for {name} must be an integer") from exc
+    if parsed < minimum:
+        raise ValueError(f"engram.context_for {name} must be >= {minimum}")
+    if maximum is not None and parsed > maximum:
+        raise ValueError(f"engram.context_for {name} must be <= {maximum}")
+    return parsed
+
+
+def parse_bool_argument(arguments: dict[str, Any], *, name: str, default: bool) -> bool:
+    """Parse a boolean MCP argument without string coercion."""
+    value = arguments.get(name, default)
+    if not isinstance(value, bool):
+        raise ValueError(f"engram.context_for {name} must be a boolean")
+    return value
+
+
+def apply_context_for_mcp_limits(
+    payload: dict[str, Any],
+    *,
+    include_recent: bool,
+    max_items_per_lane: int,
+) -> dict[str, Any]:
+    """Apply MCP-only response limits that the current context request lacks."""
+    if include_recent and max_items_per_lane == MAX_CONTEXT_CANDIDATES_PER_LANE:
+        return payload
+
+    limited = dict(payload)
+    raw_sections = payload.get("sections")
+    if not isinstance(raw_sections, list):
+        return limited
+
+    sections: list[dict[str, Any]] = []
+    filtered = False
+    all_sections_filtered = False
+    for raw_section in raw_sections:
+        if not isinstance(raw_section, dict):
+            continue
+        section = dict(raw_section)
+        lane = str(section.get("lane", ""))
+        if lane == "recent_signals" and not include_recent:
+            filtered = True
+            continue
+        raw_items = section.get("items")
+        if isinstance(raw_items, list):
+            items = list(raw_items)
+            if len(items) > max_items_per_lane:
+                section["items"] = items[:max_items_per_lane]
+                section["truncated"] = True
+                filtered = True
+        sections.append(section)
+
+    if not sections:
+        all_sections_filtered = True
+        sections = [
+            {
+                "title": "Missing Data / Gaps",
+                "lane": "gaps",
+                "items": ["No matching personal memory found within requested MCP limits."],
+                "truncated": False,
+            }
+        ]
+        limited["status"] = "no_data"
+        filtered = True
+
+    limited["sections"] = sections
+    limited["rendered_context"] = render_context_for_mcp_sections(sections)
+    if filtered:
+        limited["mcp_response_limits"] = {
+            "include_recent": include_recent,
+            "max_items_per_lane": max_items_per_lane,
+            "metadata_scope": "original_context_package",
+        }
+    if all_sections_filtered:
+        limited["citations"] = []
+        limited["source_belief_ids"] = []
+        limited["source_segment_ids"] = []
+        limited["source_reference_ids"] = []
+    return limited
+
+
+def render_context_for_mcp_sections(sections: list[dict[str, Any]]) -> str:
+    """Render JSON-shaped context sections after MCP response limiting."""
+    blocks: list[str] = []
+    for section in sections:
+        title = str(section.get("title") or "")
+        if title:
+            blocks.append(f"## {title}")
+        raw_items = section.get("items")
+        if not isinstance(raw_items, list):
+            continue
+        blocks.extend(f"- {item}" for item in raw_items)
+    return "\n".join(blocks)
 
 
 def parse_search_filters(value: Any) -> MemorySearchFilters | None:
@@ -290,7 +719,13 @@ def handle_request(service: MemoryService, request: dict[str, Any]) -> dict[str,
             return mcp_error(request_id, -32602, "tools/call requires name and arguments")
         try:
             payload = call_tool(service, name, arguments)
-        except (MemoryCapabilityError, MemoryReferenceError, ValueError) as exc:
+        except (
+            ClaimGroundingError,
+            ContextForError,
+            MemoryCapabilityError,
+            MemoryReferenceError,
+            ValueError,
+        ) as exc:
             return mcp_success(
                 request_id,
                 {

@@ -1,0 +1,340 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "rfc-0053-runtime-completion-2026-05-18",
+  "workflow_version": "2026-05-18+runtime-completion-scaffold",
+  "name": "Engram RFC 0053 Runtime Completion Scaffold",
+  "branch": {
+    "mode": "confirm",
+    "allow_dirty": true,
+    "suggested_name": "engram/rfc0053-runtime-completion-2026-05-18"
+  },
+  "coordinator": {
+    "lane_id": "codex_docs_gate",
+    "role_id": "synthesizer"
+  },
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 8,
+    "require_disjoint_write_scopes": true
+  },
+  "lanes": {
+    "codex_grants": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (grant lifecycle lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_network": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (network adapter lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_security": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (credential security lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_extraction": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (extraction integration lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_product": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (product surface lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_docs_gate": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (docs/gates lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review", "synthesis"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_synthesis": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (synthesis lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["review", "synthesis"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_final": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (final review lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    }
+  },
+  "roles": {
+    "implementer": {
+      "definition_path": "striatum/rfc-0053-runtime-completion-2026-05-18/roles/implementer.md"
+    },
+    "reviewer": {
+      "definition_path": "striatum/rfc-0053-runtime-completion-2026-05-18/roles/reviewer.md"
+    },
+    "synthesizer": {
+      "definition_path": "striatum/rfc-0053-runtime-completion-2026-05-18/roles/synthesizer.md"
+    }
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "HUMAN_REQUIREMENTS.md", "required": true},
+    {"path": "DECISION_LOG.md", "required": true},
+    {"path": "BUILD_PHASES.md", "required": true},
+    {"path": "ROADMAP.md", "required": true},
+    {"path": "SPEC.md", "required": true},
+    {"path": "docs/AGENT_CONTEXT_NOTES.md", "required": true},
+    {"path": "docs/rfcs/0053-claim-extraction-grounding-boundary.md", "required": true},
+    {"path": "docs/reviews/rfc0053-claim-grounding-boundary/SYNTHESIS.md", "required": true},
+    {"path": "migrations/024_claim_grounding_runtime.sql", "required": true},
+    {"path": "src/engram/claim_grounding.py", "required": true},
+    {"path": "src/engram/claim_grounding_broker.py", "required": true},
+    {"path": "src/engram/claim_grounding_runtime.py", "required": true},
+    {"path": "src/engram/extractor.py", "required": true},
+    {"path": "src/engram/cli.py", "required": true},
+    {"path": "src/engram/mcp_stdio.py", "required": true},
+    {"path": "tests/test_claim_grounding_runtime.py", "required": true}
+  ],
+  "jobs": [
+    {
+      "id": "grant_lifecycle",
+      "type": "draft",
+      "lane_id": "codex_grants",
+      "role_id": "implementer",
+      "parallel_group": "runtime_parallel_implementation",
+      "title": "Implement RFC 0053 grant lifecycle scaffold",
+      "objective": "Add append-only grant lifecycle helpers and tests for live approved grant verification before dispatch.",
+      "task_prompt": {"path": "striatum/rfc-0053-runtime-completion-2026-05-18/prompts/grant_lifecycle.md"},
+      "inputs": [
+        {"kind": "runtime", "path": "src/engram/claim_grounding_runtime.py"},
+        {"kind": "migration", "path": "migrations/024_claim_grounding_runtime.sql"},
+        {"kind": "tests", "path": "tests/test_claim_grounding_runtime.py"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/claim_grounding_runtime.py",
+          "tests/test_claim_grounding_runtime.py",
+          "docs/reviews/rfc0053-runtime-completion/GRANT_LIFECYCLE_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "migrations/", "src/engram/claim_grounding_network.py", "src/engram/extractor.py", "src/engram/cli.py", "src/engram/mcp_stdio.py"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "grant_lifecycle_handoff", "kind": "handoff", "path": "docs/reviews/rfc0053-runtime-completion/GRANT_LIFECYCLE_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "network_adapter",
+      "type": "draft",
+      "lane_id": "codex_network",
+      "role_id": "implementer",
+      "parallel_group": "runtime_parallel_implementation",
+      "title": "Implement constrained network adapter scaffold",
+      "objective": "Add disabled-by-default network adapter boundary with deterministic monkeypatched tests.",
+      "task_prompt": {"path": "striatum/rfc-0053-runtime-completion-2026-05-18/prompts/network_adapter.md"},
+      "inputs": [
+        {"kind": "contract", "path": "src/engram/claim_grounding.py"},
+        {"kind": "broker", "path": "src/engram/claim_grounding_broker.py"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/claim_grounding_network.py",
+          "tests/test_claim_grounding_network.py",
+          "docs/reviews/rfc0053-runtime-completion/NETWORK_ADAPTER_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "migrations/", "src/engram/claim_grounding_runtime.py", "src/engram/extractor.py", "src/engram/cli.py", "src/engram/mcp_stdio.py"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "network_adapter_handoff", "kind": "handoff", "path": "docs/reviews/rfc0053-runtime-completion/NETWORK_ADAPTER_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "credential_security",
+      "type": "draft",
+      "lane_id": "codex_security",
+      "role_id": "implementer",
+      "parallel_group": "runtime_parallel_implementation",
+      "title": "Implement credential separation tests",
+      "objective": "Add broker credential-separation tests with safe skip behavior when local DB role management is unavailable.",
+      "task_prompt": {"path": "striatum/rfc-0053-runtime-completion-2026-05-18/prompts/credential_security.md"},
+      "inputs": [
+        {"kind": "migration", "path": "migrations/024_claim_grounding_runtime.sql"},
+        {"kind": "principles", "path": "HUMAN_REQUIREMENTS.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "tests/test_claim_grounding_security.py",
+          "docs/reviews/rfc0053-runtime-completion/CREDENTIAL_SECURITY_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/engram/", "migrations/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "credential_security_handoff", "kind": "handoff", "path": "docs/reviews/rfc0053-runtime-completion/CREDENTIAL_SECURITY_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "extraction_integration",
+      "type": "draft",
+      "lane_id": "codex_extraction",
+      "role_id": "implementer",
+      "parallel_group": "runtime_parallel_implementation",
+      "title": "Scaffold disabled extraction integration",
+      "objective": "Add disabled-by-default extraction-adjacent sidecar emission without changing default extraction semantics.",
+      "task_prompt": {"path": "striatum/rfc-0053-runtime-completion-2026-05-18/prompts/extraction_integration.md"},
+      "inputs": [
+        {"kind": "extractor", "path": "src/engram/extractor.py"},
+        {"kind": "runtime", "path": "src/engram/claim_grounding_runtime.py"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/claim_grounding_integration.py",
+          "tests/test_claim_grounding_integration.py",
+          "docs/reviews/rfc0053-runtime-completion/EXTRACTION_INTEGRATION_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "migrations/", "src/engram/claim_grounding_runtime.py", "src/engram/claim_grounding_network.py", "src/engram/cli.py", "src/engram/mcp_stdio.py"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "extraction_integration_handoff", "kind": "handoff", "path": "docs/reviews/rfc0053-runtime-completion/EXTRACTION_INTEGRATION_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "product_surface",
+      "type": "draft",
+      "lane_id": "codex_product",
+      "role_id": "implementer",
+      "parallel_group": "runtime_parallel_implementation",
+      "title": "Scaffold grant product surface",
+      "objective": "Add CLI/MCP or CLI-first approval/revocation scaffolding for RFC 0053 grants without network IO.",
+      "task_prompt": {"path": "striatum/rfc-0053-runtime-completion-2026-05-18/prompts/product_surface.md"},
+      "inputs": [
+        {"kind": "cli", "path": "src/engram/cli.py"},
+        {"kind": "mcp", "path": "src/engram/mcp_stdio.py"},
+        {"kind": "runtime", "path": "src/engram/claim_grounding_runtime.py"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/cli.py",
+          "src/engram/mcp_stdio.py",
+          "tests/test_cli.py",
+          "tests/test_mcp_stdio.py",
+          "docs/reviews/rfc0053-runtime-completion/PRODUCT_SURFACE_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "migrations/", "src/engram/claim_grounding_runtime.py", "src/engram/claim_grounding_network.py", "src/engram/extractor.py"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "product_surface_handoff", "kind": "handoff", "path": "docs/reviews/rfc0053-runtime-completion/PRODUCT_SURFACE_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "docs_gate",
+      "type": "draft",
+      "lane_id": "codex_docs_gate",
+      "role_id": "implementer",
+      "parallel_group": "runtime_parallel_implementation",
+      "title": "Update docs and runtime gates",
+      "objective": "Keep RFC 0053, roadmap, changelog, schema docs, and Make gates current with the runtime-completion scaffold.",
+      "task_prompt": {"path": "striatum/rfc-0053-runtime-completion-2026-05-18/prompts/docs_gate.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0053-claim-extraction-grounding-boundary.md"},
+        {"kind": "roadmap", "path": "ROADMAP.md"},
+        {"kind": "changelog", "path": "CHANGELOG.md"},
+        {"kind": "makefile", "path": "Makefile"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/rfcs/0053-claim-extraction-grounding-boundary.md",
+          "docs/rfcs/README.md",
+          "docs/schemas/README.md",
+          "docs/schema/README.md",
+          "ROADMAP.md",
+          "CHANGELOG.md",
+          "STRIATUM_MEMORY_E2E_BACKLOG.md",
+          "Makefile",
+          "docs/reviews/rfc0053-runtime-completion/DOCS_GATE_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "docs_gate_handoff", "kind": "handoff", "path": "docs/reviews/rfc0053-runtime-completion/DOCS_GATE_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "synthesis",
+      "type": "review",
+      "lane_id": "codex_synthesis",
+      "role_id": "synthesizer",
+      "title": "Synthesize RFC 0053 runtime completion lanes",
+      "objective": "Synthesize handoffs, accepted deltas, verification, residual risks, and deferred live-network work.",
+      "task_prompt": {"path": "striatum/rfc-0053-runtime-completion-2026-05-18/prompts/synthesis.md"},
+      "inputs": [
+        {"kind": "handoff", "path": "docs/reviews/rfc0053-runtime-completion/"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0053-runtime-completion/SYNTHESIS.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "synthesis", "kind": "finding", "path": "docs/reviews/rfc0053-runtime-completion/SYNTHESIS.md", "required": true}
+      ]
+    },
+    {
+      "id": "final_review",
+      "type": "review",
+      "lane_id": "codex_final",
+      "role_id": "reviewer",
+      "fresh_session_required": true,
+      "title": "Final review of RFC 0053 runtime completion scaffold",
+      "objective": "Review final implementation against local-first, no-egress, grant, credential separation, and auditability requirements.",
+      "task_prompt": {"path": "striatum/rfc-0053-runtime-completion-2026-05-18/prompts/final_review.md"},
+      "inputs": [
+        {"kind": "synthesis", "path": "docs/reviews/rfc0053-runtime-completion/SYNTHESIS.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0053-claim-extraction-grounding-boundary.md"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0053-runtime-completion/FINAL_REVIEW.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "final_review", "kind": "finding", "path": "docs/reviews/rfc0053-runtime-completion/FINAL_REVIEW.md", "required": true}
+      ]
+    }
+  ],
+  "edges": [
+    {"from": "grant_lifecycle", "to": "synthesis", "on": "completed"},
+    {"from": "network_adapter", "to": "synthesis", "on": "completed"},
+    {"from": "credential_security", "to": "synthesis", "on": "completed"},
+    {"from": "extraction_integration", "to": "synthesis", "on": "completed"},
+    {"from": "product_surface", "to": "synthesis", "on": "completed"},
+    {"from": "docs_gate", "to": "synthesis", "on": "completed"},
+    {"from": "synthesis", "to": "final_review", "on": "completed"}
+  ],
+  "cycles": [
+    {"from": "final_review", "to": "grant_lifecycle", "on_verdict": "needs_revision", "max_iterations": 1}
+  ]
+}

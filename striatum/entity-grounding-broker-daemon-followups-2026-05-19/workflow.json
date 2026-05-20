@@ -1,0 +1,374 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "entity-grounding-broker-daemon-followups-2026-05-19",
+  "workflow_version": "2026-05-19+residual-followups-scaffold",
+  "name": "Engram Entity Grounding Broker Daemon Follow-up Work",
+  "branch": {
+    "mode": "confirm",
+    "allow_dirty": true,
+    "suggested_name": "engram/entity-grounding-broker-daemon-followups-2026-05-19"
+  },
+  "coordinator": {
+    "lane_id": "codex_synthesis",
+    "role_id": "synthesizer"
+  },
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 5,
+    "require_disjoint_write_scopes": true
+  },
+  "lanes": {
+    "codex_durable_dispatch": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (durable dispatch lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_retry_policy": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (retry policy lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_packaging": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (packaging lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_cli_typecheck": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (CLI typecheck lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_review_surface": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (review surface lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_docs": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (docs lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_verification": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (verification lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_synthesis": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (synthesis lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["review", "synthesis"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_final": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (final review lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    }
+  },
+  "roles": {
+    "implementer": {
+      "definition_path": "striatum/entity-grounding-broker-daemon-followups-2026-05-19/roles/implementer.md"
+    },
+    "reviewer": {
+      "definition_path": "striatum/entity-grounding-broker-daemon-followups-2026-05-19/roles/reviewer.md"
+    },
+    "synthesizer": {
+      "definition_path": "striatum/entity-grounding-broker-daemon-followups-2026-05-19/roles/synthesizer.md"
+    }
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "HUMAN_REQUIREMENTS.md", "required": true},
+    {"path": "DECISION_LOG.md", "required": true},
+    {"path": "ROADMAP.md", "required": true},
+    {"path": "docs/AGENT_CONTEXT_NOTES.md", "required": true},
+    {"path": "docs/rfcs/0053-claim-extraction-grounding-boundary.md", "required": true},
+    {"path": "docs/rfcs/0054-entity-grounding-batch-workflow.md", "required": true},
+    {"path": "docs/rfcs/0055-grounding-evidence-materialization.md", "required": true},
+    {"path": "docs/reviews/entity-grounding-broker-daemon-2026-05-19/SYNTHESIS.md", "required": true},
+    {"path": "docs/reviews/entity-grounding-broker-daemon-2026-05-19/FINAL_REVIEW.md", "required": true}
+  ],
+  "jobs": [
+    {
+      "id": "durable_dispatch_boundary",
+      "type": "draft",
+      "lane_id": "codex_durable_dispatch",
+      "role_id": "implementer",
+      "parallel_group": "followup_parallel_implementation",
+      "title": "Add durable dispatch claim boundary",
+      "objective": "Eliminate crash-before-commit duplicate provider dispatch and smooth direct materializer concurrency for approved grants.",
+      "task_prompt": {"path": "striatum/entity-grounding-broker-daemon-followups-2026-05-19/prompts/durable_dispatch_boundary.md"},
+      "inputs": [
+        {"kind": "runtime", "path": "src/engram/claim_grounding_runtime.py"},
+        {"kind": "materializer", "path": "src/engram/entity_grounding_materialization.py"},
+        {"kind": "daemon", "path": "src/engram/entity_grounding_daemon.py"},
+        {"kind": "schema", "path": "migrations/024_claim_grounding_runtime.sql"},
+        {"kind": "tests", "path": "tests/test_claim_grounding_runtime.py"},
+        {"kind": "tests", "path": "tests/test_entity_grounding_materialization.py"},
+        {"kind": "tests", "path": "tests/test_entity_grounding_daemon.py"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "migrations/025_claim_grounding_dispatch_claims.sql",
+          "src/engram/claim_grounding_runtime.py",
+          "src/engram/entity_grounding_materialization.py",
+          "src/engram/entity_grounding_daemon.py",
+          "tests/test_claim_grounding_runtime.py",
+          "tests/test_entity_grounding_materialization.py",
+          "tests/test_entity_grounding_daemon.py",
+          "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/DURABLE_DISPATCH_BOUNDARY_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/engram/cli.py", "docs/rfcs/", "docs/runbooks/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "durable_dispatch_boundary_handoff", "kind": "handoff", "path": "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/DURABLE_DISPATCH_BOUNDARY_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "retry_cooldown_policy",
+      "type": "draft",
+      "lane_id": "codex_retry_policy",
+      "role_id": "implementer",
+      "parallel_group": "followup_parallel_implementation",
+      "title": "Draft bounded retry and cooldown RFC",
+      "objective": "Specify retry, cooldown, expiry, and operator override semantics before retry implementation changes runtime behavior.",
+      "task_prompt": {"path": "striatum/entity-grounding-broker-daemon-followups-2026-05-19/prompts/retry_cooldown_policy.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0055-grounding-evidence-materialization.md"},
+        {"kind": "review", "path": "docs/reviews/entity-grounding-broker-daemon-2026-05-19/FINAL_REVIEW.md"},
+        {"kind": "runtime_schema", "path": "migrations/024_claim_grounding_runtime.sql"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/rfcs/0056-grounding-broker-retry-cooldown-policy.md",
+          "docs/rfcs/README.md",
+          "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/RETRY_COOLDOWN_POLICY_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "retry_cooldown_policy_handoff", "kind": "handoff", "path": "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/RETRY_COOLDOWN_POLICY_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "production_daemon_packaging",
+      "type": "draft",
+      "lane_id": "codex_packaging",
+      "role_id": "implementer",
+      "parallel_group": "followup_parallel_implementation",
+      "title": "Document local service packaging",
+      "objective": "Add local-only user-service/container packaging guidance for running the broker daemon without leaking secrets or corpus authority.",
+      "task_prompt": {"path": "striatum/entity-grounding-broker-daemon-followups-2026-05-19/prompts/production_daemon_packaging.md"},
+      "inputs": [
+        {"kind": "runbook", "path": "docs/runbooks/grounding-broker-daemon.md"},
+        {"kind": "runbook", "path": "docs/runbooks/grounding-broker-role.md"},
+        {"kind": "makefile", "path": "Makefile"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/runbooks/grounding-broker-daemon-service.md",
+          "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/PRODUCTION_DAEMON_PACKAGING_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "production_daemon_packaging_handoff", "kind": "handoff", "path": "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/PRODUCTION_DAEMON_PACKAGING_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "cli_typecheck_debt",
+      "type": "draft",
+      "lane_id": "codex_cli_typecheck",
+      "role_id": "implementer",
+      "parallel_group": "followup_parallel_implementation",
+      "title": "Clear CLI optional uvicorn typecheck debt",
+      "objective": "Make the touched CLI typecheck path green without adding hosted dependencies or changing interview serve runtime semantics.",
+      "task_prompt": {"path": "striatum/entity-grounding-broker-daemon-followups-2026-05-19/prompts/cli_typecheck_debt.md"},
+      "inputs": [
+        {"kind": "cli", "path": "src/engram/cli.py"},
+        {"kind": "config", "path": "pyproject.toml"},
+        {"kind": "tests", "path": "tests/test_cli.py"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/cli.py",
+          "pyproject.toml",
+          "tests/test_cli.py",
+          "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/CLI_TYPECHECK_DEBT_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "migrations/", "src/engram/entity_grounding_materialization.py", "docs/rfcs/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "cli_typecheck_debt_handoff", "kind": "handoff", "path": "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/CLI_TYPECHECK_DEBT_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "grounding_review_surface_gate",
+      "type": "draft",
+      "lane_id": "codex_review_surface",
+      "role_id": "implementer",
+      "parallel_group": "followup_parallel_implementation",
+      "title": "Specify review surface and claim-use gate",
+      "objective": "Define the product/review surface required before grounding evidence can affect claims, beliefs, or entity identity decisions.",
+      "task_prompt": {"path": "striatum/entity-grounding-broker-daemon-followups-2026-05-19/prompts/grounding_review_surface_gate.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0052-entity-identity-review-and-grounding.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0055-grounding-evidence-materialization.md"},
+        {"kind": "review", "path": "docs/reviews/entity-grounding-broker-daemon-2026-05-19/FINAL_REVIEW.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/specs/grounding-review-surface-and-claim-use-gate-v1.md",
+          "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/GROUNDING_REVIEW_SURFACE_GATE_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "grounding_review_surface_gate_handoff", "kind": "handoff", "path": "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/GROUNDING_REVIEW_SURFACE_GATE_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "docs_gate",
+      "type": "draft",
+      "lane_id": "codex_docs",
+      "role_id": "implementer",
+      "title": "Update roadmap and operator notes for follow-up scaffold",
+      "objective": "Record the follow-up workflow and residual work queue in durable docs after the first five lanes land.",
+      "task_prompt": {"path": "striatum/entity-grounding-broker-daemon-followups-2026-05-19/prompts/docs_gate.md"},
+      "inputs": [
+        {"kind": "roadmap", "path": "ROADMAP.md"},
+        {"kind": "changelog", "path": "CHANGELOG.md"},
+        {"kind": "notes", "path": "docs/AGENT_CONTEXT_NOTES.md"},
+        {"kind": "review", "path": "docs/reviews/entity-grounding-broker-daemon-2026-05-19/FINAL_REVIEW.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "ROADMAP.md",
+          "CHANGELOG.md",
+          "docs/AGENT_CONTEXT_NOTES.md",
+          "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/DOCS_GATE_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "docs_gate_handoff", "kind": "handoff", "path": "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/DOCS_GATE_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "verification",
+      "type": "review",
+      "lane_id": "codex_verification",
+      "role_id": "reviewer",
+      "fresh_session_required": true,
+      "title": "Verify broker daemon follow-ups",
+      "objective": "Run focused local verification for the implementation/spec/doc lanes and confirm no live network calls are needed.",
+      "task_prompt": {"path": "striatum/entity-grounding-broker-daemon-followups-2026-05-19/prompts/verification.md"},
+      "inputs": [
+        {"kind": "handoffs", "path": "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/"},
+        {"kind": "workflow", "path": "striatum/entity-grounding-broker-daemon-followups-2026-05-19/workflow.json"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/VERIFICATION.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "Makefile", "docs/rfcs/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "verification", "kind": "test_report", "path": "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/VERIFICATION.md", "required": true}
+      ]
+    },
+    {
+      "id": "synthesis",
+      "type": "review",
+      "lane_id": "codex_synthesis",
+      "role_id": "synthesizer",
+      "title": "Synthesize broker daemon follow-ups",
+      "objective": "Synthesize accepted deltas, remaining blockers, deferred architecture, and next execution order.",
+      "task_prompt": {"path": "striatum/entity-grounding-broker-daemon-followups-2026-05-19/prompts/synthesis.md"},
+      "inputs": [
+        {"kind": "handoffs", "path": "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/SYNTHESIS.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "Makefile", "docs/rfcs/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "synthesis", "kind": "synthesis", "path": "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/SYNTHESIS.md", "required": true}
+      ]
+    },
+    {
+      "id": "final_review",
+      "type": "review",
+      "lane_id": "codex_final",
+      "role_id": "reviewer",
+      "fresh_session_required": true,
+      "title": "Final review broker daemon follow-ups",
+      "objective": "Review whether the follow-up work safely closes or defers all residual findings from the daemon scaffold.",
+      "task_prompt": {"path": "striatum/entity-grounding-broker-daemon-followups-2026-05-19/prompts/final_review.md"},
+      "inputs": [
+        {"kind": "synthesis", "path": "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/SYNTHESIS.md"},
+        {"kind": "prior_final_review", "path": "docs/reviews/entity-grounding-broker-daemon-2026-05-19/FINAL_REVIEW.md"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/FINAL_REVIEW.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "Makefile", "docs/rfcs/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "final_review", "kind": "finding", "path": "docs/reviews/entity-grounding-broker-daemon-followups-2026-05-19/FINAL_REVIEW.md", "required": true}
+      ]
+    }
+  ],
+  "edges": [
+    {"from": "durable_dispatch_boundary", "to": "docs_gate", "on": "completed"},
+    {"from": "retry_cooldown_policy", "to": "docs_gate", "on": "completed"},
+    {"from": "production_daemon_packaging", "to": "docs_gate", "on": "completed"},
+    {"from": "cli_typecheck_debt", "to": "docs_gate", "on": "completed"},
+    {"from": "grounding_review_surface_gate", "to": "docs_gate", "on": "completed"},
+    {"from": "docs_gate", "to": "verification", "on": "completed"},
+    {"from": "verification", "to": "synthesis", "on": "completed"},
+    {"from": "synthesis", "to": "final_review", "on": "completed"}
+  ],
+  "cycles": [
+    {"from": "final_review", "to": "durable_dispatch_boundary", "on_verdict": "needs_revision", "max_iterations": 1}
+  ]
+}

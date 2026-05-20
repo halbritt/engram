@@ -70,6 +70,42 @@ erDiagram
         TEXT tenant_id
         TEXT corpus_id
     }
+    build_artifact_findings {
+        UUID id PK
+        UUID artifact_id
+        TEXT tenant_id
+        TEXT corpus_id
+        INT finding_index
+        TEXT finding_kind
+        TEXT status
+        TEXT name
+        TEXT file_path
+        INT line_number
+        INT column_number
+        NUMERIC duration_ms
+        TEXT severity
+        TEXT message
+        JSONB raw_payload
+    }
+    build_artifacts {
+        UUID id PK
+        UUID source_id
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT artifact_root_id
+        TEXT relative_path
+        TEXT artifact_kind
+        TEXT content_hash
+        BIGINT size_bytes
+        TIMESTAMPTZ artifact_mtime
+        TEXT run_id
+        TEXT commit_sha
+        TEXT adapter_version
+        TIMESTAMPTZ imported_at
+        INT privacy_tier
+        TEXT sensitivity_class
+        JSONB raw_payload
+    }
     captures {
         UUID id PK
         UUID source_id
@@ -112,6 +148,116 @@ erDiagram
         TEXT tenant_id
         TEXT corpus_id
     }
+    claim_grounding_grant_uses {
+        UUID id PK
+        UUID grant_id
+        UUID request_id
+        UUID dispatch_id
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT schema_version
+        TEXT use_status
+        TEXT target_adapter
+        TEXT search_query
+        INT query_privacy_tier
+        TIMESTAMPTZ expires_at_snapshot
+        JSONB use_payload
+        TIMESTAMPTZ verified_at
+    }
+    claim_grounding_grants {
+        UUID id PK
+        TEXT tenant_id
+        TEXT corpus_id
+        UUID request_id
+        TEXT schema_version
+        TEXT grant_status
+        TEXT grant_purpose
+        TEXT target_mode
+        TEXT surface_form
+        TEXT search_query
+        TEXT query_text_class
+        INT query_privacy_tier
+        TEXT[] allowed_network_targets
+        TEXT granted_by
+        TIMESTAMPTZ granted_at
+        TIMESTAMPTZ expires_at
+        TIMESTAMPTZ revoked_at
+        JSONB grant_payload
+        TIMESTAMPTZ created_at
+    }
+    claim_grounding_links {
+        UUID id PK
+        UUID request_id
+        UUID response_id
+        UUID claim_id
+        UUID extraction_id
+        UUID grounding_evidence_id
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT schema_version
+        TEXT link_kind
+        TEXT response_candidate_id
+        JSONB link_payload
+        TIMESTAMPTZ created_at
+    }
+    claim_grounding_network_dispatches {
+        UUID id PK
+        UUID request_id
+        UUID grant_id
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT schema_version
+        TEXT target_mode
+        TEXT target_adapter
+        TEXT search_query
+        INT query_privacy_tier
+        INT attempt_number
+        TEXT dispatch_status
+        TEXT denial_reason
+        JSONB dispatch_payload
+        JSONB result_metadata
+        TIMESTAMPTZ requested_at
+        TIMESTAMPTZ completed_at
+    }
+    claim_grounding_requests {
+        UUID id PK
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT schema_version
+        UUID extraction_id
+        UUID segment_id
+        TEXT extraction_run_id
+        TEXT extraction_prompt_version
+        TEXT extraction_model_version
+        TEXT surface_form
+        TEXT mention_role
+        TEXT[] candidate_entity_kinds
+        JSONB source_refs
+        JSONB local_context_capsule
+        TEXT[] allowed_modes
+        JSONB network_grant
+        INT privacy_tier_ceiling
+        TEXT[] sensitivity_ceiling
+        JSONB request_payload
+        TIMESTAMPTZ requested_at
+        TIMESTAMPTZ created_at
+    }
+    claim_grounding_responses {
+        UUID id PK
+        UUID request_id
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT schema_version
+        TEXT status
+        TEXT mode
+        TEXT network_fetch
+        JSONB candidates
+        JSONB omissions
+        TEXT broker_version
+        JSONB dataset_snapshots
+        JSONB response_payload
+        TIMESTAMPTZ created_at
+    }
     claims {
         UUID id PK
         UUID segment_id
@@ -145,6 +291,39 @@ erDiagram
         JSONB position
         INT error_count
         TEXT last_error
+    }
+    context_feedback {
+        UUID id PK
+        UUID snapshot_id
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT feedback_kind
+        UUID[] source_belief_ids
+        UUID[] source_segment_ids
+        TEXT[] source_reference_ids
+        TEXT correction_note
+        TEXT actor
+        UUID request_uuid
+        JSONB payload
+        TIMESTAMPTZ created_at
+    }
+    context_snapshots {
+        UUID id PK
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT scope_type
+        TEXT scope_key
+        BIGINT memory_epoch
+        TEXT compiler_version
+        JSONB package_json
+        TEXT rendered_text
+        UUID[] source_belief_ids
+        UUID[] source_segment_ids
+        TEXT[] source_reference_ids
+        JSONB omissions
+        BOOLEAN is_dirty
+        UUID request_uuid
+        TIMESTAMPTZ created_at
     }
     contradictions {
         UUID id PK
@@ -219,6 +398,42 @@ erDiagram
         TEXT tenant_id
         TEXT corpus_id
     }
+    entity_grounding_evidence {
+        UUID id PK
+        UUID source_id
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT query_text
+        TEXT entity_kind
+        TEXT source_url
+        TEXT source_label
+        TEXT content_hash
+        TEXT content_excerpt
+        TIMESTAMPTZ fetched_at
+        TEXT fetch_tool_version
+        TEXT extractor_version
+        INT privacy_tier
+        TEXT sensitivity_class
+        JSONB raw_payload
+        TIMESTAMPTZ created_at
+    }
+    entity_identity_review_actions {
+        UUID id PK
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT action_kind
+        UUID entity_id
+        UUID related_entity_id
+        UUID grounding_evidence_id
+        TEXT alias_text
+        TEXT external_id_kind
+        TEXT external_id_value
+        TEXT actor
+        TEXT rationale
+        INT privacy_tier
+        JSONB raw_payload
+        TIMESTAMPTZ created_at
+    }
     entity_resolution_events {
         UUID id PK
         UUID entity_id
@@ -235,6 +450,78 @@ erDiagram
         TIMESTAMPTZ created_at
         TEXT tenant_id
         TEXT corpus_id
+    }
+    evidence_items {
+        UUID id PK
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT source_kind
+        TEXT source_table
+        UUID source_id
+        TEXT source_external_id
+        TEXT source_sub_kind
+        TEXT content_hash
+        INT privacy_tier
+        TEXT sensitivity_class
+        TIMESTAMPTZ observed_at
+        TIMESTAMPTZ imported_at
+        JSONB provenance
+        TEXT lifecycle_state
+        TIMESTAMPTZ created_at
+    }
+    evidence_refs {
+        UUID id PK
+        UUID evidence_item_id
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT ref_kind
+        TEXT ref_value
+        TEXT ref_value_normalized
+        TEXT source_table
+        UUID source_id
+        TEXT freshness
+        BOOLEAN dirty_working_tree
+        TIMESTAMPTZ observed_at
+        TIMESTAMPTZ created_at
+        JSONB raw_payload
+    }
+    git_commit_paths {
+        UUID id PK
+        UUID commit_id
+        TEXT tenant_id
+        TEXT corpus_id
+        INT change_index
+        TEXT change_kind
+        TEXT old_path
+        TEXT new_path
+        INT additions
+        INT deletions
+        BOOLEAN is_binary
+        JSONB raw_payload
+    }
+    git_commits {
+        UUID id PK
+        UUID source_id
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT repository_id
+        TEXT commit_sha
+        TEXT tree_sha
+        TEXT[] parent_shas
+        TEXT author_name
+        TEXT author_email
+        TEXT committer_name
+        TEXT committer_email
+        TIMESTAMPTZ author_date
+        TIMESTAMPTZ committer_date
+        TEXT subject
+        TEXT body
+        TEXT[] refs
+        TEXT content_hash
+        TEXT adapter_version
+        TIMESTAMPTZ imported_at
+        INT privacy_tier
+        JSONB raw_payload
     }
     gold_label_active_learning_events {
         UUID id PK
@@ -310,6 +597,62 @@ erDiagram
         TIMESTAMPTZ answered_at
         INT privacy_tier
     }
+    markdown_file_chunks {
+        UUID id PK
+        UUID file_id
+        TEXT tenant_id
+        TEXT corpus_id
+        INT chunk_index
+        INT heading_level
+        TEXT heading_anchor
+        TEXT heading_text
+        TEXT body_text
+        JSONB raw_payload
+    }
+    markdown_file_links {
+        UUID id PK
+        UUID file_id
+        TEXT tenant_id
+        TEXT corpus_id
+        INT link_index
+        TEXT link_kind
+        TEXT text
+        TEXT target
+        JSONB raw_payload
+    }
+    markdown_files {
+        UUID id PK
+        UUID source_id
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT markdown_root_id
+        TEXT relative_path
+        TEXT content_hash
+        BIGINT size_bytes
+        TIMESTAMPTZ file_mtime
+        TEXT title
+        JSONB frontmatter
+        TEXT body_text
+        TEXT adapter_version
+        TIMESTAMPTZ imported_at
+        INT privacy_tier
+        TEXT sensitivity_class
+        TIMESTAMPTZ superseded_at
+        UUID superseded_by
+    }
+    memory_events {
+        UUID id PK
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT event_type
+        TEXT aggregate_type
+        UUID aggregate_id
+        TEXT scope_type
+        TEXT scope_key
+        BIGINT memory_epoch
+        JSONB payload
+        TIMESTAMPTZ created_at
+    }
     messages {
         UUID id PK
         UUID source_id
@@ -325,15 +668,6 @@ erDiagram
         INT sequence_index
         TEXT tenant_id
         TEXT corpus_id
-    }
-    migration_checksum_probe_05e1190a8c8b4186a725a968aed0fbb9 {
-        INT id PK
-    }
-    migration_checksum_probe_6666810fc083454daa78e3b70cc53ba1 {
-        INT id PK
-    }
-    migration_checksum_probe_cb40527cc3124e7b8338bc494e43a54d {
-        INT id PK
     }
     notes {
         UUID id PK
@@ -431,6 +765,23 @@ erDiagram
         TEXT tenant_id
         TEXT corpus_id
     }
+    source_audits {
+        UUID id PK
+        TEXT tenant_id
+        TEXT corpus_id
+        SOURCE_KIND source_kind
+        UUID source_id
+        TEXT adapter_version
+        TEXT input_signature
+        TEXT outcome
+        INT rows_inserted
+        INT rows_skipped
+        INT rows_tombstoned
+        INT coverage_gap_count
+        TIMESTAMPTZ started_at
+        TIMESTAMPTZ completed_at
+        JSONB raw_payload
+    }
     sources {
         UUID id PK
         SOURCE_KIND source_kind
@@ -443,30 +794,117 @@ erDiagram
         TEXT corpus_id
         TEXT bundle_id
     }
+    striatum_packet_audits {
+        UUID id PK
+        UUID packet_id
+        UUID generation_id
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT policy_version
+        TEXT packet_type
+        TEXT purpose
+        TEXT status
+        TEXT query
+        JSONB budget
+        JSONB filters
+        JSONB selected
+        JSONB omitted
+        JSONB warnings
+        JSONB metadata
+        TIMESTAMPTZ created_at
+    }
+    striatum_projection_generations {
+        UUID id PK
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT parent_kind
+        TEXT parent_id
+        TEXT bundle_id
+        TEXT contract_version
+        TEXT projection_schema_version
+        TEXT projection_code_version
+        TEXT input_manifest_sha256
+        INT input_item_count
+        TEXT status
+        TIMESTAMPTZ started_at
+        TIMESTAMPTZ completed_at
+        TIMESTAMPTZ activated_at
+        TIMESTAMPTZ superseded_at
+        INT error_count
+        TEXT last_error
+        UUID parent_generation_id
+        JSONB required_embedding_profile
+        JSONB raw_payload
+    }
+    striatum_references {
+        UUID id PK
+        UUID capture_id
+        TEXT tenant_id
+        TEXT corpus_id
+        TEXT ref_kind
+        TEXT ref_value
+        TEXT ref_value_normalized
+        TEXT content_hash
+        UUID generation_id
+        BOOLEAN is_active
+        TIMESTAMPTZ observed_at
+        INT privacy_tier
+        TEXT source_sub_kind
+        TEXT ref_scope
+        JSONB raw_payload
+    }
     belief_audit }o--|| beliefs : "belief_id"
     belief_review_actions }o--|| beliefs : "belief_id"
     belief_review_actions }o--|| captures : "capture_id"
     beliefs }o--|| predicate_vocabulary : "predicate"
     beliefs }o--|| beliefs : "superseded_by"
+    build_artifact_findings }o--|| build_artifacts : "artifact_id"
+    build_artifacts }o--|| sources : "source_id"
     captures }o--|| sources : "source_id"
     claim_audits }o--|| claims : "claim_id"
     claim_extractions }o--|| segment_generations : "generation_id"
     claim_extractions }o--|| segments : "segment_id"
+    claim_grounding_grant_uses }o--|| claim_grounding_network_dispatches : "dispatch_id"
+    claim_grounding_grant_uses }o--|| claim_grounding_grants : "grant_id"
+    claim_grounding_grant_uses }o--|| claim_grounding_requests : "request_id"
+    claim_grounding_grants }o--|| claim_grounding_requests : "request_id"
+    claim_grounding_links }o--|| claims : "claim_id"
+    claim_grounding_links }o--|| claim_extractions : "extraction_id"
+    claim_grounding_links }o--|| entity_grounding_evidence : "grounding_evidence_id"
+    claim_grounding_links }o--|| claim_grounding_requests : "request_id"
+    claim_grounding_links }o--|| claim_grounding_responses : "response_id"
+    claim_grounding_network_dispatches }o--|| claim_grounding_grants : "grant_id"
+    claim_grounding_network_dispatches }o--|| claim_grounding_requests : "request_id"
+    claim_grounding_requests }o--|| claim_extractions : "extraction_id"
+    claim_grounding_requests }o--|| segments : "segment_id"
+    claim_grounding_responses }o--|| claim_grounding_requests : "request_id"
     claims }o--|| conversations : "conversation_id"
     claims }o--|| claim_extractions : "extraction_id"
     claims }o--|| segment_generations : "generation_id"
     claims }o--|| predicate_vocabulary : "predicate"
     claims }o--|| segments : "segment_id"
+    context_feedback }o--|| context_snapshots : "snapshot_id"
     contradictions }o--|| beliefs : "belief_a_id"
     contradictions }o--|| beliefs : "belief_b_id"
     conversations }o--|| sources : "source_id"
     entity_edges }o--|| entities : "source_entity_id"
     entity_edges }o--|| entities : "target_entity_id"
+    entity_grounding_evidence }o--|| sources : "source_id"
+    entity_identity_review_actions }o--|| entities : "entity_id"
+    entity_identity_review_actions }o--|| entity_grounding_evidence : "grounding_evidence_id"
+    entity_identity_review_actions }o--|| entities : "related_entity_id"
     entity_resolution_events }o--|| entities : "entity_id"
     entity_resolution_events }o--|| entities : "related_entity_id"
+    evidence_refs }o--|| evidence_items : "evidence_item_id"
+    git_commit_paths }o--|| git_commits : "commit_id"
+    git_commits }o--|| sources : "source_id"
     gold_label_session_targets }o--|| gold_label_sessions : "session_id"
     gold_labels }o--|| gold_label_sessions : "session_id"
     gold_labels }o--|| gold_label_verdict_vocabulary : "verdict"
+    markdown_file_chunks }o--|| markdown_files : "file_id"
+    markdown_file_links }o--|| markdown_files : "file_id"
+    markdown_files }o--|| sources : "source_id"
+    markdown_files }o--|| markdown_files : "superseded_by"
     messages }o--|| conversations : "conversation_id"
     messages }o--|| sources : "source_id"
     notes }o--|| sources : "source_id"
@@ -479,6 +917,11 @@ erDiagram
     segments }o--|| segment_generations : "generation_id"
     segments }o--|| notes : "note_id"
     segments }o--|| sources : "source_id"
+    source_audits }o--|| sources : "source_id"
+    striatum_packet_audits }o--|| striatum_projection_generations : "generation_id"
+    striatum_projection_generations }o--|| striatum_projection_generations : "parent_generation_id"
+    striatum_references }o--|| captures : "capture_id"
+    striatum_references }o--|| striatum_projection_generations : "generation_id"
 ```
 
 ## Tables
@@ -559,6 +1002,48 @@ erDiagram
 | `tenant_id` | `TEXT` | NO | `'personal'::text` |
 | `corpus_id` | `TEXT` | NO | `'personal'::text` |
 
+## build_artifact_findings
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `artifact_id` | `UUID` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `finding_index` | `INT` | NO | `` |
+| `finding_kind` | `TEXT` | NO | `` |
+| `status` | `TEXT` | YES | `` |
+| `name` | `TEXT` | YES | `` |
+| `file_path` | `TEXT` | YES | `` |
+| `line_number` | `INT` | YES | `` |
+| `column_number` | `INT` | YES | `` |
+| `duration_ms` | `NUMERIC` | YES | `` |
+| `severity` | `TEXT` | YES | `` |
+| `message` | `TEXT` | YES | `` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+
+## build_artifacts
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `source_id` | `UUID` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `artifact_root_id` | `TEXT` | NO | `` |
+| `relative_path` | `TEXT` | NO | `` |
+| `artifact_kind` | `TEXT` | NO | `` |
+| `content_hash` | `TEXT` | NO | `` |
+| `size_bytes` | `BIGINT` | NO | `` |
+| `artifact_mtime` | `TIMESTAMPTZ` | YES | `` |
+| `run_id` | `TEXT` | YES | `` |
+| `commit_sha` | `TEXT` | YES | `` |
+| `adapter_version` | `TEXT` | NO | `` |
+| `imported_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `privacy_tier` | `INT` | NO | `1` |
+| `sensitivity_class` | `TEXT` | NO | `'routine_project'::text` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+
 ## captures
 
 | Column | Type | Nullable | Default |
@@ -610,6 +1095,134 @@ erDiagram
 | `tenant_id` | `TEXT` | NO | `'personal'::text` |
 | `corpus_id` | `TEXT` | NO | `'personal'::text` |
 
+## claim_grounding_grant_uses
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `grant_id` | `UUID` | NO | `` |
+| `request_id` | `UUID` | NO | `` |
+| `dispatch_id` | `UUID` | YES | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `schema_version` | `TEXT` | NO | `'claim_grounding.grant_use.v1'::text` |
+| `use_status` | `TEXT` | NO | `` |
+| `target_adapter` | `TEXT` | YES | `` |
+| `search_query` | `TEXT` | NO | `` |
+| `query_privacy_tier` | `INT` | NO | `` |
+| `expires_at_snapshot` | `TIMESTAMPTZ` | YES | `` |
+| `use_payload` | `JSONB` | NO | `'{}'::jsonb` |
+| `verified_at` | `TIMESTAMPTZ` | NO | `now()` |
+
+## claim_grounding_grants
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `request_id` | `UUID` | YES | `` |
+| `schema_version` | `TEXT` | NO | `'claim_grounding.grant.v1'::text` |
+| `grant_status` | `TEXT` | NO | `` |
+| `grant_purpose` | `TEXT` | NO | `` |
+| `target_mode` | `TEXT` | NO | `` |
+| `surface_form` | `TEXT` | NO | `` |
+| `search_query` | `TEXT` | NO | `` |
+| `query_text_class` | `TEXT` | NO | `` |
+| `query_privacy_tier` | `INT` | NO | `` |
+| `allowed_network_targets` | `TEXT[]` | NO | `` |
+| `granted_by` | `TEXT` | YES | `` |
+| `granted_at` | `TIMESTAMPTZ` | YES | `` |
+| `expires_at` | `TIMESTAMPTZ` | YES | `` |
+| `revoked_at` | `TIMESTAMPTZ` | YES | `` |
+| `grant_payload` | `JSONB` | NO | `'{}'::jsonb` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+
+## claim_grounding_links
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `request_id` | `UUID` | NO | `` |
+| `response_id` | `UUID` | YES | `` |
+| `claim_id` | `UUID` | YES | `` |
+| `extraction_id` | `UUID` | YES | `` |
+| `grounding_evidence_id` | `UUID` | YES | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `schema_version` | `TEXT` | NO | `'claim_grounding.link.v1'::text` |
+| `link_kind` | `TEXT` | NO | `` |
+| `response_candidate_id` | `TEXT` | YES | `` |
+| `link_payload` | `JSONB` | NO | `'{}'::jsonb` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+
+## claim_grounding_network_dispatches
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `request_id` | `UUID` | NO | `` |
+| `grant_id` | `UUID` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `schema_version` | `TEXT` | NO | `'claim_grounding.network_dispatch.v1'...` |
+| `target_mode` | `TEXT` | NO | `` |
+| `target_adapter` | `TEXT` | NO | `` |
+| `search_query` | `TEXT` | NO | `` |
+| `query_privacy_tier` | `INT` | NO | `` |
+| `attempt_number` | `INT` | NO | `1` |
+| `dispatch_status` | `TEXT` | NO | `` |
+| `denial_reason` | `TEXT` | YES | `` |
+| `dispatch_payload` | `JSONB` | NO | `'{}'::jsonb` |
+| `result_metadata` | `JSONB` | NO | `'{}'::jsonb` |
+| `requested_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `completed_at` | `TIMESTAMPTZ` | YES | `` |
+
+## claim_grounding_requests
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `schema_version` | `TEXT` | NO | `'claim_grounding.request.v1'::text` |
+| `extraction_id` | `UUID` | YES | `` |
+| `segment_id` | `UUID` | YES | `` |
+| `extraction_run_id` | `TEXT` | YES | `` |
+| `extraction_prompt_version` | `TEXT` | NO | `` |
+| `extraction_model_version` | `TEXT` | NO | `` |
+| `surface_form` | `TEXT` | NO | `` |
+| `mention_role` | `TEXT` | NO | `` |
+| `candidate_entity_kinds` | `TEXT[]` | NO | `` |
+| `source_refs` | `JSONB` | NO | `'[]'::jsonb` |
+| `local_context_capsule` | `JSONB` | NO | `'{"mode": "none", "text": null}'::jsonb` |
+| `allowed_modes` | `TEXT[]` | NO | `ARRAY['local_lookup'::text]` |
+| `network_grant` | `JSONB` | YES | `` |
+| `privacy_tier_ceiling` | `INT` | NO | `1` |
+| `sensitivity_ceiling` | `TEXT[]` | NO | `ARRAY['routine_project'::text]` |
+| `request_payload` | `JSONB` | NO | `'{}'::jsonb` |
+| `requested_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+
+## claim_grounding_responses
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `request_id` | `UUID` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `schema_version` | `TEXT` | NO | `'claim_grounding.response.v1'::text` |
+| `status` | `TEXT` | NO | `` |
+| `mode` | `TEXT` | NO | `` |
+| `network_fetch` | `TEXT` | NO | `` |
+| `candidates` | `JSONB` | NO | `'[]'::jsonb` |
+| `omissions` | `JSONB` | NO | `'[]'::jsonb` |
+| `broker_version` | `TEXT` | NO | `` |
+| `dataset_snapshots` | `JSONB` | NO | `'[]'::jsonb` |
+| `response_payload` | `JSONB` | NO | `'{}'::jsonb` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+
 ## claims
 
 | Column | Type | Nullable | Default |
@@ -649,6 +1262,45 @@ erDiagram
 | `position` | `JSONB` | NO | `'{}'::jsonb` |
 | `error_count` | `INT` | NO | `0` |
 | `last_error` | `TEXT` | YES | `` |
+
+## context_feedback
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `snapshot_id` | `UUID` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `feedback_kind` | `TEXT` | NO | `` |
+| `source_belief_ids` | `UUID[]` | NO | `ARRAY[]::uuid[]` |
+| `source_segment_ids` | `UUID[]` | NO | `ARRAY[]::uuid[]` |
+| `source_reference_ids` | `TEXT[]` | NO | `ARRAY[]::text[]` |
+| `correction_note` | `TEXT` | YES | `` |
+| `actor` | `TEXT` | NO | `'operator'::text` |
+| `request_uuid` | `UUID` | YES | `` |
+| `payload` | `JSONB` | NO | `'{}'::jsonb` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+
+## context_snapshots
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `scope_type` | `TEXT` | NO | `` |
+| `scope_key` | `TEXT` | NO | `` |
+| `memory_epoch` | `BIGINT` | NO | `` |
+| `compiler_version` | `TEXT` | NO | `` |
+| `package_json` | `JSONB` | NO | `'{}'::jsonb` |
+| `rendered_text` | `TEXT` | NO | `''::text` |
+| `source_belief_ids` | `UUID[]` | NO | `ARRAY[]::uuid[]` |
+| `source_segment_ids` | `UUID[]` | NO | `ARRAY[]::uuid[]` |
+| `source_reference_ids` | `TEXT[]` | NO | `ARRAY[]::text[]` |
+| `omissions` | `JSONB` | NO | `'[]'::jsonb` |
+| `is_dirty` | `BOOLEAN` | NO | `false` |
+| `request_uuid` | `UUID` | YES | `` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
 
 ## contradictions
 
@@ -738,6 +1390,48 @@ erDiagram
 | `tenant_id` | `TEXT` | NO | `'personal'::text` |
 | `corpus_id` | `TEXT` | NO | `'personal'::text` |
 
+## entity_grounding_evidence
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `source_id` | `UUID` | YES | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `query_text` | `TEXT` | NO | `` |
+| `entity_kind` | `TEXT` | NO | `'unknown'::text` |
+| `source_url` | `TEXT` | YES | `` |
+| `source_label` | `TEXT` | YES | `` |
+| `content_hash` | `TEXT` | NO | `` |
+| `content_excerpt` | `TEXT` | NO | `` |
+| `fetched_at` | `TIMESTAMPTZ` | YES | `` |
+| `fetch_tool_version` | `TEXT` | NO | `'manual.local.v1'::text` |
+| `extractor_version` | `TEXT` | NO | `'none'::text` |
+| `privacy_tier` | `INT` | NO | `1` |
+| `sensitivity_class` | `TEXT` | NO | `'routine_project'::text` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+
+## entity_identity_review_actions
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `action_kind` | `TEXT` | NO | `` |
+| `entity_id` | `UUID` | YES | `` |
+| `related_entity_id` | `UUID` | YES | `` |
+| `grounding_evidence_id` | `UUID` | YES | `` |
+| `alias_text` | `TEXT` | YES | `` |
+| `external_id_kind` | `TEXT` | YES | `` |
+| `external_id_value` | `TEXT` | YES | `` |
+| `actor` | `TEXT` | NO | `` |
+| `rationale` | `TEXT` | YES | `` |
+| `privacy_tier` | `INT` | NO | `1` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+
 ## entity_resolution_events
 
 | Column | Type | Nullable | Default |
@@ -757,6 +1451,90 @@ erDiagram
 | `created_at` | `TIMESTAMPTZ` | NO | `now()` |
 | `tenant_id` | `TEXT` | NO | `'personal'::text` |
 | `corpus_id` | `TEXT` | NO | `'personal'::text` |
+
+## evidence_items
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `tenant_id` | `TEXT` | NO | `` |
+| `corpus_id` | `TEXT` | NO | `` |
+| `source_kind` | `TEXT` | NO | `` |
+| `source_table` | `TEXT` | NO | `` |
+| `source_id` | `UUID` | NO | `` |
+| `source_external_id` | `TEXT` | YES | `` |
+| `source_sub_kind` | `TEXT` | YES | `` |
+| `content_hash` | `TEXT` | YES | `` |
+| `privacy_tier` | `INT` | NO | `1` |
+| `sensitivity_class` | `TEXT` | NO | `'routine_project'::text` |
+| `observed_at` | `TIMESTAMPTZ` | YES | `` |
+| `imported_at` | `TIMESTAMPTZ` | YES | `` |
+| `provenance` | `JSONB` | NO | `'{}'::jsonb` |
+| `lifecycle_state` | `TEXT` | NO | `'active'::text` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+
+## evidence_refs
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `evidence_item_id` | `UUID` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `` |
+| `corpus_id` | `TEXT` | NO | `` |
+| `ref_kind` | `TEXT` | NO | `` |
+| `ref_value` | `TEXT` | NO | `` |
+| `ref_value_normalized` | `TEXT` | NO | `` |
+| `source_table` | `TEXT` | NO | `` |
+| `source_id` | `UUID` | NO | `` |
+| `freshness` | `TEXT` | NO | `'unknown'::text` |
+| `dirty_working_tree` | `BOOLEAN` | NO | `false` |
+| `observed_at` | `TIMESTAMPTZ` | YES | `` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+
+## git_commit_paths
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `commit_id` | `UUID` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `change_index` | `INT` | NO | `` |
+| `change_kind` | `TEXT` | NO | `` |
+| `old_path` | `TEXT` | YES | `` |
+| `new_path` | `TEXT` | YES | `` |
+| `additions` | `INT` | YES | `` |
+| `deletions` | `INT` | YES | `` |
+| `is_binary` | `BOOLEAN` | NO | `false` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+
+## git_commits
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `source_id` | `UUID` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `repository_id` | `TEXT` | NO | `` |
+| `commit_sha` | `TEXT` | NO | `` |
+| `tree_sha` | `TEXT` | NO | `` |
+| `parent_shas` | `TEXT[]` | NO | `'{}'::text[]` |
+| `author_name` | `TEXT` | YES | `` |
+| `author_email` | `TEXT` | YES | `` |
+| `committer_name` | `TEXT` | YES | `` |
+| `committer_email` | `TEXT` | YES | `` |
+| `author_date` | `TIMESTAMPTZ` | NO | `` |
+| `committer_date` | `TIMESTAMPTZ` | NO | `` |
+| `subject` | `TEXT` | NO | `` |
+| `body` | `TEXT` | NO | `''::text` |
+| `refs` | `TEXT[]` | NO | `'{}'::text[]` |
+| `content_hash` | `TEXT` | NO | `` |
+| `adapter_version` | `TEXT` | NO | `` |
+| `imported_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `privacy_tier` | `INT` | NO | `1` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
 
 ## gold_label_active_learning_events
 
@@ -850,6 +1628,74 @@ erDiagram
 | `answered_at` | `TIMESTAMPTZ` | NO | `` |
 | `privacy_tier` | `INT` | NO | `` |
 
+## markdown_file_chunks
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `file_id` | `UUID` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `chunk_index` | `INT` | NO | `` |
+| `heading_level` | `INT` | YES | `` |
+| `heading_anchor` | `TEXT` | YES | `` |
+| `heading_text` | `TEXT` | YES | `` |
+| `body_text` | `TEXT` | NO | `` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+
+## markdown_file_links
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `file_id` | `UUID` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `link_index` | `INT` | NO | `` |
+| `link_kind` | `TEXT` | NO | `` |
+| `text` | `TEXT` | YES | `` |
+| `target` | `TEXT` | YES | `` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+
+## markdown_files
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `source_id` | `UUID` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `markdown_root_id` | `TEXT` | NO | `` |
+| `relative_path` | `TEXT` | NO | `` |
+| `content_hash` | `TEXT` | NO | `` |
+| `size_bytes` | `BIGINT` | NO | `` |
+| `file_mtime` | `TIMESTAMPTZ` | YES | `` |
+| `title` | `TEXT` | YES | `` |
+| `frontmatter` | `JSONB` | NO | `'{}'::jsonb` |
+| `body_text` | `TEXT` | NO | `''::text` |
+| `adapter_version` | `TEXT` | NO | `` |
+| `imported_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `privacy_tier` | `INT` | NO | `1` |
+| `sensitivity_class` | `TEXT` | NO | `'routine_project'::text` |
+| `superseded_at` | `TIMESTAMPTZ` | YES | `` |
+| `superseded_by` | `UUID` | YES | `` |
+
+## memory_events
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `event_type` | `TEXT` | NO | `` |
+| `aggregate_type` | `TEXT` | NO | `` |
+| `aggregate_id` | `UUID` | YES | `` |
+| `scope_type` | `TEXT` | NO | `` |
+| `scope_key` | `TEXT` | NO | `` |
+| `memory_epoch` | `BIGINT` | NO | `nextval('memory_epoch_seq'::regclass)` |
+| `payload` | `JSONB` | NO | `'{}'::jsonb` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+
 ## messages
 
 | Column | Type | Nullable | Default |
@@ -868,24 +1714,6 @@ erDiagram
 | `sequence_index` | `INT` | NO | `` |
 | `tenant_id` | `TEXT` | NO | `'personal'::text` |
 | `corpus_id` | `TEXT` | NO | `'personal'::text` |
-
-## migration_checksum_probe_05e1190a8c8b4186a725a968aed0fbb9
-
-| Column | Type | Nullable | Default |
-|--------|------|----------|---------|
-| `id` **PK** | `INT` | NO | `` |
-
-## migration_checksum_probe_6666810fc083454daa78e3b70cc53ba1
-
-| Column | Type | Nullable | Default |
-|--------|------|----------|---------|
-| `id` **PK** | `INT` | NO | `` |
-
-## migration_checksum_probe_cb40527cc3124e7b8338bc494e43a54d
-
-| Column | Type | Nullable | Default |
-|--------|------|----------|---------|
-| `id` **PK** | `INT` | NO | `` |
 
 ## notes
 
@@ -1004,6 +1832,26 @@ erDiagram
 | `tenant_id` | `TEXT` | NO | `'personal'::text` |
 | `corpus_id` | `TEXT` | NO | `'personal'::text` |
 
+## source_audits
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `tenant_id` | `TEXT` | NO | `'personal'::text` |
+| `corpus_id` | `TEXT` | NO | `'personal'::text` |
+| `source_kind` | `SOURCE_KIND` | NO | `` |
+| `source_id` | `UUID` | YES | `` |
+| `adapter_version` | `TEXT` | NO | `` |
+| `input_signature` | `TEXT` | NO | `` |
+| `outcome` | `TEXT` | NO | `` |
+| `rows_inserted` | `INT` | NO | `0` |
+| `rows_skipped` | `INT` | NO | `0` |
+| `rows_tombstoned` | `INT` | NO | `0` |
+| `coverage_gap_count` | `INT` | NO | `0` |
+| `started_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `completed_at` | `TIMESTAMPTZ` | YES | `` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+
 ## sources
 
 | Column | Type | Nullable | Default |
@@ -1018,3 +1866,71 @@ erDiagram
 | `tenant_id` | `TEXT` | NO | `'personal'::text` |
 | `corpus_id` | `TEXT` | NO | `'personal'::text` |
 | `bundle_id` | `TEXT` | YES | `` |
+
+## striatum_packet_audits
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `packet_id` | `UUID` | NO | `` |
+| `generation_id` | `UUID` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `` |
+| `corpus_id` | `TEXT` | NO | `` |
+| `policy_version` | `TEXT` | NO | `` |
+| `packet_type` | `TEXT` | NO | `'memory_packet'::text` |
+| `purpose` | `TEXT` | NO | `` |
+| `status` | `TEXT` | NO | `` |
+| `query` | `TEXT` | NO | `` |
+| `budget` | `JSONB` | NO | `'{}'::jsonb` |
+| `filters` | `JSONB` | NO | `'{}'::jsonb` |
+| `selected` | `JSONB` | NO | `'[]'::jsonb` |
+| `omitted` | `JSONB` | NO | `'[]'::jsonb` |
+| `warnings` | `JSONB` | NO | `'[]'::jsonb` |
+| `metadata` | `JSONB` | NO | `'{}'::jsonb` |
+| `created_at` | `TIMESTAMPTZ` | NO | `now()` |
+
+## striatum_projection_generations
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `tenant_id` | `TEXT` | NO | `` |
+| `corpus_id` | `TEXT` | NO | `` |
+| `parent_kind` | `TEXT` | NO | `` |
+| `parent_id` | `TEXT` | NO | `` |
+| `bundle_id` | `TEXT` | NO | `` |
+| `contract_version` | `TEXT` | NO | `` |
+| `projection_schema_version` | `TEXT` | NO | `` |
+| `projection_code_version` | `TEXT` | NO | `` |
+| `input_manifest_sha256` | `TEXT` | NO | `` |
+| `input_item_count` | `INT` | NO | `` |
+| `status` | `TEXT` | NO | `` |
+| `started_at` | `TIMESTAMPTZ` | NO | `now()` |
+| `completed_at` | `TIMESTAMPTZ` | YES | `` |
+| `activated_at` | `TIMESTAMPTZ` | YES | `` |
+| `superseded_at` | `TIMESTAMPTZ` | YES | `` |
+| `error_count` | `INT` | NO | `0` |
+| `last_error` | `TEXT` | YES | `` |
+| `parent_generation_id` | `UUID` | YES | `` |
+| `required_embedding_profile` | `JSONB` | NO | `'{}'::jsonb` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |
+
+## striatum_references
+
+| Column | Type | Nullable | Default |
+|--------|------|----------|---------|
+| `id` **PK** | `UUID` | NO | `gen_random_uuid()` |
+| `capture_id` | `UUID` | NO | `` |
+| `tenant_id` | `TEXT` | NO | `` |
+| `corpus_id` | `TEXT` | NO | `` |
+| `ref_kind` | `TEXT` | NO | `` |
+| `ref_value` | `TEXT` | NO | `` |
+| `ref_value_normalized` | `TEXT` | NO | `` |
+| `content_hash` | `TEXT` | NO | `` |
+| `generation_id` | `UUID` | NO | `` |
+| `is_active` | `BOOLEAN` | NO | `false` |
+| `observed_at` | `TIMESTAMPTZ` | NO | `` |
+| `privacy_tier` | `INT` | NO | `1` |
+| `source_sub_kind` | `TEXT` | YES | `` |
+| `ref_scope` | `TEXT` | YES | `` |
+| `raw_payload` | `JSONB` | NO | `'{}'::jsonb` |

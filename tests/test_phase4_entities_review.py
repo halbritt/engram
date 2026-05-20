@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 from test_phase3_claims_beliefs import active_segment, insert_extracted_claim
@@ -54,6 +55,57 @@ def insert_candidate_belief(conn, *, object_text: str = "Postgres") -> str:
     return insert_belief(conn, payload)
 
 
+def assert_review_action_event(
+    conn,
+    *,
+    action,
+    belief_id: str,
+    action_kind: str,
+    excluded_text: str | None = None,
+):
+    events = conn.execute(
+        """
+        SELECT
+            tenant_id,
+            corpus_id,
+            event_type,
+            aggregate_type,
+            aggregate_id::text,
+            scope_type,
+            scope_key,
+            payload
+        FROM memory_events
+        WHERE payload->>'review_action_id' = %s
+        """,
+        (action.action_id,),
+    ).fetchall()
+    assert len(events) == 1
+    event = events[0]
+    assert event[:7] == (
+        "personal",
+        "personal",
+        "belief_changed",
+        "belief",
+        belief_id,
+        "corpus",
+        "personal",
+    )
+    payload = event[7]
+    assert payload["belief_id"] == belief_id
+    assert payload["review_action_id"] == action.action_id
+    assert payload["action_kind"] == action_kind
+    assert payload["action_status"] == action.action_status
+    assert payload["request_uuid"] == action.request_uuid
+    assert payload["note_present"] is (excluded_text is not None)
+    assert "action_metadata" in payload
+    if action.capture_id is not None:
+        assert payload["capture_id"] == action.capture_id
+    assert "note" not in payload
+    assert "raw_payload" not in payload
+    if excluded_text is not None:
+        assert excluded_text not in json.dumps(payload, sort_keys=True)
+
+
 def test_current_beliefs_and_review_actions_follow_transition_api(conn):
     belief_id = insert_candidate_belief(conn)
 
@@ -91,6 +143,13 @@ def test_current_beliefs_and_review_actions_follow_transition_api(conn):
         (accepted.request_uuid,),
     ).fetchone()
     assert action == ("accept", "applied", "test")
+    assert_review_action_event(
+        conn,
+        action=accepted,
+        belief_id=belief_id,
+        action_kind="accept",
+        excluded_text="looks grounded",
+    )
 
 
 def test_correction_is_raw_capture_and_reject_exits_current_view(conn):
@@ -107,6 +166,13 @@ def test_correction_is_raw_capture_and_reject_exits_current_view(conn):
         (correction.capture_id,),
     ).fetchone()
     assert capture == ("user_correction", belief_id, "Actually, I use DuckDB most here.")
+    assert_review_action_event(
+        conn,
+        action=correction,
+        belief_id=belief_id,
+        action_kind="correct",
+        excluded_text="Actually, I use DuckDB most here.",
+    )
 
     rejected = reject_review_belief(conn, belief_id, actor="test", note="superseded by correction")
     assert rejected.action_status == "applied"
@@ -116,6 +182,13 @@ def test_correction_is_raw_capture_and_reject_exits_current_view(conn):
             (belief_id,),
         ).fetchone()[0]
         == 0
+    )
+    assert_review_action_event(
+        conn,
+        action=rejected,
+        belief_id=belief_id,
+        action_kind="reject",
+        excluded_text="superseded by correction",
     )
 
 
@@ -136,6 +209,13 @@ def test_promote_to_pinned_is_idempotent_and_refreshes_review_queue(conn):
         (belief_id,),
     ).fetchone() == ("accepted",)
     assert conn.execute("SELECT count(*) FROM belief_review_queue").fetchone()[0] == 0
+    assert_review_action_event(
+        conn,
+        action=promoted,
+        belief_id=belief_id,
+        action_kind="promote_to_pinned",
+        excluded_text="always include",
+    )
 
     repeated = promote_to_pinned(conn, belief_id, actor="test")
 
@@ -145,6 +225,12 @@ def test_promote_to_pinned_is_idempotent_and_refreshes_review_queue(conn):
         "SELECT count(*) FROM pinned_beliefs WHERE belief_id = %s",
         (belief_id,),
     ).fetchone()[0] == 1
+    assert_review_action_event(
+        conn,
+        action=repeated,
+        belief_id=belief_id,
+        action_kind="promote_to_pinned",
+    )
 
 
 def test_deterministic_entity_build_is_idempotent_and_queryable(conn):

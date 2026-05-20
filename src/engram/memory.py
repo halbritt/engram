@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
 import uuid
@@ -11,6 +12,8 @@ from typing import Any
 
 import psycopg
 from psycopg.types.json import Jsonb
+
+from engram.policy import PolicyActor, PolicyDecision, PolicyRequest, decide_policy
 
 CAPABILITY_READ_STRIATUM = "memory.read_striatum"
 CAPABILITY_DESCRIBE = "memory.describe"
@@ -64,6 +67,7 @@ FRESHNESS_VALUES: frozenset[str] = frozenset(
 )
 PACKET_POLICY_VERSION = "striatum.context_injection_policy.v1"
 PACKET_RETRIEVAL_LIMIT = 50
+DEFAULT_PACKET_PRIVACY_TIER_CEILING = 1
 OMISSION_REASONS: frozenset[str] = frozenset(
     {
         "disabled",
@@ -197,8 +201,8 @@ class MemoryToken:
 
 
 @dataclass(frozen=True)
-class SearchHit:
-    """One ranked raw-memory search result."""
+class MemoryHit:
+    """One ranked memory/reference retrieval result."""
 
     reference_id: str
     tenant_id: str
@@ -209,9 +213,14 @@ class SearchHit:
     content: str
     score: float
     privacy_tier: int
+    sensitivity_class: str
     provenance: dict[str, Any]  # Provenance is source JSON and remains schema-flexible.
     dirty_working_tree: bool
     freshness: str
+    observed_at: str | None
+    imported_at: str | None
+    target_table: str
+    target_id: str
 
     def to_json(self) -> dict[str, Any]:
         """Return the JSON shape exposed through CLI and MCP."""
@@ -225,9 +234,14 @@ class SearchHit:
             "content": self.content,
             "score": self.score,
             "privacy_tier": self.privacy_tier,
+            "sensitivity_class": self.sensitivity_class,
             "provenance": self.provenance,
             "dirty_working_tree": self.dirty_working_tree,
             "freshness": self.freshness,
+            "observed_at": self.observed_at,
+            "imported_at": self.imported_at,
+            "target_table": self.target_table,
+            "target_id": self.target_id,
         }
 
 
@@ -287,7 +301,7 @@ class MemoryService:
             (tenant_id, corpus_id),
         ).fetchall()
 
-        hits: list[SearchHit] = []
+        hits: list[MemoryHit] = []
         for row in rows:
             hit = build_search_hit(row, query=query, tokens=tokens)
             if hit is not None:
@@ -303,6 +317,7 @@ class MemoryService:
         tenant_id: str,
         corpus_id: str,
         filters: MemorySearchFilters | dict[str, Any] | None = None,
+        privacy_tier_ceiling: int = DEFAULT_PACKET_PRIVACY_TIER_CEILING,
     ) -> dict[str, Any]:
         """Build a bounded, cited Striatum memory packet and persist its audit."""
         pair = TenantCorpus(tenant_id=tenant_id, corpus_id=corpus_id)
@@ -310,7 +325,11 @@ class MemoryService:
 
         packet_id = str(uuid.uuid4())
         bounded_budget = max(0, int(budget))
+        bounded_privacy_tier_ceiling = int(privacy_tier_ceiling)
+        if bounded_privacy_tier_ceiling < 0:
+            raise ValueError("privacy_tier_ceiling must be >= 0")
         search_filters = coerce_memory_search_filters(filters)
+        actor = policy_actor_for_token(self.token, pair)
         hits = self.search(
             query,
             tenant_id=tenant_id,
@@ -343,25 +362,73 @@ class MemoryService:
                 selected=False,
                 reason="",
             )
-            estimated_cost = estimate_packet_item_cost(hit, citation)
+            policy_decision = decide_policy(
+                PolicyRequest(
+                    actor=actor,
+                    tenant_id=str(hit["tenant_id"]),
+                    corpus_id=str(hit["corpus_id"]),
+                    purpose="memory_packet",
+                    privacy_tier=int(hit["privacy_tier"]),
+                    sensitivity_class=str(hit.get("sensitivity_class") or "routine_project"),
+                    source_kind=str(hit["source_kind"]),
+                    target_surface="packet",
+                    privacy_tier_ceiling=bounded_privacy_tier_ceiling,
+                )
+            )
             reason: str | None = None
             if str(hit["reference_id"]) in seen_references:
                 reason = "duplicate"
-            elif estimated_cost > remaining_budget:
-                reason = "over_budget"
+            elif policy_decision.action in {"deny", "withhold"}:
+                reason = packet_omission_reason_for_policy(policy_decision)
 
             if reason is not None:
                 audit_entry["reason"] = reason
+                apply_packet_policy_labels(audit_entry, policy_decision)
                 omitted.append(
-                    {
-                        "candidate_id": candidate_id,
-                        "selected": False,
-                        "reason": reason,
-                        "reference_id": hit["reference_id"],
-                        "score": hit["score"],
-                        "freshness": hit["freshness"],
-                        "privacy_tier": hit["privacy_tier"],
-                    }
+                    build_packet_omission(
+                        candidate_id=candidate_id,
+                        hit=hit,
+                        reason=reason,
+                        policy_decision=policy_decision,
+                    )
+                )
+                audit_omitted.append(audit_entry)
+                continue
+
+            item_hit = hit
+            if policy_decision.action in {"cite_only", "redact"}:
+                policy_reason = packet_omission_reason_for_policy(policy_decision)
+                policy_audit_entry = build_packet_audit_entry(
+                    candidate_id=candidate_id,
+                    hit=hit,
+                    generation_id=generation_id,
+                    rank=index,
+                    selected=False,
+                    reason=policy_reason,
+                )
+                apply_packet_policy_labels(policy_audit_entry, policy_decision)
+                omitted.append(
+                    build_packet_omission(
+                        candidate_id=candidate_id,
+                        hit=hit,
+                        reason=policy_reason,
+                        policy_decision=policy_decision,
+                    )
+                )
+                audit_omitted.append(policy_audit_entry)
+                item_hit = packet_hit_with_policy_notice(hit, policy_decision)
+
+            estimated_cost = estimate_packet_item_cost(item_hit, citation)
+            if estimated_cost > remaining_budget:
+                audit_entry["reason"] = "over_budget"
+                apply_packet_policy_labels(audit_entry, policy_decision)
+                omitted.append(
+                    build_packet_omission(
+                        candidate_id=candidate_id,
+                        hit=item_hit,
+                        reason="over_budget",
+                        policy_decision=None,
+                    )
                 )
                 audit_omitted.append(audit_entry)
                 continue
@@ -370,25 +437,34 @@ class MemoryService:
             remaining_budget -= estimated_cost
             item = {
                 "candidate_id": candidate_id,
-                "reference_id": hit["reference_id"],
-                "content": hit["content"],
-                "score": hit["score"],
-                "privacy_tier": hit["privacy_tier"],
-                "freshness": hit["freshness"],
-                "dirty_working_tree": hit["dirty_working_tree"],
+                "reference_id": item_hit["reference_id"],
+                "content": item_hit["content"],
+                "score": item_hit["score"],
+                "privacy_tier": item_hit["privacy_tier"],
+                "sensitivity_class": item_hit.get("sensitivity_class"),
+                "freshness": item_hit["freshness"],
+                "dirty_working_tree": item_hit["dirty_working_tree"],
                 "citation": citation,
             }
+            if policy_decision.action != "allow":
+                item["policy_action"] = policy_decision.action
+                item["policy_reason"] = policy_decision.reason_code
             selected.append(item)
             audit_entry["selected"] = True
+            apply_packet_policy_labels(audit_entry, policy_decision)
             audit_selected.append(audit_entry)
 
         packet_generation_id = first_generation_id(
             [*audit_selected, *audit_omitted]
-        ) or active_generation_id_for_pair(
+        ) or ensure_packet_audit_generation_id(
             self.conn,
             tenant_id=tenant_id,
             corpus_id=corpus_id,
         )
+        for audit_entry in [*audit_selected, *audit_omitted]:
+            lineage = audit_entry.get("lineage")
+            if isinstance(lineage, dict) and lineage.get("projection_generation_id") is None:
+                lineage["projection_generation_id"] = packet_generation_id
         status = "available" if selected else "no_data"
         packet = {
             "packet_id": packet_id,
@@ -428,10 +504,16 @@ class MemoryService:
         corpus_id: str,
         limit: int,
     ) -> list[dict[str, Any]]:
-        """Search projected Striatum and project-execution references."""
+        """Search generic, Striatum, and project-execution references."""
         normalized_refs = normalize_exact_refs(exact_refs)
         if not normalized_refs:
             return []
+        generic_hits = self._search_generic_exact_refs(
+            normalized_refs,
+            tenant_id=tenant_id,
+            corpus_id=corpus_id,
+            limit=limit,
+        )
         striatum_hits = self._search_striatum_exact_refs(
             normalized_refs,
             query=query,
@@ -445,9 +527,93 @@ class MemoryService:
             corpus_id=corpus_id,
             limit=limit,
         )
-        combined = list(striatum_hits) + list(project_hits)
-        combined.sort(key=lambda hit: (-int(hit.get("score") or 0), hit.get("external_id") or ""))
-        return combined[:limit]
+        combined = dedupe_hits_by_reference(
+            [*generic_hits, *striatum_hits, *project_hits]
+        )
+        combined.sort(key=lambda hit: (-hit.score, hit.external_id))
+        return [hit.to_json() for hit in combined[:limit]]
+
+    def _search_generic_exact_refs(
+        self,
+        normalized_refs: Sequence[ExactRefFilter],
+        *,
+        tenant_id: str,
+        corpus_id: str,
+        limit: int,
+    ) -> list[MemoryHit]:
+        """Search the generic evidence/reference projection when populated."""
+        if not normalized_refs:
+            return []
+        if not table_columns(self.conn, "evidence_refs"):
+            return []
+
+        ref_kinds = [item.ref_kind for item in normalized_refs]
+        ref_values = [item.ref_value for item in normalized_refs]
+        rows = self.conn.execute(
+            """
+            WITH requested(ref_kind, ref_value_normalized) AS (
+                SELECT * FROM unnest(%s::text[], %s::text[])
+            ),
+            matched_refs AS (
+                SELECT
+                    er.source_table,
+                    er.source_id,
+                    min(ei.id::text) AS evidence_item_id,
+                    array_agg(er.id::text ORDER BY er.id::text) AS evidence_ref_ids,
+                    bool_or(er.dirty_working_tree) AS dirty_working_tree,
+                    array_remove(array_agg(DISTINCT er.freshness), NULL)
+                        AS freshness_values,
+                    max(COALESCE(er.observed_at, ei.observed_at, ei.imported_at))
+                        AS latest_observed_at
+                FROM evidence_refs er
+                JOIN evidence_items ei ON ei.id = er.evidence_item_id
+                JOIN requested q
+                  ON q.ref_kind = er.ref_kind
+                 AND q.ref_value_normalized = er.ref_value_normalized
+                WHERE er.tenant_id = %s
+                  AND er.corpus_id = %s
+                  AND ei.tenant_id = %s
+                  AND ei.corpus_id = %s
+                  AND ei.lifecycle_state = 'active'
+                GROUP BY er.source_table, er.source_id
+            )
+            SELECT
+                source_table,
+                source_id::text,
+                evidence_item_id,
+                evidence_ref_ids,
+                dirty_working_tree,
+                freshness_values,
+                latest_observed_at
+            FROM matched_refs
+            ORDER BY latest_observed_at DESC NULLS LAST, source_table, source_id::text
+            LIMIT 1000
+            """,
+            (ref_kinds, ref_values, tenant_id, corpus_id, tenant_id, corpus_id),
+        ).fetchall()
+
+        hits: list[MemoryHit] = []
+        for row in rows:
+            reference_id = encode_reference_id(str(row[0]), str(row[1]))
+            payload = self.fetch_reference(reference_id)
+            freshness = freshness_from_generic_ref_values(
+                row[5] or [],
+                dirty_working_tree=bool(row[4]),
+            )
+            hits.append(
+                build_reference_payload_hit(
+                    payload,
+                    score=100.0,
+                    freshness=freshness,
+                    dirty_working_tree=bool(row[4]),
+                    provenance_extra={
+                        "generic_evidence_item_id": row[2],
+                        "generic_evidence_ref_ids": list(row[3] or []),
+                    },
+                )
+            )
+        hits.sort(key=lambda hit: (-hit.score, hit.external_id))
+        return hits[:limit]
 
     def _search_striatum_exact_refs(
         self,
@@ -457,7 +623,7 @@ class MemoryService:
         tenant_id: str,
         corpus_id: str,
         limit: int,
-    ) -> list[dict[str, Any]]:
+    ) -> list[MemoryHit]:
         """Search projected Striatum references inside one authorized boundary."""
         if not normalized_refs:
             return []
@@ -533,7 +699,7 @@ class MemoryService:
         tokens = tokenize(query)
         hits = [build_exact_ref_search_hit(row, query=query, tokens=tokens) for row in rows]
         hits.sort(key=lambda item: (-item.score, item.external_id))
-        return [hit.to_json() for hit in hits[:limit]]
+        return hits[:limit]
 
     def _search_project_execution_exact_refs(
         self,
@@ -542,14 +708,14 @@ class MemoryService:
         tenant_id: str,
         corpus_id: str,
         limit: int,
-    ) -> list[dict[str, Any]]:
+    ) -> list[MemoryHit]:
         """Search git/build-artifact projections by exact ref kind.
 
         Returns a list of hits shaped like the Striatum exact-ref path
         (id, tenant_id, corpus_id, source_kind, external_id, content,
         observed_at, imported_at, score, freshness). RFC 0050 Layer 5.
         """
-        hits: list[dict[str, Any]] = []
+        hits: list[MemoryHit] = []
         for ref in normalized_refs:
             if ref.ref_kind == "commit_sha":
                 hits.extend(self._lookup_git_commits(ref.ref_value, tenant_id, corpus_id))
@@ -575,11 +741,12 @@ class MemoryService:
 
     def _lookup_git_commits(
         self, sha: str, tenant_id: str, corpus_id: str
-    ) -> list[dict[str, Any]]:
+    ) -> list[MemoryHit]:
         rows = self.conn.execute(
             """
             SELECT id::text, tenant_id, corpus_id, repository_id, commit_sha,
-                   subject, committer_date, imported_at, refs, content_hash
+                   subject, committer_date, imported_at, refs, content_hash,
+                   privacy_tier
             FROM git_commits
             WHERE tenant_id = %s
               AND corpus_id = %s
@@ -589,30 +756,41 @@ class MemoryService:
             (tenant_id, corpus_id, sha.lower()),
         ).fetchall()
         return [
-            {
-                "id": row[0],
-                "tenant_id": row[1],
-                "corpus_id": row[2],
-                "source_kind": "git",
-                "external_id": f"{row[3]}:{row[4]}",
-                "content": row[5] or "",
-                "observed_at": format_datetime(row[6]),
-                "imported_at": format_datetime(row[7]),
-                "score": 100,
-                "freshness": "fresh",
-                "dirty_working_tree": False,
-                "raw_payload": {"refs": list(row[8] or []), "content_hash": row[9]},
-            }
+            MemoryHit(
+                reference_id=encode_reference_id("git_commits", str(row[0])),
+                tenant_id=str(row[1]),
+                corpus_id=str(row[2]),
+                source_kind="git",
+                sub_kind="commit",
+                external_id=f"{row[3]}:{row[4]}",
+                content=str(row[5] or ""),
+                score=100.0,
+                privacy_tier=int(row[10]),
+                sensitivity_class="routine_project",
+                provenance={
+                    "repository_id": row[3],
+                    "commit_sha": row[4],
+                    "refs": list(row[8] or []),
+                    "content_hash": row[9],
+                },
+                dirty_working_tree=False,
+                freshness="fresh",
+                observed_at=format_datetime(row[6]),
+                imported_at=format_datetime(row[7]),
+                target_table="git_commits",
+                target_id=str(row[0]),
+            )
             for row in rows
         ]
 
     def _lookup_build_artifacts_by_hash(
         self, content_hash: str, tenant_id: str, corpus_id: str
-    ) -> list[dict[str, Any]]:
+    ) -> list[MemoryHit]:
         rows = self.conn.execute(
             """
             SELECT id::text, tenant_id, corpus_id, artifact_root_id, relative_path,
-                   artifact_kind, imported_at, content_hash, sensitivity_class
+                   artifact_kind, imported_at, content_hash, sensitivity_class,
+                   privacy_tier, run_id, commit_sha
             FROM build_artifacts
             WHERE tenant_id = %s
               AND corpus_id = %s
@@ -622,34 +800,51 @@ class MemoryService:
             (tenant_id, corpus_id, content_hash.lower()),
         ).fetchall()
         return [
-            {
-                "id": row[0],
-                "tenant_id": row[1],
-                "corpus_id": row[2],
-                "source_kind": "build_artifact",
-                "external_id": f"{row[3]}:{row[4]}",
-                "content": "",
-                "observed_at": None,
-                "imported_at": format_datetime(row[6]),
-                "score": 100,
-                "freshness": "fresh",
-                "dirty_working_tree": False,
-                "raw_payload": {
+            MemoryHit(
+                reference_id=encode_reference_id("build_artifacts", str(row[0])),
+                tenant_id=str(row[1]),
+                corpus_id=str(row[2]),
+                source_kind="build_artifact",
+                sub_kind=str(row[5]),
+                external_id=f"{row[3]}:{row[4]}",
+                content=build_artifact_hit_content(
+                    artifact_kind=str(row[5]),
+                    relative_path=str(row[4]),
+                    content_hash=str(row[7]),
+                    run_id=row[10],
+                ),
+                score=100.0,
+                privacy_tier=int(row[9]),
+                sensitivity_class=str(row[8]),
+                provenance={
+                    "artifact_root_id": row[3],
+                    "path": row[4],
+                    "relative_path": row[4],
                     "artifact_kind": row[5],
                     "content_hash": row[7],
+                    "artifact_hash": row[7],
                     "sensitivity_class": row[8],
+                    "run_id": row[10],
+                    "commit_sha": row[11],
                 },
-            }
+                dirty_working_tree=False,
+                freshness="fresh",
+                observed_at=None,
+                imported_at=format_datetime(row[6]),
+                target_table="build_artifacts",
+                target_id=str(row[0]),
+            )
             for row in rows
         ]
 
     def _lookup_build_artifacts_by_run(
         self, run_id: str, tenant_id: str, corpus_id: str
-    ) -> list[dict[str, Any]]:
+    ) -> list[MemoryHit]:
         rows = self.conn.execute(
             """
             SELECT id::text, tenant_id, corpus_id, artifact_root_id, relative_path,
-                   artifact_kind, imported_at, content_hash, run_id
+                   artifact_kind, imported_at, content_hash, run_id,
+                   privacy_tier, sensitivity_class, commit_sha
             FROM build_artifacts
             WHERE tenant_id = %s
               AND corpus_id = %s
@@ -659,30 +854,45 @@ class MemoryService:
             (tenant_id, corpus_id, run_id),
         ).fetchall()
         return [
-            {
-                "id": row[0],
-                "tenant_id": row[1],
-                "corpus_id": row[2],
-                "source_kind": "build_artifact",
-                "external_id": f"{row[3]}:{row[4]}",
-                "content": "",
-                "observed_at": None,
-                "imported_at": format_datetime(row[6]),
-                "score": 100,
-                "freshness": "fresh",
-                "dirty_working_tree": False,
-                "raw_payload": {
+            MemoryHit(
+                reference_id=encode_reference_id("build_artifacts", str(row[0])),
+                tenant_id=str(row[1]),
+                corpus_id=str(row[2]),
+                source_kind="build_artifact",
+                sub_kind=str(row[5]),
+                external_id=f"{row[3]}:{row[4]}",
+                content=build_artifact_hit_content(
+                    artifact_kind=str(row[5]),
+                    relative_path=str(row[4]),
+                    content_hash=str(row[7]),
+                    run_id=row[8],
+                ),
+                score=100.0,
+                privacy_tier=int(row[9]),
+                sensitivity_class=str(row[10]),
+                provenance={
+                    "artifact_root_id": row[3],
+                    "path": row[4],
+                    "relative_path": row[4],
                     "artifact_kind": row[5],
                     "content_hash": row[7],
+                    "artifact_hash": row[7],
                     "run_id": row[8],
+                    "commit_sha": row[11],
                 },
-            }
+                dirty_working_tree=False,
+                freshness="fresh",
+                observed_at=None,
+                imported_at=format_datetime(row[6]),
+                target_table="build_artifacts",
+                target_id=str(row[0]),
+            )
             for row in rows
         ]
 
     def _lookup_markdown_files_by_path(
         self, path: str, tenant_id: str, corpus_id: str
-    ) -> list[dict[str, Any]]:
+    ) -> list[MemoryHit]:
         # ``path`` is already normalized (lowercased, forward-slashed) by
         # ``normalize_ref_value``; match case-insensitively against the
         # stored relative_path so authors can cite README.md or readme.md
@@ -690,7 +900,7 @@ class MemoryService:
         rows = self.conn.execute(
             """
             SELECT id::text, tenant_id, corpus_id, markdown_root_id, relative_path,
-                   title, content_hash, imported_at
+                   title, content_hash, imported_at, privacy_tier, sensitivity_class
             FROM markdown_files
             WHERE tenant_id = %s
               AND corpus_id = %s
@@ -701,28 +911,48 @@ class MemoryService:
             (tenant_id, corpus_id, path),
         ).fetchall()
         return [
-            {
-                "id": row[0],
-                "tenant_id": row[1],
-                "corpus_id": row[2],
-                "source_kind": "markdown_tree",
-                "external_id": f"{row[3]}:{row[4]}",
-                "content": row[5] or "",
-                "observed_at": None,
-                "imported_at": format_datetime(row[7]),
-                "score": 100,
-                "freshness": "fresh",
-                "dirty_working_tree": False,
-                "raw_payload": {"content_hash": row[6]},
-            }
+            MemoryHit(
+                reference_id=encode_reference_id("markdown_files", str(row[0])),
+                tenant_id=str(row[1]),
+                corpus_id=str(row[2]),
+                source_kind="markdown_tree",
+                sub_kind="markdown_file",
+                external_id=f"{row[3]}:{row[4]}",
+                content=str(row[5] or row[4]),
+                score=100.0,
+                privacy_tier=int(row[8]),
+                sensitivity_class=str(row[9]),
+                provenance={
+                    "markdown_root_id": row[3],
+                    "path": row[4],
+                    "relative_path": row[4],
+                    "content_hash": row[6],
+                },
+                dirty_working_tree=False,
+                freshness="fresh",
+                observed_at=None,
+                imported_at=format_datetime(row[7]),
+                target_table="markdown_files",
+                target_id=str(row[0]),
+            )
             for row in rows
         ]
 
     def fetch_reference(self, reference_id: str) -> dict[str, Any]:
         """Fetch one referenced row after re-authorizing its stored boundary."""
         table, row_id = decode_reference_id(reference_id)
-        if table != "captures":
-            raise MemoryReferenceError(f'unsupported reference table "{table}"')
+        if table == "captures":
+            return self._fetch_capture_reference(reference_id, row_id)
+        if table == "git_commits":
+            return self._fetch_git_commit_reference(reference_id, row_id)
+        if table == "build_artifacts":
+            return self._fetch_build_artifact_reference(reference_id, row_id)
+        if table == "markdown_files":
+            return self._fetch_markdown_file_reference(reference_id, row_id)
+        raise MemoryReferenceError(f'unsupported reference table "{table}"')
+
+    def _fetch_capture_reference(self, reference_id: str, row_id: str) -> dict[str, Any]:
+        """Fetch one capture-backed memory reference."""
         row = self.conn.execute(
             """
             SELECT
@@ -756,11 +986,152 @@ class MemoryService:
             "sub_kind": raw_payload.get("sub_kind"),
             "external_id": row[4],
             "privacy_tier": row[5],
+            "sensitivity_class": str(raw_payload.get("sensitivity_class") or "routine_project"),
             "content": row[6],
             "provenance": raw_payload.get("provenance") or {},
             "raw_payload": raw_payload,
             "observed_at": format_datetime(row[8]),
             "imported_at": format_datetime(row[9]),
+            "target_table": "captures",
+            "target_id": row[0],
+        }
+
+    def _fetch_git_commit_reference(self, reference_id: str, row_id: str) -> dict[str, Any]:
+        """Fetch one git commit reference."""
+        row = self.conn.execute(
+            """
+            SELECT id::text, tenant_id, corpus_id, repository_id, commit_sha,
+                   subject, body, refs, content_hash, privacy_tier,
+                   committer_date, imported_at, raw_payload
+            FROM git_commits
+            WHERE id = %s
+            """,
+            (row_id,),
+        ).fetchone()
+        if row is None:
+            raise MemoryReferenceError(f'reference not found "{reference_id}"')
+        pair = TenantCorpus(tenant_id=str(row[1]), corpus_id=str(row[2]))
+        self.token.authorize_read(pair)
+        raw_payload = dict(row[12] or {})
+        content = str(row[5] or "")
+        if row[6]:
+            content = f"{content}\n\n{row[6]}"
+        provenance = {
+            "repository_id": row[3],
+            "commit_sha": row[4],
+            "refs": list(row[7] or []),
+            "content_hash": row[8],
+        }
+        return {
+            "reference_id": reference_id,
+            "id": row[0],
+            "tenant_id": row[1],
+            "corpus_id": row[2],
+            "source_kind": "git",
+            "sub_kind": "commit",
+            "external_id": f"{row[3]}:{row[4]}",
+            "privacy_tier": row[9],
+            "sensitivity_class": "routine_project",
+            "content": content,
+            "provenance": provenance,
+            "raw_payload": raw_payload,
+            "observed_at": format_datetime(row[10]),
+            "imported_at": format_datetime(row[11]),
+            "target_table": "git_commits",
+            "target_id": row[0],
+        }
+
+    def _fetch_build_artifact_reference(self, reference_id: str, row_id: str) -> dict[str, Any]:
+        """Fetch one build artifact reference."""
+        row = self.conn.execute(
+            """
+            SELECT id::text, tenant_id, corpus_id, artifact_root_id, relative_path,
+                   artifact_kind, content_hash, run_id, commit_sha, imported_at,
+                   privacy_tier, sensitivity_class, raw_payload
+            FROM build_artifacts
+            WHERE id = %s
+            """,
+            (row_id,),
+        ).fetchone()
+        if row is None:
+            raise MemoryReferenceError(f'reference not found "{reference_id}"')
+        pair = TenantCorpus(tenant_id=str(row[1]), corpus_id=str(row[2]))
+        self.token.authorize_read(pair)
+        raw_payload = dict(row[12] or {})
+        provenance = {
+            "artifact_root_id": row[3],
+            "path": row[4],
+            "relative_path": row[4],
+            "artifact_kind": row[5],
+            "content_hash": row[6],
+            "artifact_hash": row[6],
+            "run_id": row[7],
+            "commit_sha": row[8],
+            "sensitivity_class": row[11],
+        }
+        return {
+            "reference_id": reference_id,
+            "id": row[0],
+            "tenant_id": row[1],
+            "corpus_id": row[2],
+            "source_kind": "build_artifact",
+            "sub_kind": row[5],
+            "external_id": f"{row[3]}:{row[4]}",
+            "privacy_tier": row[10],
+            "sensitivity_class": row[11],
+            "content": build_artifact_hit_content(
+                artifact_kind=str(row[5]),
+                relative_path=str(row[4]),
+                content_hash=str(row[6]),
+                run_id=row[7],
+            ),
+            "provenance": provenance,
+            "raw_payload": raw_payload,
+            "observed_at": None,
+            "imported_at": format_datetime(row[9]),
+            "target_table": "build_artifacts",
+            "target_id": row[0],
+        }
+
+    def _fetch_markdown_file_reference(self, reference_id: str, row_id: str) -> dict[str, Any]:
+        """Fetch one Markdown file reference."""
+        row = self.conn.execute(
+            """
+            SELECT id::text, tenant_id, corpus_id, markdown_root_id, relative_path,
+                   title, body_text, content_hash, imported_at, privacy_tier,
+                   sensitivity_class, frontmatter
+            FROM markdown_files
+            WHERE id = %s
+            """,
+            (row_id,),
+        ).fetchone()
+        if row is None:
+            raise MemoryReferenceError(f'reference not found "{reference_id}"')
+        pair = TenantCorpus(tenant_id=str(row[1]), corpus_id=str(row[2]))
+        self.token.authorize_read(pair)
+        provenance = {
+            "markdown_root_id": row[3],
+            "path": row[4],
+            "relative_path": row[4],
+            "content_hash": row[7],
+        }
+        return {
+            "reference_id": reference_id,
+            "id": row[0],
+            "tenant_id": row[1],
+            "corpus_id": row[2],
+            "source_kind": "markdown_tree",
+            "sub_kind": "markdown_file",
+            "external_id": f"{row[3]}:{row[4]}",
+            "privacy_tier": row[9],
+            "sensitivity_class": row[10],
+            "content": row[6],
+            "provenance": provenance,
+            "raw_payload": {"frontmatter": dict(row[11] or {})},
+            "observed_at": None,
+            "imported_at": format_datetime(row[8]),
+            "target_table": "markdown_files",
+            "target_id": row[0],
         }
 
     def describe_corpus(
@@ -892,7 +1263,7 @@ def build_search_hit(
     *,
     query: str,
     tokens: list[str],
-) -> SearchHit | None:
+) -> MemoryHit | None:
     raw_payload = dict(row[7] or {})
     content = str(row[6] or "")
     haystack = " ".join(
@@ -907,7 +1278,7 @@ def build_search_hit(
     if score <= 0:
         return None
     dirty_working_tree, freshness = freshness_from_payloads([raw_payload])
-    return SearchHit(
+    return MemoryHit(
         reference_id=encode_reference_id("captures", str(row[0])),
         tenant_id=str(row[1]),
         corpus_id=str(row[2]),
@@ -917,10 +1288,59 @@ def build_search_hit(
         content=content,
         score=score,
         privacy_tier=int(row[5]),
+        sensitivity_class=str(raw_payload.get("sensitivity_class") or "routine_project"),
         provenance=dict(raw_payload.get("provenance") or {}),
         dirty_working_tree=dirty_working_tree,
         freshness=freshness,
+        observed_at=format_datetime(row[8]),
+        imported_at=format_datetime(row[9]),
+        target_table="captures",
+        target_id=str(row[0]),
     )
+
+
+def build_reference_payload_hit(
+    payload: dict[str, Any],
+    *,
+    score: float,
+    freshness: str,
+    dirty_working_tree: bool,
+    provenance_extra: dict[str, Any],
+) -> MemoryHit:
+    """Build a search hit from a fetched reference payload."""
+    provenance = dict(payload.get("provenance") or {})
+    provenance.update(provenance_extra)
+    return MemoryHit(
+        reference_id=str(payload["reference_id"]),
+        tenant_id=str(payload["tenant_id"]),
+        corpus_id=str(payload["corpus_id"]),
+        source_kind=str(payload["source_kind"]),
+        sub_kind=str(payload.get("sub_kind") or "unknown"),
+        external_id=str(payload["external_id"]),
+        content=str(payload.get("content") or ""),
+        score=score,
+        privacy_tier=int(payload["privacy_tier"]),
+        sensitivity_class=str(payload.get("sensitivity_class") or "routine_project"),
+        provenance=provenance,
+        dirty_working_tree=dirty_working_tree,
+        freshness=freshness,
+        observed_at=str(payload["observed_at"]) if payload.get("observed_at") else None,
+        imported_at=str(payload["imported_at"]) if payload.get("imported_at") else None,
+        target_table=str(payload["target_table"]),
+        target_id=str(payload["target_id"]),
+    )
+
+
+def dedupe_hits_by_reference(hits: Sequence[MemoryHit]) -> list[MemoryHit]:
+    """Keep the first hit per opaque reference id."""
+    seen: set[str] = set()
+    deduped: list[MemoryHit] = []
+    for hit in hits:
+        if hit.reference_id in seen:
+            continue
+        seen.add(hit.reference_id)
+        deduped.append(hit)
+    return deduped
 
 
 def active_projection_capture_count(
@@ -953,7 +1373,7 @@ def build_exact_ref_search_hit(
     *,
     query: str,
     tokens: list[str],
-) -> SearchHit:
+) -> MemoryHit:
     """Build a search hit from a projected exact-reference match."""
     raw_payload = dict(row[7] or {})
     content = str(row[6] or "")
@@ -973,7 +1393,7 @@ def build_exact_ref_search_hit(
         projection_dirty_working_tree=row[10],
         projection_freshness_values=row[11] or [],
     )
-    return SearchHit(
+    return MemoryHit(
         reference_id=encode_reference_id("captures", str(row[0])),
         tenant_id=str(row[1]),
         corpus_id=str(row[2]),
@@ -983,10 +1403,29 @@ def build_exact_ref_search_hit(
         content=content,
         score=score,
         privacy_tier=int(row[5]),
+        sensitivity_class=str(raw_payload.get("sensitivity_class") or "routine_project"),
         provenance=dict(raw_payload.get("provenance") or {}),
         dirty_working_tree=dirty_working_tree,
         freshness=freshness,
+        observed_at=format_datetime(row[8]),
+        imported_at=format_datetime(row[9]),
+        target_table="captures",
+        target_id=str(row[0]),
     )
+
+
+def freshness_from_generic_ref_values(
+    values: Sequence[str],
+    *,
+    dirty_working_tree: bool,
+) -> str:
+    """Derive a conservative freshness label from generic ref metadata."""
+    if dirty_working_tree:
+        return "dirty_working_tree"
+    for value in values:
+        if value in FRESHNESS_VALUES and value != "unknown":
+            return value
+    return "unknown"
 
 
 def score_text(haystack: str, *, query: str, tokens: list[str]) -> float:
@@ -1078,25 +1517,129 @@ def normalize_ref_value(ref_kind: str, value: str) -> str:
     return normalized.lower()
 
 
+def build_artifact_hit_content(
+    *,
+    artifact_kind: str,
+    relative_path: str,
+    content_hash: str,
+    run_id: Any,
+) -> str:
+    """Return a compact content string for artifact metadata hits."""
+    parts = [artifact_kind, relative_path, content_hash]
+    if run_id:
+        parts.append(str(run_id))
+    return " ".join(parts)
+
+
+def policy_actor_for_token(token: MemoryToken, request_pair: TenantCorpus) -> PolicyActor:
+    """Return the central-policy actor matching the token's existing scope semantics."""
+    primary_pair = token._primary_pair()
+    return PolicyActor(
+        actor_id=(
+            f"memory_packet:{primary_pair.tenant_id}:{primary_pair.corpus_id}"
+            f"-> {request_pair.tenant_id}:{request_pair.corpus_id}"
+        ),
+        tenant_id=primary_pair.tenant_id,
+        corpus_id=primary_pair.corpus_id,
+        capabilities=token.capabilities,
+    )
+
+
+def packet_omission_reason_for_policy(decision: PolicyDecision) -> str:
+    """Map central policy reasons onto the packet omission vocabulary."""
+    if decision.reason_code == "privacy_tier_exceeded":
+        return "privacy_tier_exceeded"
+    if decision.action == "deny":
+        return "unauthorized"
+    return "redaction_withheld"
+
+
+def build_packet_omission(
+    *,
+    candidate_id: str,
+    hit: dict[str, Any],
+    reason: str,
+    policy_decision: PolicyDecision | None,
+) -> dict[str, Any]:
+    """Build a packet omission entry without raw memory body text."""
+    if reason not in OMISSION_REASONS:
+        raise MemoryReferenceError(f'unsupported omission reason "{reason}"')
+    omission: dict[str, Any] = {
+        "candidate_id": candidate_id,
+        "selected": False,
+        "reason": reason,
+        "reference_id": hit["reference_id"],
+        "score": hit["score"],
+        "freshness": hit["freshness"],
+        "privacy_tier": hit["privacy_tier"],
+        "sensitivity_class": hit.get("sensitivity_class"),
+    }
+    if policy_decision is not None and policy_decision.action != "allow":
+        omission["policy_action"] = policy_decision.action
+        omission["policy_reason"] = policy_decision.reason_code
+    return {key: value for key, value in omission.items() if value is not None}
+
+
+def apply_packet_policy_labels(
+    audit_entry: dict[str, Any],
+    decision: PolicyDecision,
+) -> None:
+    """Add policy labels to an audit entry without adding raw content."""
+    labels = audit_entry.get("labels")
+    if not isinstance(labels, dict):
+        return
+    labels["policy_action"] = decision.action
+    labels["policy_reason"] = decision.reason_code
+    if decision.action == "redact":
+        labels["redaction_state"] = "redacted"
+    elif decision.action in {"withhold", "cite_only"}:
+        labels["redaction_state"] = "withheld"
+
+
+def packet_hit_with_policy_notice(
+    hit: dict[str, Any],
+    decision: PolicyDecision,
+) -> dict[str, Any]:
+    """Return a body-suppressed packet hit preserving citation eligibility."""
+    redaction_label = "Redacted" if decision.action == "redact" else "Citation only"
+    updated = dict(hit)
+    updated["content"] = (
+        f"{redaction_label}: body withheld by packet policy "
+        f"(reason={decision.reason_code}, src={hit['reference_id']})."
+    )
+    return updated
+
+
 def build_packet_citation(hit: dict[str, Any]) -> dict[str, Any]:
     """Build the cited memory item shape for one retrieval hit."""
     provenance = dict(hit.get("provenance") or {})
-    return {
+    citation = {
         "tenant_id": hit["tenant_id"],
         "corpus_id": hit["corpus_id"],
         "source_kind": hit["source_kind"],
         "sub_kind": hit["sub_kind"],
         "external_id": hit["external_id"],
         "reference_id": hit["reference_id"],
+        "target_table": hit.get("target_table"),
+        "target_id": hit.get("target_id"),
         "path": provenance.get("path") or provenance.get("logical_path"),
         "lines": provenance.get("lines") or provenance.get("line_range"),
         "bundle": provenance.get("bundle_id"),
+        "repository_id": provenance.get("repository_id"),
+        "commit_sha": provenance.get("commit_sha"),
+        "artifact_root_id": provenance.get("artifact_root_id"),
+        "artifact_kind": provenance.get("artifact_kind"),
+        "artifact_hash": provenance.get("artifact_hash") or provenance.get("content_hash"),
+        "run_id": provenance.get("run_id"),
+        "markdown_root_id": provenance.get("markdown_root_id"),
         "authority": provenance.get("authority_class"),
         "stability": provenance.get("stability_class"),
         "confidence": provenance.get("confidence"),
+        "sensitivity_class": hit.get("sensitivity_class"),
         "freshness": hit["freshness"],
         "dirty_working_tree": hit["dirty_working_tree"],
     }
+    return {key: value for key, value in citation.items() if value is not None}
 
 
 def estimate_packet_item_cost(hit: dict[str, Any], citation: dict[str, Any]) -> int:
@@ -1124,10 +1667,12 @@ def build_packet_audit_entry(
         "reason": reason,
         "lineage": {
             "retrieval_lane": "exact_reference",
-            "projection_family": "striatum_references",
+            "projection_family": hit.get("target_table") or "unknown",
             "projection_generation_id": generation_id,
             "reference_id": hit["reference_id"],
             "source_kind": hit["source_kind"],
+            "target_table": hit.get("target_table"),
+            "target_id": hit.get("target_id"),
         },
         "ranking": {
             "rank": rank,
@@ -1137,6 +1682,7 @@ def build_packet_audit_entry(
         "labels": {
             "freshness": hit["freshness"],
             "privacy_tier": hit["privacy_tier"],
+            "sensitivity_class": hit.get("sensitivity_class"),
             "redaction_state": "none",
         },
     }
@@ -1197,6 +1743,81 @@ def active_generation_id_for_pair(
     ).fetchone()
     if row is None:
         return None
+    return str(row[0])
+
+
+def ensure_packet_audit_generation_id(
+    conn: psycopg.Connection,
+    *,
+    tenant_id: str,
+    corpus_id: str,
+) -> str:
+    """Return an audit generation id, creating a pair-local fallback if needed."""
+    existing = active_generation_id_for_pair(conn, tenant_id=tenant_id, corpus_id=corpus_id)
+    if existing is not None:
+        return existing
+    if not table_columns(conn, "striatum_projection_generations"):
+        raise MemoryReferenceError("striatum_projection_generations table is unavailable")
+    manifest_hash = hashlib.sha256(
+        f"packet-audit:{tenant_id}:{corpus_id}".encode()
+    ).hexdigest()
+    row = conn.execute(
+        """
+        INSERT INTO striatum_projection_generations (
+            tenant_id,
+            corpus_id,
+            parent_kind,
+            parent_id,
+            bundle_id,
+            contract_version,
+            projection_schema_version,
+            projection_code_version,
+            input_manifest_sha256,
+            input_item_count,
+            status,
+            completed_at,
+            activated_at,
+            raw_payload
+        )
+        VALUES (
+            %s,
+            %s,
+            'corpus',
+            %s,
+            %s,
+            %s,
+            'memory.reference_hits.v1',
+            'memory.py',
+            %s,
+            0,
+            'activated',
+            now(),
+            now(),
+            %s
+        )
+        ON CONFLICT (
+            tenant_id,
+            corpus_id,
+            bundle_id,
+            projection_schema_version,
+            projection_code_version,
+            input_manifest_sha256
+        )
+        DO UPDATE SET activated_at = striatum_projection_generations.activated_at
+        RETURNING id::text
+        """,
+        (
+            tenant_id,
+            corpus_id,
+            f"packet-audit:{tenant_id}/{corpus_id}",
+            f"packet-audit:{tenant_id}:{corpus_id}",
+            PACKET_POLICY_VERSION,
+            manifest_hash,
+            Jsonb({"purpose": "packet_audit_generation"}),
+        ),
+    ).fetchone()
+    if row is None:
+        raise MemoryReferenceError("could not create packet audit generation")
     return str(row[0])
 
 
@@ -1286,6 +1907,80 @@ def insert_packet_audit(
         """,
         (packet_id, generation_id, query, budget, Jsonb(selected), Jsonb(omitted)),
     )
+
+
+def reconstruct_packet_audit(
+    conn: psycopg.Connection,
+    *,
+    packet_id: str,
+    tenant_id: str,
+    corpus_id: str,
+) -> dict[str, Any] | None:
+    """Return the privacy-safe audit trail for one packet, if it exists."""
+    columns = table_columns(conn, "striatum_packet_audits")
+    if not columns:
+        raise MemoryReferenceError("striatum_packet_audits table is unavailable")
+    if {"tenant_id", "corpus_id", "policy_version", "purpose", "status", "filters"} <= columns:
+        row = conn.execute(
+            """
+            SELECT
+                packet_id::text,
+                generation_id::text,
+                tenant_id,
+                corpus_id,
+                policy_version,
+                purpose,
+                status,
+                query,
+                budget,
+                filters,
+                selected,
+                omitted,
+                created_at
+            FROM striatum_packet_audits
+            WHERE packet_id = %s
+              AND tenant_id = %s
+              AND corpus_id = %s
+            """,
+            (packet_id, tenant_id, corpus_id),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "packet_id": row[0],
+            "generation_id": row[1],
+            "tenant_id": row[2],
+            "corpus_id": row[3],
+            "policy_version": row[4],
+            "purpose": row[5],
+            "status": row[6],
+            "query": row[7],
+            "budget": row[8],
+            "filters": row[9],
+            "selected": row[10],
+            "omitted": row[11],
+            "created_at": format_datetime(row[12]),
+        }
+    row = conn.execute(
+        """
+        SELECT packet_id::text, generation_id::text, query, budget, selected, omitted
+        FROM striatum_packet_audits
+        WHERE packet_id = %s
+        """,
+        (packet_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "packet_id": row[0],
+        "generation_id": row[1],
+        "tenant_id": tenant_id,
+        "corpus_id": corpus_id,
+        "query": row[2],
+        "budget": {"max_tokens": row[3]},
+        "selected": row[4],
+        "omitted": row[5],
+    }
 
 
 def table_columns(conn: psycopg.Connection, table_name: str) -> set[str]:

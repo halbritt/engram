@@ -21,6 +21,13 @@ Phase refs:
   - PHASE-0003 (extraction)
   - PHASE-0004 (entity consolidation)
 
+Post-D094 note: RFC 0030 remains seed context for public-dataset
+claim-extraction grounding. RFC 0052/D094 owns the current accepted narrow
+local MCP grounding substrate. RFC 0053 owns the proposal-level boundary
+between the corpus-reading extractor and any grounding broker, grounding LLM, or
+future network-capable broker/fetch adapter; migration 023 does not implement
+this RFC's extraction, grant, or snapshot pipeline.
+
 This RFC proposes that claim extraction gain **entity grounding from
 locally-held public datasets** (Wikidata, GeoNames, OpenStreetMap, and
 similar), with three load-bearing constraints:

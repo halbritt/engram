@@ -4,8 +4,8 @@
 
 Engram is a personal memory system for AI-assisted work and reflection. It
 ingests local conversation exports, preserves the raw evidence, derives
-topic-level segments, extracts grounded claims, consolidates those claims into
-bitemporal beliefs, and eventually serves compact context packages through
+topic-level segments, extracts evidence-linked claims, consolidates those
+claims into bitemporal beliefs, and serves early compact context packages through
 `context_for(conversation)`.
 
 The core promise is simple: no cloud dependency, no telemetry, and no user data
@@ -19,21 +19,24 @@ Engram is meant to answer "what should the next assistant know about me, this
 project, this relationship, this preference, or this prior decision?" without
 turning private history into an opaque remote service.
 
-It currently does four things:
+It currently does five things:
 
 - **Ingests AI conversation exports** from ChatGPT, Claude, and Gemini into an
   immutable raw evidence layer.
 - **Segments and embeds conversation history** so retrieval works over coherent
   topics rather than whole conversations or isolated turns.
-- **Extracts grounded claims** from active segments using a deterministic local
-  structured-output LLM contract.
+- **Extracts evidence-linked claims** from active segments using a deterministic
+  local structured-output LLM contract.
 - **Consolidates claims into bitemporal beliefs** with provenance, confidence,
   stability class, contradiction tracking, and append-only audit history.
+- **Serves minimal cited context packages** over pinned/current beliefs, recent
+  signals, exact references, explicit gaps, snapshots, and local policy checks.
 
-The intended product surface is still `context_for(conversation)`: a local
-context compiler that will retrieve relevant beliefs, entities, recent signals,
-and explicit gaps, then render them as a sectioned context block for an AI
-assistant. That serving layer is Phase 5 and is not complete yet.
+The primary product surface is `context_for(conversation)`: a local context
+compiler that retrieves relevant beliefs, entities, recent signals, exact
+references, and explicit gaps, then renders them as a sectioned context block
+for an AI assistant. The V1 slice exists; fuller ranking, invalidation, and
+eval expansion remain in progress.
 
 ## How It Behaves
 
@@ -49,38 +52,39 @@ Engram is conservative by design.
   exists.
 - Empty extraction is a real result. "No claim found" can be recorded as clean
   zero or accounted zero; unauditable parse/schema paths remain failures.
-- Phase 3 beliefs are candidates. Human acceptance, correction, entity
-  canonicalization, and the `current_beliefs` view arrive in Phase 4.
+- Phase 3 beliefs are candidates. The Phase 4 substrate now includes
+  `current_beliefs`, belief review actions, and local grounding; full entity
+  canonicalization and review UI remain.
 - The live serving path will avoid LLM reranking. V1 favors a simple weighted
   scorer with explicit confidence, provenance, and "no data" markers over false
   precision.
 
 ## Current Status
 
-The project is currently between Phase 3 runtime validation and the Phase 4
-entity/review build.
+The project has Phase 1-3 implemented, with narrow Phase 4/5 serving and review
+substrates now landed.
 
 | Area | Status |
 |------|--------|
 | Phase 1 raw evidence | Implemented for ChatGPT exports. |
 | Phase 1.5 multi-source ingestion | Implemented for Claude and Gemini exports. |
 | Phase 2 segmentation + embeddings | Implemented for the AI-conversation corpus. |
-| Phase 3 claims + bitemporal beliefs | Implemented and in bounded/full-corpus operational validation. |
-| Phase 4 entity canonicalization + review | Not built yet. |
-| Phase 5 `context_for` + MCP serving | Not built yet. |
-| RFC 0044 Striatum memory Phase 1 | Implemented as optional local application-memory ingest + read-only MCP stdio. |
+| Phase 3 claims + bitemporal beliefs | Implemented; primary run complete, with residual cleanup tracked separately. |
+| Phase 4 entity canonicalization + review | Partial: `current_beliefs`, belief review actions/queue substrate, and local grounding substrate exist; full entity review UI remains. |
+| Phase 5 `context_for` + MCP serving | Partial: minimal `context_for`, MCP `engram.context_for`, `context_snapshots`, and `context_feedback` exist; broad invalidation/eval/reporting remains. |
+| RFC 0044 Striatum memory | Implemented as optional local application-memory ingest, retrieval, packet building, and MCP stdio. |
 
-Phase 3 has already moved through several runtime repair loops. The same-bound
-`pipeline-3 --limit 500` gate completed with zero extraction failures and zero
-consolidation skips after schema, validation-repair, and D064 accounted-zero
-repairs. The first unbounded Phase 3 run then surfaced a JSON-null group-key
-consolidator mismatch; that repair has targeted regression coverage, the full
-test suite passed, and the unbounded run was intentionally stopped before
-restart. The fast-moving Phase 3 runtime trail lives under
+Phase 3 has moved through bounded and full-corpus repair loops. The primary
+claim/belief run is complete; remaining Phase 3 cleanup is the tracked tail of
+unextracted and failed segments. The historical runtime trail lives under
 [docs/reviews/phase3/](docs/reviews/phase3/).
 
-Gold-set authoring waits until claims and beliefs have stabilized enough to be
-used as a memory aid. Segmentation alone is not the gold-set substrate.
+Synthetic context-eval e2e is the active Step 5A because the owner chat history
+has too many ambiguous proper nouns for the first reliable eval substrate. Run
+`make e2e-context-synthetic` to exercise the public synthetic beliefs,
+captures, local grounding rows, `context_for`, and `engram.ground_entity`.
+Owner-only gold-set authoring follows as Step 5B. Segmentation alone is not the
+gold-set substrate.
 
 ## Architecture
 
@@ -95,7 +99,7 @@ local exports / local captures
   -> beliefs
      bitemporal consolidated state with audit and contradictions
   -> entities / current_beliefs
-     Phase 4 canonicalization and review surface
+     Phase 4 substrate and review surface
   -> context_for(conversation)
      Phase 5 local context compiler and MCP serving path
 ```
@@ -213,9 +217,9 @@ Do not edit [docs/schema/README.md](docs/schema/README.md) by hand.
 | ChatGPT JSON export | Implemented | Phase 1 ingestion and Phase 2/3 AI-conversation substrate. |
 | Claude export ZIP/directory | Implemented | Added in Phase 1.5 before LLM-derived stages. |
 | Gemini Google Takeout | Implemented | Added in Phase 1.5 before LLM-derived stages. |
-| Striatum corpus export | Implemented | Optional RFC 0044 local application-memory tenant; read-only raw retrieval only. |
+| Striatum corpus export | Implemented | Optional local application-memory tenant with raw ingest/search/fetch, packet building, and MCP serving. |
 | Obsidian vault | Schema-reserved / deferred | Not part of current Phase 2 or Phase 3 runs. |
-| MCP live capture | Schema-reserved / deferred | Capture and serving work return in later phases. |
+| MCP live capture | Schema-reserved / deferred | Live capture remains deferred; MCP serving exists separately. |
 
 Phase 2 and Phase 3 intentionally operate on the AI-conversation corpus only:
 ChatGPT, Claude, and Gemini. Notes, captures, and Obsidian-derived rows remain
@@ -225,11 +229,13 @@ RFC 0044 adds a separate local `tenant_id='striatum'`,
 `corpus_id='striatum'` application-memory boundary for Striatum operator
 artifacts exported by `striatum corpus export`. The Engram side reads the
 bundle from disk with `engram ingest-striatum --bundle <dir> [--repo <name>]`
-and exposes only four read-only MCP stdio tools through `engram-mcp-stdio`:
-`engram.search`, `engram.fetch_reference`, `engram.describe_corpus`, and
-`engram.health`. The default Striatum operator token has
-`memory.read_striatum` and `memory.describe` only; personal memory remains
-outside that boundary.
+and exposes local MCP stdio tools through `engram-mcp-stdio`: `engram.search`,
+`engram.fetch_reference`, `engram.describe_corpus`, `engram.health`,
+`engram.build_packet`, capability-gated `engram.context_for`, and local-only
+`engram.ground_entity`. The default Striatum operator token has
+`memory.read_striatum` and `memory.describe`; personal memory requires explicit
+`memory.read_personal`, and cross-boundary reads require explicit local
+capabilities.
 
 ## Stack
 
@@ -280,8 +286,9 @@ Read these before older brainstorm, review, and prior-art material:
 - Bidirectional Obsidian sync.
 - Bulk Evernote migration.
 - Note/capture/Obsidian claim extraction.
-- Belief embeddings, `current_beliefs`, `context_for`, MCP serving, and
-  `context_feedback` until their scheduled phases.
+- Belief embeddings, generated products, broad invalidation policy, feedback
+  review/reporting surfaces, full entity review UI, and broad source-family
+  expansion until their explicit gates.
 
 ## Inspiration
 

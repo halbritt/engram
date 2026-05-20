@@ -36,8 +36,8 @@ This plan is complete when:
 - Keep corpus-reading processes no-egress.
 - Do not introduce hosted APIs, telemetry, hosted vector stores, remote
   embedding, or remote reranking.
-- Do not add generated memory products until the generated-product contract is
-  accepted.
+- Do not add generated memory products until the downstream generated-product
+  implementation spec is accepted.
 - Treat Striatum/project memory as an application over Engram, not the shape of
   the personal-memory core.
 - Prefer small landed increments with tests over large architecture rewrites.
@@ -441,7 +441,7 @@ and conventions.
 ### Steps
 
 1. Add a policy module.
-   - Proposed package: `src/engram/policy/`.
+   - Implemented module: `src/engram/policy.py`.
    - Inputs:
      - actor/token;
      - tenant/corpus;
@@ -462,6 +462,7 @@ and conventions.
    - Bench-review excerpt routes.
    - Memory packet builder.
    - `context_for`.
+   - Phase 3 interview export tier filtering.
 
 3. Persist omission/withholding where useful.
    - Make "withheld due to policy" distinct from "no data".
@@ -474,6 +475,8 @@ and conventions.
 ### Acceptance Criteria
 
 - Same policy decision function is used by packet and context rendering.
+- Same policy decision function is used by the shared interview/bench-review
+  web tier guard and Phase 3 interview export tier filtering.
 - Tests prove Tier 2+ material is withheld from Tier 1 surfaces.
 - Omitted/withheld reasons use a closed vocabulary.
 - No route regresses to ad hoc tier comparison without a test.
@@ -486,28 +489,33 @@ path for each one.
 ### Steps
 
 1. Design a generic evidence catalog.
-   - Decide whether this is a new RFC, a spec, or a direct migration plan.
-   - Proposed tables:
+   - Resolved by D088 and D094: RFC 0051 is the design reference for the
+     narrow implementation slice.
+   - Initial proposal file: `docs/rfcs/0051-generic-evidence-reference-index.md`.
+   - Implemented tables:
      - `evidence_items`
-     - `evidence_blobs`
-     - `reference_index`
-     - `projection_items`
-     - `projection_generations` or a generalized equivalent.
+     - `evidence_refs`
+   - Deferred: `evidence_blobs`, generated products, and generalized projection
+     generation surfaces beyond current-source exact-reference coverage.
 
 2. Backfill current specialized sources into the generic index.
    - Striatum captures.
    - git commits.
    - build artifacts.
    - Markdown files.
+   - Implemented by `src/engram/evidence.py`.
 
 3. Make exact-reference search read the generic index first.
    - Keep specialized queries as fallback while migrating.
+   - Implemented in `MemoryService._search_exact_refs()`.
 
 4. Add generation and stale-index gates.
    - Dropping/rebuilding generic projection rows should reproduce active
      reference coverage.
 
 5. Only after this, approve the next source family.
+   - Resolved by D093: the next RFC 0050 Stage 3+ source family is selected
+     from real `context_for` eval failures, not adapter availability.
 
 ### Acceptance Criteria
 
@@ -546,6 +554,19 @@ sources.
    - Mention detection can be simple at first.
    - Entity neighborhood should cite evidence.
 
+5. MCP-facing local grounding substrate implemented; network runtime and review
+   UX remain gated.
+   - Resolved by D090 and D094: RFC 0052 is the design reference for the
+     local-only implementation slice.
+   - Initial proposal file:
+     `docs/rfcs/0052-entity-identity-review-and-grounding.md`.
+   - Grounding evidence rows, including any future approved fetch outputs,
+     become immutable raw evidence with URL/query, fetched timestamp, content
+     hash, and versioned extractor/parser provenance.
+   - Implemented local lookup only: migration 023,
+     `src/engram/entity_grounding.py`, and MCP `engram.ground_entity`.
+     Network grounding fetch requests are rejected.
+
 ### Acceptance Criteria
 
 - Human-reviewed merges/splits are append-only and evidence-backed.
@@ -554,12 +575,14 @@ sources.
 
 ## Phase 10: Backup, Keys, And Tier 5 Destruction Design
 
-Goal: address the long-term local-first operational requirement before high-risk
-life data enters the system.
+Goal: address the long-term local-first operational requirement before durable
+high-risk life-data expansion.
 
 ### Steps
 
 1. Write a backup/key-management design.
+   - Proposal draft:
+     `docs/specs/local-backup-key-tier5-design-v1.md`.
    - Local encrypted backup format.
    - Restore procedure.
    - Key hierarchy.
@@ -573,6 +596,9 @@ life data enters the system.
 3. Keep cloud sync out of scope.
    - Explicit export is allowed.
    - Background third-party sync remains disallowed.
+   - Resolved by D091 and D094: A10 is not a hard blocker for A8/A9 narrow
+     substrate work or low-risk eval-driven work, but must be revisited before durable
+     high-risk source-family ingestion.
 
 ### Acceptance Criteria
 
@@ -583,15 +609,20 @@ life data enters the system.
 ## Phase 11: Blob Vault For Large And Sensitive Bodies
 
 Goal: avoid turning Postgres into the raw byte store for media, audio, video,
-large PDFs, and high-volume document bodies.
+large PDFs, and high-volume document bodies. Resolved by D092: this is a
+separate exploration/spec track from A10.
 
 ### Steps
 
 1. Design encrypted local blob storage.
+   - Proposal/exploration draft:
+     `docs/specs/blob-vault-local-s3-exploration-v1.md`.
    - Content-addressed.
    - Local-only.
    - Hash-addressed from Postgres.
    - Supports key-tier separation.
+   - Explore a local S3-compatible endpoint before choosing the first
+     implementation target.
 
 2. Add `evidence_blobs` metadata.
    - content hash;
@@ -644,13 +675,19 @@ Goal: reduce coupling without stopping product progress for a cosmetic rewrite.
 These require explicit operator decision before implementation proceeds:
 
 1. Make this plan the active architecture-followup plan.
-2. Accept the exact shape of `context_for` V1 output.
-3. Accept the first real gold-set eval format.
+2. Accept the exact shape of `context_for` V1 output. Resolved by D087.
+3. Accept the first real gold-set eval format. Resolved by D087.
 4. Decide whether generic evidence/reference indexing needs an RFC or can ship
-   as an implementation spec.
+   as an implementation spec. Resolved by D088: new RFC required.
+   Refined by D094: the narrow RFC 0051 substrate is implemented.
 5. Accept backup/key-management design before high-sensitivity source families.
-6. Accept generated-product contract before generated summaries, biographies,
-   OCR text, captions, or daily compiler outputs become retrieval-visible.
+   Refined by D091/D094: not a hard blocker for A8/A9 narrow substrate work,
+   but required before durable high-risk source-family expansion.
+6. Accept a downstream generated-product implementation spec before generated
+   summaries, biographies, OCR text, captions, or daily compiler outputs become
+   retrieval-visible.
+   Resolved by D089: generated products require a downstream generated-product
+   spec grounded in RFC 0051 and D089.
 
 ## Suggested Work Packets
 

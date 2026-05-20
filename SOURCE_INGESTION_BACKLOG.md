@@ -5,9 +5,9 @@ Posture: This document operationalizes RFC 0050
 ([docs/rfcs/0050-source-ingestion-expansion.md](docs/rfcs/0050-source-ingestion-expansion.md))
 as a sequenced execution plan, analogous to
 [`STRIATUM_MEMORY_E2E_BACKLOG.md`](STRIATUM_MEMORY_E2E_BACKLOG.md). RFC 0050 is
-proposal-status; this backlog treats it as design reference. Each layer ships
-as one or more landed commits with tests on master before the next layer
-starts.
+accepted as design reference by D084. Layers 1-6 have landed on master; Stage
+3+ source-family expansion remains deferred until real owner-authored
+context-eval failures identify the missing evidence class, per D093.
 
 ## Snapshot Of What Already Exists
 
@@ -17,28 +17,45 @@ starts.
 - The Striatum-memory e2e pipeline (Layers 1-5 of
   `STRIATUM_MEMORY_E2E_BACKLOG.md`) is on master with projection,
   retrieval, packet, gates, and MCP smoke.
-- The RFC 0050 source-contract proposal landed in
+- The RFC 0050 source-contract design reference landed in
   `docs/rfcs/0050-source-ingestion-expansion.md` with cross-references
   to RFC 0033-0036 and RFC 0044-0049. The proposal carries 12 open
   questions (`OQ-SI-001..OQ-SI-012`) that humans resolve in
   `DECISION_LOG.md` separately from any code work.
+- Layers 1-6 landed as working code: source-contract template + validator,
+  git/build-artifact/Markdown importers, `EG-SI` gates, exact-reference
+  retrieval for project-execution sources, `source_audits`, and
+  `EG-SI-090` audit reconstruction. D084 accepts RFC 0050 as the design
+  reference for this landed scope.
 
 ## Sequencing Recommendation
 
+Layers 1-6 below are retained as historical execution shape and acceptance
+criteria. Treat them as completed unless a test or future drift-lint finding
+identifies a regression. Do not start optional Stage 3+ families from this
+document until real owner-authored context-eval failures identify the missing
+evidence class, per D093.
+
 Execute strictly in this order; later layers assume earlier ones held.
 
-1. Layer 1: source contract template + git metadata/diff-stat importer.
-2. Layer 2: build/test/lint/coverage/benchmark artifact importer.
-3. Layer 3: Markdown/project-doc importer.
-4. Layer 4: `EG-SI-NNN` evaluation-gate harness for layers 1-3.
+1. Layer 1: source contract template + git metadata/diff-stat importer
+   — completed.
+2. Layer 2: build/test/lint/coverage/benchmark artifact importer
+   — completed.
+3. Layer 3: Markdown/project-doc importer — completed.
+4. Layer 4: `EG-SI-NNN` evaluation-gate harness for layers 1-3
+   — completed for the landed gates.
 5. Layer 5: exact-reference retrieval extension for project-execution
    sources via the existing `MemoryService.search` filter path.
+   — completed.
 6. Layer 6: operational families (`coverage_gap`, `source_audit`) and
-   the no-derived-product-leak invariant tests.
+   the no-derived-product-leak invariant tests — completed for
+   `source_audits` and EG-SI-090; broader generated-product work remains
+   deferred by D086.
 7. Optional Stage 3+ work (human communication, observation/life,
    live capture) lands only after operator decides per RFC 0050.
 
-## Layer 1 — Source Contract Template + Git Importer (RFC 0050 Stage 0 + Stage 1.1)
+## Layer 1 — Source Contract Template + Git Importer (RFC 0050 Stage 0 + Stage 1.1) — completed
 
 Goal: deliver the reusable source-contract template, document its required
 fields, and ship the first contract-conformant importer for local git
@@ -114,7 +131,7 @@ commit metadata and diff stats.
 - Operational families' query layer (Layer 6 makes them queryable);
   Layer 1 only writes `coverage_gap` rows when parse fails.
 
-## Layer 2 — Build Artifact Importer (RFC 0050 Stage 1.2)
+## Layer 2 — Build Artifact Importer (RFC 0050 Stage 1.2) — completed
 
 Goal: ship a contract-conformant importer for local build/test/lint
 artifact directories.
@@ -145,7 +162,7 @@ artifact directories.
   byte limit by default.
 - Re-import of the same artifact directory is idempotent.
 
-## Layer 3 — Markdown / Project-Doc Importer (RFC 0050 Stage 2)
+## Layer 3 — Markdown / Project-Doc Importer (RFC 0050 Stage 2) — completed
 
 Goal: ship a contract-conformant importer for local Markdown trees.
 
@@ -171,7 +188,7 @@ Goal: ship a contract-conformant importer for local Markdown trees.
   path without rewriting the old raw row.
 - Heading/frontmatter/link projection rebuilds from raw evidence.
 
-## Layer 4 — Evaluation Gates `EG-SI-NNN`
+## Layer 4 — Evaluation Gates `EG-SI-NNN` — completed for landed gates
 
 Goal: deterministic gates per RFC 0050 § Evaluation Gates that prove
 each Layer 1-3 contract holds under regression.
@@ -213,7 +230,7 @@ each Layer 1-3 contract holds under regression.
   human-communication sources land; defer.
 - `EG-SI-090 Audit Reconstruction` — defer to Layer 6.
 
-## Layer 5 — Exact-Reference Retrieval Extension (RFC 0050 Stage 1 success criterion)
+## Layer 5 — Exact-Reference Retrieval Extension (RFC 0050 Stage 1 success criterion) — completed
 
 Goal: surface git/build-artifact projections behind the existing
 `MemoryService.search` `filters.exact_refs` API the Striatum-memory
@@ -237,7 +254,7 @@ work already established (`STRIATUM_MEMORY_E2E_BACKLOG.md` Layer 2).
 - The existing Striatum exact-reference tests still pass.
 - No vector search is introduced in Layer 5.
 
-## Layer 6 — Operational Families + No-Derived-Product-Leak
+## Layer 6 — Operational Families + No-Derived-Product-Leak — completed for source audits
 
 Goal: make `coverage_gap` and `source_audit` queryable as operational
 families per RFC 0050 § Operational Families, and prove the
@@ -273,8 +290,12 @@ no-derived-product-leak invariant in tests.
 
 ## What This Backlog Is Not
 
-- A promotion path for RFC 0050. The RFC stays proposal-only until a
-  recorded operator decision in `DECISION_LOG.md` accepts it.
+- A Stage 3+ authorization path. RFC 0050 is accepted as design reference by
+  D084, but that does not authorize human communication, observation/life, or
+  live-capture source families. D093 says the next RFC 0050 Stage 3+ family is
+  chosen from real `context_for` eval failures, not adapter availability.
+  Durable high-risk families also require an accepted backup/key/Tier 5 design;
+  `docs/specs/local-backup-key-tier5-design-v1.md` is only a proposal draft.
 - A commitment to Stages 3-5 (human communication, observation, live
   capture). Those depend on RFC 0050 open questions
   (`OQ-SI-005`, `OQ-SI-006`, `OQ-SI-011`) and on operator decision.

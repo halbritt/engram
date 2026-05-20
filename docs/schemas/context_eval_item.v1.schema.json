@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engram.local/schemas/context_eval_item.v1.schema.json",
+  "title": "Engram Context Eval Item",
+  "description": "One JSON object in an external private context eval JSONL dataset.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "context_eval.item.v1"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "query": {
+      "type": "string",
+      "minLength": 1
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Compatibility alias for query. If both are present, the Python validator requires them to match."
+    },
+    "required_facts": {
+      "$ref": "#/$defs/string_array"
+    },
+    "forbidden_stale_facts": {
+      "$ref": "#/$defs/string_array"
+    },
+    "required_gaps": {
+      "$ref": "#/$defs/string_array"
+    },
+    "relevant_entities": {
+      "$ref": "#/$defs/string_array"
+    },
+    "allowed_evidence_references": {
+      "$ref": "#/$defs/string_array"
+    },
+    "privacy_ceiling": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 1
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "id"
+  ],
+  "anyOf": [
+    {
+      "required": [
+        "query"
+      ]
+    },
+    {
+      "required": [
+        "prompt"
+      ]
+    }
+  ],
+  "$defs": {
+    "string_array": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    }
+  }
+}

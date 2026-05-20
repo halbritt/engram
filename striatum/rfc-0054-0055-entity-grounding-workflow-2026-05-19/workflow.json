@@ -1,0 +1,46 @@
+# Striatum Run Summary
+
+Run ID: `run_8be1d202659a4fd093998367cf61495d`
+Branch: `master`
+Run state: `running`
+Verification: `doctor ok=false`
+
+## Timing
+
+- Created at: `2026-05-19T10:20:16Z`
+- Started at: `2026-05-19T10:20:33Z`
+- Completed at: `None`
+- Duration: `0h 32m 40s`
+
+## Jobs
+
+- `blocked`: 2
+- `completed`: 5
+
+## Verdicts
+
+- No verdicts recorded.
+
+## Artifacts
+
+- `finding` `adversarial_security_review`: `docs/reviews/rfc0054-0055-entity-grounding-workflow/ADVERSARIAL_SECURITY_REVIEW.md` - `author: operator`
+- `handoff` `cli_docs_handoff`: `docs/reviews/rfc0054-0055-entity-grounding-workflow/CLI_DOCS_HANDOFF.md` - `author: operator`
+- `handoff` `draft_workflow_handoff`: `docs/reviews/rfc0054-0055-entity-grounding-workflow/DRAFT_WORKFLOW_HANDOFF.md` - `author: operator`
+- `handoff` `materialization_handoff`: `docs/reviews/rfc0054-0055-entity-grounding-workflow/MATERIALIZATION_HANDOFF.md` - `author: operator`
+- `finding` `verification`: `docs/reviews/rfc0054-0055-entity-grounding-workflow/VERIFICATION.md` - `author: operator`
+
+## Sessions
+
+- `implementer-codex_draft-1` `active`
+- `implementer-codex_materialization-1` `active`
+- `implementer-codex_cli_docs-1` `active`
+- `reviewer-codex_verification-1` `active`
+- `reviewer-codex_security-1` `closed` (closed_at: `2026-05-19T10:45:31Z`) reason: `codex_security review artifact published and job completed; verdict command unavailable after lease completion`
+
+## Blockers
+
+- No blockers recorded.
+
+## Next Actions
+
+- No deterministic next actions.

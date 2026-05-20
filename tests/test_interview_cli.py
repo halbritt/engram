@@ -8,11 +8,11 @@ required for the help/dispatch checks.
 from __future__ import annotations
 
 import uuid
-from contextlib import contextmanager
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from test_phase2_segments import insert_conversation, insert_generation, insert_segment_row
@@ -23,6 +23,7 @@ from engram.consolidator import CONSOLIDATOR_MODEL_VERSION, CONSOLIDATOR_PROMPT_
 from engram.consolidator.transitions import BeliefPayload, insert_belief
 from engram.extractor import EXTRACTION_PROMPT_VERSION, EXTRACTION_REQUEST_PROFILE_VERSION
 from engram.interview.sampler import SampledTarget
+from engram.policy import PolicyDecision
 
 
 @pytest.fixture()
@@ -100,6 +101,82 @@ def test_phase3_interview_export_explicit_tier_max_passthrough(
     rc = cli.main(["phase3", "interview", "export", "--privacy-tier-max", "3"])
     assert rc == 0
     assert captured["tier_max"] == 3
+
+
+def test_phase3_interview_export_filters_rows_through_policy(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    answered_at = datetime(2026, 5, 17, tzinfo=UTC)
+    rows = [
+        (
+            "label-1",
+            "session-1",
+            "claim",
+            "claim-1",
+            "true",
+            None,
+            "stable",
+            "high",
+            "recent",
+            None,
+            1,
+            "tier one excerpt",
+            answered_at,
+        ),
+        (
+            "label-2",
+            "session-2",
+            "claim",
+            "claim-2",
+            "true",
+            None,
+            "stable",
+            "high",
+            "recent",
+            None,
+            2,
+            "tier two excerpt",
+            answered_at,
+        ),
+    ]
+
+    class FakeResult:
+        def fetchall(self) -> list[tuple[object, ...]]:
+            return rows
+
+    class FakeConn:
+        def execute(self, query: str) -> FakeResult:
+            assert "WHERE privacy_tier <=" not in query
+            return FakeResult()
+
+    @contextmanager
+    def fake_connect(*args: object, **kwargs: object) -> Iterator[FakeConn]:
+        yield FakeConn()
+
+    calls: list[dict[str, object]] = []
+
+    def fake_decide_local_release(**kwargs: object) -> PolicyDecision:
+        calls.append(kwargs)
+        if kwargs["privacy_tier"] == 1:
+            return PolicyDecision("allow", "allowed")
+        return PolicyDecision("withhold", "privacy_tier_exceeded")
+
+    monkeypatch.setattr(cli, "connect", fake_connect)
+    monkeypatch.setattr(cli, "decide_local_release", fake_decide_local_release)
+
+    rc = cli.run_phase3_interview_export(
+        SimpleNamespace(privacy_tier_max=1, output=None)
+    )
+
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "label-1" in captured.out
+    assert "label-2" not in captured.out
+    assert [call["target_surface"] for call in calls] == [
+        "external_export",
+        "external_export",
+    ]
 
 
 def test_phase3_interview_start_dispatches_to_start_driver(
@@ -300,7 +377,7 @@ def test_phase3_interview_history_applies_since_filter(
                     "label-a",
                     "claim",
                     "true",
-                    datetime(2026, 5, 13, 13, 0, tzinfo=timezone.utc),
+                    datetime(2026, 5, 13, 13, 0, tzinfo=UTC),
                 )
             ]
 
@@ -326,7 +403,7 @@ def test_phase3_interview_history_applies_since_filter(
     )
     assert rc == 0
     assert fake_conn.params is not None
-    assert fake_conn.params[1] == datetime(2026, 5, 13, 12, 0, tzinfo=timezone.utc)
+    assert fake_conn.params[1] == datetime(2026, 5, 13, 12, 0, tzinfo=UTC)
     assert "label-a" not in capsys.readouterr().err
 
 
@@ -373,7 +450,7 @@ def _build_sampled_target(
         target_id=target_id,
         stability_class=stability_class,
         confidence=0.7,
-        observed_at=datetime(2024, 6, 1, 12, 0, tzinfo=timezone.utc),
+        observed_at=datetime(2024, 6, 1, 12, 0, tzinfo=UTC),
         conf_band=conf_band,
         recency_band=recency_band,
         belief_status=belief_status,
@@ -425,10 +502,10 @@ def _seed_interview_belief(conn: Any) -> str:
         predicate="prefers",
         object_text="local-only tooling",
         object_json=None,
-        valid_from=datetime.now(timezone.utc),
+        valid_from=datetime.now(UTC),
         valid_to=None,
-        observed_at=datetime.now(timezone.utc),
-        extracted_at=datetime.now(timezone.utc),
+        observed_at=datetime.now(UTC),
+        extracted_at=datetime.now(UTC),
         status="candidate",
         confidence=0.7,
         evidence_ids=[evidence_id],
@@ -502,7 +579,7 @@ def test_phase3_interview_start_writes_session_targets(
     ]
 
     class _StubSampler:
-        captured_kwargs: dict[str, Any] = {}
+        captured_kwargs: ClassVar[dict[str, Any]] = {}
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             self.captured_kwargs.update(kwargs)

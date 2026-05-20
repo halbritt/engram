@@ -161,6 +161,40 @@ def test_rfc0048_migration_016_exists_on_disk() -> None:
     assert "fn_striatum_packet_audits_append_only" in text
 
 
+def test_rfc0051_migration_022_exists_on_disk() -> None:
+    path = MIGRATIONS_DIR / "022_generic_evidence_reference_index.sql"
+    assert path.exists(), f"missing migration: {path}"
+    text = path.read_text(encoding="utf-8")
+    assert "RFC 0051" in text
+    assert "evidence_items" in text
+    assert "evidence_refs" in text
+    assert "evidence_refs_exact_lookup_idx" in text
+
+
+def test_rfc0052_migration_023_exists_on_disk() -> None:
+    path = MIGRATIONS_DIR / "023_entity_grounding_review.sql"
+    assert path.exists(), f"missing migration: {path}"
+    text = path.read_text(encoding="utf-8")
+    assert "RFC 0052" in text
+    assert "entity_grounding_evidence" in text
+    assert "entity_identity_review_actions" in text
+    assert "fn_entity_grounding_append_only" in text
+
+
+def test_rfc0053_migration_024_exists_on_disk() -> None:
+    path = MIGRATIONS_DIR / "024_claim_grounding_runtime.sql"
+    assert path.exists(), f"missing migration: {path}"
+    text = path.read_text(encoding="utf-8")
+    assert "RFC 0053" in text
+    assert "claim_grounding_requests" in text
+    assert "claim_grounding_responses" in text
+    assert "claim_grounding_network_dispatches" in text
+    assert "claim_grounding_grants" in text
+    assert "claim_grounding_grant_uses" in text
+    assert "claim_grounding_links" in text
+    assert "fn_claim_grounding_append_only" in text
+
+
 def test_rfc0021_migration_010_applies_via_conn_fixture(conn) -> None:
     """The conftest fixture already runs ``migrate(conn)``; presence of the
     new tables/views is the contract."""
@@ -551,9 +585,7 @@ def _insert_striatum_projection_generation(
 
 
 def test_016_striatum_packet_audits_schema_applies(conn) -> None:
-    row = conn.execute(
-        "SELECT to_regclass('public.striatum_packet_audits') IS NOT NULL"
-    ).fetchone()
+    row = conn.execute("SELECT to_regclass('public.striatum_packet_audits') IS NOT NULL").fetchone()
     assert row[0] is True
 
     for index in (
@@ -800,6 +832,407 @@ def test_016_striatum_packet_audits_match_generation_pair_and_append_only(conn) 
             (audit_id,),
         )
     assert update_exc.value.diag.sqlstate == "P0001"
+    conn.rollback()
+
+
+def test_022_generic_evidence_reference_index_schema_applies(conn) -> None:
+    for table in ("evidence_items", "evidence_refs"):
+        row = conn.execute("SELECT to_regclass(%s) IS NOT NULL", (f"public.{table}",)).fetchone()
+        assert row[0] is True, f"table missing: {table}"
+
+    source_id = conn.execute("SELECT gen_random_uuid()").fetchone()[0]
+    item_id = conn.execute(
+        """
+        INSERT INTO evidence_items (
+            tenant_id,
+            corpus_id,
+            source_kind,
+            source_table,
+            source_id,
+            content_hash,
+            provenance
+        )
+        VALUES (
+            'personal',
+            'personal',
+            'markdown_tree',
+            'markdown_files',
+            %s,
+            repeat('a', 64),
+            '{}'::jsonb
+        )
+        RETURNING id
+        """,
+        (source_id,),
+    ).fetchone()[0]
+    conn.execute(
+        """
+        INSERT INTO evidence_refs (
+            evidence_item_id,
+            tenant_id,
+            corpus_id,
+            ref_kind,
+            ref_value,
+            ref_value_normalized,
+            source_table,
+            source_id
+        )
+        VALUES (
+            %s,
+            'personal',
+            'personal',
+            'path',
+            'README.md',
+            'readme.md',
+            'markdown_files',
+            %s
+        )
+        """,
+        (item_id, source_id),
+    )
+
+    with pytest.raises(errors.UniqueViolation):
+        conn.execute(
+            """
+            INSERT INTO evidence_refs (
+                evidence_item_id,
+                tenant_id,
+                corpus_id,
+                ref_kind,
+                ref_value,
+                ref_value_normalized,
+                source_table,
+                source_id
+            )
+            VALUES (
+                %s,
+                'personal',
+                'personal',
+                'path',
+                'README.md',
+                'readme.md',
+                'markdown_files',
+                %s
+            )
+            """,
+            (item_id, source_id),
+        )
+    conn.rollback()
+
+
+def test_023_entity_grounding_review_schema_and_append_only(conn) -> None:
+    source_kind_row = conn.execute("SELECT 'entity_grounding'::source_kind::text").fetchone()
+    assert source_kind_row[0] == "entity_grounding"
+
+    evidence_id = conn.execute(
+        """
+        INSERT INTO entity_grounding_evidence (
+            tenant_id,
+            corpus_id,
+            query_text,
+            entity_kind,
+            content_hash,
+            content_excerpt
+        )
+        VALUES (
+            'personal',
+            'personal',
+            'OpenAI Codex',
+            'product',
+            repeat('b', 64),
+            'Local grounding fixture.'
+        )
+        RETURNING id
+        """
+    ).fetchone()[0]
+    action_id = conn.execute(
+        """
+        INSERT INTO entity_identity_review_actions (
+            tenant_id,
+            corpus_id,
+            action_kind,
+            grounding_evidence_id,
+            actor
+        )
+        VALUES (
+            'personal',
+            'personal',
+            'grounding_evidence_attach',
+            %s,
+            'test'
+        )
+        RETURNING id
+        """,
+        (evidence_id,),
+    ).fetchone()[0]
+
+    with pytest.raises(errors.RaiseException) as update_exc:
+        conn.execute(
+            "UPDATE entity_grounding_evidence SET entity_kind = 'tool' WHERE id = %s",
+            (evidence_id,),
+        )
+    assert update_exc.value.diag.sqlstate == "P0001"
+    conn.rollback()
+
+    with pytest.raises(errors.RaiseException) as delete_exc:
+        conn.execute(
+            "DELETE FROM entity_identity_review_actions WHERE id = %s",
+            (action_id,),
+        )
+    assert delete_exc.value.diag.sqlstate == "P0001"
+    conn.rollback()
+
+
+def test_024_claim_grounding_runtime_schema_and_append_only(conn) -> None:
+    for table in (
+        "claim_grounding_requests",
+        "claim_grounding_responses",
+        "claim_grounding_network_dispatches",
+        "claim_grounding_grants",
+        "claim_grounding_grant_uses",
+        "claim_grounding_links",
+    ):
+        row = conn.execute("SELECT to_regclass(%s) IS NOT NULL", (f"public.{table}",)).fetchone()
+        assert row[0] is True, f"table missing: {table}"
+
+    request_id = conn.execute(
+        """
+        INSERT INTO claim_grounding_requests (
+            tenant_id,
+            corpus_id,
+            extraction_prompt_version,
+            extraction_model_version,
+            surface_form,
+            mention_role,
+            candidate_entity_kinds,
+            source_refs,
+            network_grant,
+            allowed_modes
+        )
+        VALUES (
+            'personal',
+            'personal',
+            'extractor.v1.test',
+            'local-model.test',
+            'Tartine',
+            'subject',
+            ARRAY['product'],
+            '[{"target_table":"messages","target_id":"00000000-0000-0000-0000-000000000001"}]'::jsonb,
+            '{"grant_id":"00000000-0000-0000-0000-000000000002"}'::jsonb,
+            ARRAY['local_lookup','network_fetch']
+        )
+        RETURNING id
+        """
+    ).fetchone()[0]
+    grant_id = conn.execute(
+        """
+        INSERT INTO claim_grounding_grants (
+            tenant_id,
+            corpus_id,
+            request_id,
+            grant_status,
+            grant_purpose,
+            target_mode,
+            surface_form,
+            search_query,
+            query_text_class,
+            query_privacy_tier,
+            allowed_network_targets,
+            granted_by,
+            granted_at,
+            expires_at
+        )
+        VALUES (
+            'personal',
+            'personal',
+            %s,
+            'approved',
+            'entity_grounding',
+            'network_fetch',
+            'Tartine',
+            'Tartine',
+            'entity_surface_form',
+            1,
+            ARRAY['internet_search'],
+            'operator',
+            '2026-05-18T00:00:00Z',
+            '2026-05-18T01:00:00Z'
+        )
+        RETURNING id
+        """,
+        (request_id,),
+    ).fetchone()[0]
+    dispatch_id = conn.execute(
+        """
+        INSERT INTO claim_grounding_network_dispatches (
+            request_id,
+            grant_id,
+            tenant_id,
+            corpus_id,
+            target_mode,
+            target_adapter,
+            search_query,
+            query_privacy_tier,
+            dispatch_status
+        )
+        VALUES (
+            %s,
+            %s,
+            'personal',
+            'personal',
+            'network_fetch',
+            'internet_search',
+            'Tartine',
+            1,
+            'succeeded'
+        )
+        RETURNING id
+        """,
+        (request_id, grant_id),
+    ).fetchone()[0]
+    conn.execute(
+        """
+        INSERT INTO claim_grounding_grant_uses (
+            grant_id,
+            request_id,
+            dispatch_id,
+            tenant_id,
+            corpus_id,
+            use_status,
+            target_adapter,
+            search_query,
+            query_privacy_tier
+        )
+        VALUES (
+            %s,
+            %s,
+            %s,
+            'personal',
+            'personal',
+            'verified',
+            'internet_search',
+            'Tartine',
+            1
+        )
+        """,
+        (grant_id, request_id, dispatch_id),
+    )
+    evidence_id = conn.execute(
+        """
+        INSERT INTO entity_grounding_evidence (
+            tenant_id,
+            corpus_id,
+            query_text,
+            entity_kind,
+            content_hash,
+            content_excerpt
+        )
+        VALUES (
+            'personal',
+            'personal',
+            'Tartine',
+            'product',
+            repeat('c', 64),
+            'Public grounding fixture.'
+        )
+        RETURNING id
+        """
+    ).fetchone()[0]
+    response_id = conn.execute(
+        """
+        INSERT INTO claim_grounding_responses (
+            request_id,
+            tenant_id,
+            corpus_id,
+            status,
+            mode,
+            network_fetch,
+            candidates,
+            broker_version
+        )
+        VALUES (
+            %s,
+            'personal',
+            'personal',
+            'resolved',
+            'network_fetch',
+            'performed_by_grounding_broker',
+            jsonb_build_array(jsonb_build_object(
+                'candidate_id', 'candidate-1',
+                'grounding_evidence_ids', jsonb_build_array(%s::text)
+            )),
+            'grounding-broker.test'
+        )
+        RETURNING id
+        """,
+        (request_id, evidence_id),
+    ).fetchone()[0]
+    conn.execute(
+        """
+        INSERT INTO claim_grounding_links (
+            request_id,
+            response_id,
+            grounding_evidence_id,
+            tenant_id,
+            corpus_id,
+            link_kind,
+            response_candidate_id
+        )
+        VALUES (
+            %s,
+            %s,
+            %s,
+            'personal',
+            'personal',
+            'response_candidate_to_evidence',
+            'candidate-1'
+        )
+        """,
+        (request_id, response_id, evidence_id),
+    )
+
+    with pytest.raises(errors.CheckViolation):
+        conn.execute(
+            """
+            INSERT INTO claim_grounding_responses (
+                request_id,
+                status,
+                mode,
+                network_fetch,
+                response_payload,
+                broker_version
+            )
+            VALUES (
+                %s,
+                'not_found',
+                'local_lookup',
+                'not_requested',
+                '[]'::jsonb,
+                'grounding-broker.test'
+            )
+            """,
+            (request_id,),
+        )
+    conn.rollback()
+
+    with pytest.raises(errors.RaiseException) as update_exc:
+        conn.execute(
+            """
+            UPDATE claim_grounding_requests
+            SET surface_form = 'Changed'
+            WHERE id = %s
+            """,
+            (request_id,),
+        )
+    assert update_exc.value.diag.sqlstate == "P0001"
+    conn.rollback()
+
+    with pytest.raises(errors.RaiseException) as delete_exc:
+        conn.execute(
+            "DELETE FROM claim_grounding_responses WHERE id = %s",
+            (response_id,),
+        )
+    assert delete_exc.value.diag.sqlstate == "P0001"
     conn.rollback()
 
 

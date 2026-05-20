@@ -7,8 +7,14 @@ EXPORT_PATH := $(if $(filter command line,$(origin PATH)),$(PATH),)
 SEGMENTER_MODEL ?=
 SEGMENTER_MODEL_ENV := $(if $(SEGMENTER_MODEL),ENGRAM_SEGMENTER_MODEL="$(SEGMENTER_MODEL)",)
 STRIATUM_REPO ?= $(HOME)/git/striatum
+GROUNDING_BROKER_ROLE ?= engram_grounding_broker
+GROUNDING_BROKER_DATABASE_URL ?= $(DATABASE_URL)
+GROUNDING_BROKER_TENANT ?= personal
+GROUNDING_BROKER_CORPUS ?= personal
+GROUNDING_BROKER_DAEMON_LIMIT ?= 20
+GROUNDING_BROKER_DAEMON_INTERVAL ?= 10
 
-.PHONY: install db-up db-down wait-db migrate migrate-docker phase1-ingest-chatgpt phase1-ingest-chatgpt-docker phase1-ingest-claude phase1-ingest-claude-docker phase1-ingest-gemini phase1-ingest-gemini-docker phase1-ingest-striatum phase1-ingest-striatum-docker describe-corpus phase-projection-run project ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker phase2-segment phase2-segment-docker phase2-embed phase2-embed-docker phase2-run phase2-run-docker phase2-run-isolated segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker phase3-extract phase3-extract-docker phase3-consolidate phase3-consolidate-docker phase3-run phase3-run-docker phase3-re-extract phase3-interview-start phase3-interview-resume phase3-interview-history phase3-interview-export phase3-interview-list-sessions phase3-interview-coverage phase3-interview-enable-active-learning phase3-interview-serve phase4-refresh phase4-build-entities phase4-smoke phase4-smoke-docker test test-db test-docker test-db-docker eval-gates eval-source-ingestion-gates e2e-striatum schema-docs check-refs lint format typecheck install-striatum striatum-init phase4-validate phase4-prepare phase4-status phase4-gate-validate phase4-gate-prepare phase4-gate-status phase4-gate-dashboard rfc25-validate rfc25-prepare rfc25-status rfc25-impl-validate rfc25-impl-prepare rfc25-impl-status
+.PHONY: install db-up db-down wait-db migrate migrate-docker provision-grounding-broker check-grounding-broker grounding-broker-daemon phase1-ingest-chatgpt phase1-ingest-chatgpt-docker phase1-ingest-claude phase1-ingest-claude-docker phase1-ingest-gemini phase1-ingest-gemini-docker phase1-ingest-striatum phase1-ingest-striatum-docker describe-corpus phase-projection-run project evidence-refresh ingest-chatgpt ingest-chatgpt-docker ingest-claude ingest-claude-docker ingest-gemini ingest-gemini-docker phase2-segment phase2-segment-docker phase2-embed phase2-embed-docker phase2-run phase2-run-docker phase2-run-isolated segment segment-docker segment-isolated pipeline-isolated embed embed-docker extract extract-docker consolidate consolidate-docker pipeline pipeline-docker pipeline-3 pipeline-3-docker phase3-extract phase3-extract-docker phase3-consolidate phase3-consolidate-docker phase3-run phase3-run-docker phase3-re-extract phase3-interview-start phase3-interview-resume phase3-interview-history phase3-interview-export phase3-interview-list-sessions phase3-interview-coverage phase3-interview-enable-active-learning phase3-interview-serve phase4-refresh phase4-build-entities phase4-smoke phase4-smoke-docker no-egress-smoke test test-db test-docker test-db-docker eval-gates eval-source-ingestion-gates e2e-striatum e2e-context-synthetic e2e-claim-grounding-synthetic e2e-claim-grounding-runtime e2e-entity-grounding schema-docs check-refs lint format typecheck install-striatum striatum-init phase4-validate phase4-prepare phase4-status phase4-gate-validate phase4-gate-prepare phase4-gate-status phase4-gate-dashboard rfc25-validate rfc25-prepare rfc25-status rfc25-impl-validate rfc25-impl-prepare rfc25-impl-status
 
 install: .venv/.installed
 
@@ -35,6 +41,16 @@ migrate: install
 
 migrate-docker: install wait-db
 	ENGRAM_DATABASE_URL="$(DOCKER_DATABASE_URL)" $(PYTHON) -m engram.cli migrate
+
+provision-grounding-broker: install migrate
+	ENGRAM_DATABASE_URL="$(GROUNDING_BROKER_DATABASE_URL)" $(PYTHON) scripts/provision_grounding_broker_role.py --database-url "$(GROUNDING_BROKER_DATABASE_URL)" --role "$(GROUNDING_BROKER_ROLE)"
+
+check-grounding-broker: install
+	$(PYTHON) scripts/check_grounding_broker_role.py --database-url "$(GROUNDING_BROKER_DATABASE_URL)" --role "$(GROUNDING_BROKER_ROLE)"
+
+grounding-broker-daemon: install
+	@if [ -z "$$ENGRAM_ENTITY_GROUNDING_BROKER_DATABASE_URL" ]; then echo "Set ENGRAM_ENTITY_GROUNDING_BROKER_DATABASE_URL to the restricted broker DSN"; exit 2; fi
+	$(PYTHON) -m engram.cli entity-grounding broker-daemon --tenant "$(GROUNDING_BROKER_TENANT)" --corpus "$(GROUNDING_BROKER_CORPUS)" --limit "$(GROUNDING_BROKER_DAEMON_LIMIT)" --interval "$(GROUNDING_BROKER_DAEMON_INTERVAL)"
 
 phase1-ingest-chatgpt: install
 	@if [ -z "$(EXPORT_PATH)" ]; then echo "Usage: make phase1-ingest-chatgpt PATH=/path/to/chatgpt-export"; exit 2; fi
@@ -75,6 +91,9 @@ phase-projection-run: install
 	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli phase-projection run --tenant "$(or $(TENANT),striatum)" --corpus "$(or $(CORPUS),striatum)"
 
 project: phase-projection-run
+
+evidence-refresh: install
+	ENGRAM_DATABASE_URL="$(DATABASE_URL)" $(PYTHON) -m engram.cli evidence refresh-index --tenant "$(or $(TENANT),personal)" --corpus "$(or $(CORPUS),personal)"
 
 ingest-chatgpt:
 	@echo "warning: make ingest-chatgpt is deprecated; use make phase1-ingest-chatgpt" >&2
@@ -268,6 +287,33 @@ eval-source-ingestion-gates: install test-db
 
 e2e-striatum: install test-db
 	ENGRAM_TEST_DATABASE_URL="$(TEST_DATABASE_URL)" $(PYTHON) -m pytest -vv tests/test_pipeline_smoke_striatum.py
+
+e2e-context-synthetic: install test-db
+	ENGRAM_TEST_DATABASE_URL="$(TEST_DATABASE_URL)" $(PYTHON) -m pytest -vv tests/test_context_eval_synthetic_e2e.py
+
+e2e-claim-grounding-synthetic: install test-db
+	ENGRAM_TEST_DATABASE_URL="$(TEST_DATABASE_URL)" $(PYTHON) -m pytest -vv tests/test_claim_grounding_synthetic_e2e.py
+
+e2e-claim-grounding-runtime: install test-db
+	ENGRAM_TEST_DATABASE_URL="$(TEST_DATABASE_URL)" $(PYTHON) -m pytest -vv \
+		tests/test_claim_grounding.py \
+		tests/test_claim_grounding_broker.py \
+		tests/test_claim_grounding_integration.py \
+		tests/test_claim_grounding_network.py \
+		tests/test_claim_grounding_runtime.py \
+		tests/test_claim_grounding_security.py \
+		tests/test_claim_grounding_synthetic_e2e.py \
+		$(wildcard tests/test_entity_grounding_daemon.py) \
+		$(wildcard tests/test_entity_grounding_workflow.py) \
+		$(wildcard tests/test_entity_grounding_materialization.py)
+
+e2e-entity-grounding: e2e-claim-grounding-runtime
+
+no-egress-smoke: install
+	@$(PYTHON) -m engram.cli no-egress run -- $(PYTHON) -c 'import errno, socket, sys; blocked = {errno.EACCES, errno.EHOSTUNREACH, errno.ENETDOWN, errno.ENETUNREACH, errno.EPERM}; sock = socket.socket(); sock.settimeout(0.25); rc = sock.connect_ex(("198.51.100.1", 9)); sock.close(); sys.exit(0 if rc in blocked else 1)'; \
+	rc=$$?; \
+	if [ "$$rc" -eq 125 ]; then echo "no-egress-smoke: unsupported on this host"; exit 0; fi; \
+	exit "$$rc"
 
 check-refs:
 	python3 scripts/check_artifact_refs.py --root .

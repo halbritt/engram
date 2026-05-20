@@ -1,0 +1,400 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "rfc-0053-claim-grounding-boundary-review-2026-05-18",
+  "workflow_version": "2026-05-18+initial",
+  "name": "Engram RFC 0053 Claim Grounding Boundary Review",
+  "branch": {
+    "mode": "confirm",
+    "allow_dirty": true,
+    "suggested_name": "engram/rfc0053-claim-grounding-boundary-review-2026-05-18"
+  },
+  "coordinator": {
+    "lane_id": "codex_author",
+    "role_id": "synthesizer"
+  },
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 6,
+    "require_disjoint_write_scopes": true
+  },
+  "cycles": [],
+  "lanes": {
+    "codex_privacy": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (privacy/query boundary lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_network": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (network/security lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_schema": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (schema/contract lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_runtime": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (runtime/integration lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_product": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (product/MCP lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_eval": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (eval gate lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_author": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (coordinator/author lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review", "synthesis"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_final": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (final review lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    }
+  },
+  "roles": {
+    "reviewer": {
+      "definition_path": "striatum/rfc-0053-claim-grounding-boundary-review-2026-05-18/roles/reviewer.md"
+    },
+    "ledger": {
+      "definition_path": "striatum/rfc-0053-claim-grounding-boundary-review-2026-05-18/roles/ledger.md"
+    },
+    "synthesizer": {
+      "definition_path": "striatum/rfc-0053-claim-grounding-boundary-review-2026-05-18/roles/synthesizer.md"
+    },
+    "author": {
+      "definition_path": "striatum/rfc-0053-claim-grounding-boundary-review-2026-05-18/roles/author.md"
+    },
+    "final_reviewer": {
+      "definition_path": "striatum/rfc-0053-claim-grounding-boundary-review-2026-05-18/roles/final_reviewer.md"
+    }
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "HUMAN_REQUIREMENTS.md", "required": true},
+    {"path": "DECISION_LOG.md", "required": true},
+    {"path": "BUILD_PHASES.md", "required": true},
+    {"path": "ROADMAP.md", "required": true},
+    {"path": "SPEC.md", "required": true},
+    {"path": "docs/AGENT_CONTEXT_NOTES.md", "required": true},
+    {"path": "docs/rfcs/README.md", "required": true},
+    {"path": "docs/rfcs/0053-claim-extraction-grounding-boundary.md", "required": true},
+    {"path": "docs/rfcs/0052-entity-identity-review-and-grounding.md", "required": true},
+    {"path": "docs/rfcs/0051-generic-evidence-reference-index.md", "required": true},
+    {"path": "docs/rfcs/0030-public-dataset-entity-grounding.md", "required": true},
+    {"path": "src/engram/claim_grounding.py", "required": true},
+    {"path": "docs/schemas/claim_grounding_request.v1.schema.json", "required": true},
+    {"path": "docs/schemas/claim_grounding_response.v1.schema.json", "required": true},
+    {"path": "tests/test_claim_grounding.py", "required": true},
+    {"path": "docs/reviews/rfc0053-claim-grounding-boundary/ADVERSARIAL_SECURITY_REVIEW.md", "required": true},
+    {"path": "docs/process/multi-agent-review-loop.md", "required": true},
+    {"path": "docs/process/project-judgment.md", "required": true}
+  ],
+  "jobs": [
+    {
+      "id": "review_privacy_query_boundary",
+      "type": "review",
+      "lane_id": "codex_privacy",
+      "role_id": "reviewer",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "title": "Review RFC 0053 privacy/query boundary",
+      "objective": "Review whether RFC 0053 correctly permits private entity-name search_query values while preventing raw surrounding corpus context from reaching an internet-search-capable broker.",
+      "task_prompt": {"path": "striatum/rfc-0053-claim-grounding-boundary-review-2026-05-18/prompts/review.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0053-claim-extraction-grounding-boundary.md"},
+        {"kind": "principles", "path": "HUMAN_REQUIREMENTS.md"},
+        {"kind": "security_review", "path": "docs/reviews/rfc0053-claim-grounding-boundary/ADVERSARIAL_SECURITY_REVIEW.md"},
+        {"kind": "validator", "path": "src/engram/claim_grounding.py"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_privacy_query_boundary.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md", "ROADMAP.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review_privacy_query_boundary", "kind": "finding", "path": "docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_privacy_query_boundary.md", "required": true}
+      ],
+      "review_policy": {"posture": "security"}
+    },
+    {
+      "id": "review_network_security",
+      "type": "review",
+      "lane_id": "codex_network",
+      "role_id": "reviewer",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "title": "Review RFC 0053 network broker security",
+      "objective": "Review internet-search-capable broker constraints: grants, credentials, SSRF/covert-channel controls, append-only evidence, and auditability before runtime implementation.",
+      "task_prompt": {"path": "striatum/rfc-0053-claim-grounding-boundary-review-2026-05-18/prompts/review.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0053-claim-extraction-grounding-boundary.md"},
+        {"kind": "security_review", "path": "docs/reviews/rfc0053-claim-grounding-boundary/ADVERSARIAL_SECURITY_REVIEW.md"},
+        {"kind": "validator", "path": "src/engram/claim_grounding.py"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_network_security.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md", "ROADMAP.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review_network_security", "kind": "finding", "path": "docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_network_security.md", "required": true}
+      ],
+      "review_policy": {"posture": "threat_model"}
+    },
+    {
+      "id": "review_schema_contract",
+      "type": "review",
+      "lane_id": "codex_schema",
+      "role_id": "reviewer",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "title": "Review RFC 0053 schema and validator contract",
+      "objective": "Review alignment between RFC prose, JSON schemas, Python dataclasses/validators, and tests for claim_grounding.request.v1 and response.v1.",
+      "task_prompt": {"path": "striatum/rfc-0053-claim-grounding-boundary-review-2026-05-18/prompts/review.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0053-claim-extraction-grounding-boundary.md"},
+        {"kind": "validator", "path": "src/engram/claim_grounding.py"},
+        {"kind": "schema", "path": "docs/schemas/claim_grounding_request.v1.schema.json"},
+        {"kind": "schema", "path": "docs/schemas/claim_grounding_response.v1.schema.json"},
+        {"kind": "tests", "path": "tests/test_claim_grounding.py"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_schema_contract.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md", "ROADMAP.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review_schema_contract", "kind": "finding", "path": "docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_schema_contract.md", "required": true}
+      ],
+      "review_policy": {"posture": "devils_advocate"}
+    },
+    {
+      "id": "review_runtime_integration",
+      "type": "review",
+      "lane_id": "codex_runtime",
+      "role_id": "reviewer",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "title": "Review RFC 0053 runtime integration path",
+      "objective": "Review whether the current scaffold and RFC define a credible next runtime path for extraction sidecars, persistence, local lookup, idempotency, and no-egress enforcement.",
+      "task_prompt": {"path": "striatum/rfc-0053-claim-grounding-boundary-review-2026-05-18/prompts/review.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0053-claim-extraction-grounding-boundary.md"},
+        {"kind": "validator", "path": "src/engram/claim_grounding.py"},
+        {"kind": "grounding", "path": "src/engram/entity_grounding.py"},
+        {"kind": "mcp", "path": "src/engram/mcp_stdio.py"},
+        {"kind": "tests", "path": "tests/test_claim_grounding.py"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_runtime_integration.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md", "ROADMAP.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review_runtime_integration", "kind": "finding", "path": "docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_runtime_integration.md", "required": true}
+      ],
+      "review_policy": {"posture": "latency_performance"}
+    },
+    {
+      "id": "review_product_mcp_surface",
+      "type": "review",
+      "lane_id": "codex_product",
+      "role_id": "reviewer",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "title": "Review RFC 0053 product and MCP grounding surface",
+      "objective": "Review whether MCP is the right constrained surface for an LLM agent to request grounding, whether operator grant UX is specified enough, and whether private query display/audit is explicit.",
+      "task_prompt": {"path": "striatum/rfc-0053-claim-grounding-boundary-review-2026-05-18/prompts/review.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0053-claim-extraction-grounding-boundary.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0052-entity-identity-review-and-grounding.md"},
+        {"kind": "mcp", "path": "src/engram/mcp_stdio.py"},
+        {"kind": "roadmap", "path": "ROADMAP.md"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_product_mcp_surface.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md", "ROADMAP.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review_product_mcp_surface", "kind": "finding", "path": "docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_product_mcp_surface.md", "required": true}
+      ],
+      "review_policy": {"posture": "ergonomics_dx"}
+    },
+    {
+      "id": "review_eval_gate",
+      "type": "review",
+      "lane_id": "codex_eval",
+      "role_id": "reviewer",
+      "parallel_group": "independent_reviews",
+      "fresh_session_required": true,
+      "title": "Review RFC 0053 synthetic e2e gate",
+      "objective": "Review whether the proposed synthetic e2e gate proves ambiguity resolution, denied/granted network requests, poisoned evidence handling, and no-egress extractor behavior before grounding affects extraction.",
+      "task_prompt": {"path": "striatum/rfc-0053-claim-grounding-boundary-review-2026-05-18/prompts/review.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0053-claim-extraction-grounding-boundary.md"},
+        {"kind": "tests", "path": "tests/test_claim_grounding.py"},
+        {"kind": "fixture", "path": "tests/fixtures/context_eval/synthetic_e2e"},
+        {"kind": "roadmap", "path": "ROADMAP.md"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_eval_gate.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md", "ROADMAP.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "review_eval_gate", "kind": "finding", "path": "docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_eval_gate.md", "required": true}
+      ],
+      "review_policy": {"posture": "devils_advocate"}
+    },
+    {
+      "id": "findings_ledger",
+      "type": "ledger",
+      "lane_id": "codex_author",
+      "role_id": "ledger",
+      "fresh_session_required": true,
+      "title": "Record RFC 0053 findings ledger",
+      "objective": "Normalize all six independent RFC 0053 reviews into one stable findings ledger.",
+      "task_prompt": {"path": "striatum/rfc-0053-claim-grounding-boundary-review-2026-05-18/prompts/findings_ledger.md"},
+      "inputs": [
+        {"kind": "review", "path": "docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_privacy_query_boundary.md"},
+        {"kind": "review", "path": "docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_network_security.md"},
+        {"kind": "review", "path": "docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_schema_contract.md"},
+        {"kind": "review", "path": "docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_runtime_integration.md"},
+        {"kind": "review", "path": "docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_product_mcp_surface.md"},
+        {"kind": "review", "path": "docs/reviews/rfc0053-claim-grounding-boundary/REVIEW_eval_gate.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0053-claim-grounding-boundary/FINDINGS_LEDGER.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md", "ROADMAP.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "findings_ledger", "kind": "findings_ledger", "path": "docs/reviews/rfc0053-claim-grounding-boundary/FINDINGS_LEDGER.md", "required": true}
+      ]
+    },
+    {
+      "id": "synthesis",
+      "type": "synthesis",
+      "lane_id": "codex_author",
+      "role_id": "synthesizer",
+      "fresh_session_required": true,
+      "title": "Synthesize RFC 0053 review findings",
+      "objective": "Classify RFC 0053 review findings and produce accepted/deferred/rejected deltas for RFC/docs/tests.",
+      "task_prompt": {"path": "striatum/rfc-0053-claim-grounding-boundary-review-2026-05-18/prompts/synthesis.md"},
+      "inputs": [
+        {"kind": "findings_ledger", "path": "docs/reviews/rfc0053-claim-grounding-boundary/FINDINGS_LEDGER.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0053-claim-extraction-grounding-boundary.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": ["docs/reviews/rfc0053-claim-grounding-boundary/SYNTHESIS.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md", "ROADMAP.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "synthesis", "kind": "synthesis", "path": "docs/reviews/rfc0053-claim-grounding-boundary/SYNTHESIS.md", "required": true}
+      ]
+    },
+    {
+      "id": "apply_accepted_deltas",
+      "type": "draft",
+      "lane_id": "codex_author",
+      "role_id": "author",
+      "fresh_session_required": true,
+      "title": "Apply accepted RFC 0053 review deltas",
+      "objective": "Apply accepted review deltas to RFC 0053 and adjacent docs without promoting the RFC.",
+      "task_prompt": {"path": "striatum/rfc-0053-claim-grounding-boundary-review-2026-05-18/prompts/apply_accepted_deltas.md"},
+      "inputs": [
+        {"kind": "synthesis", "path": "docs/reviews/rfc0053-claim-grounding-boundary/SYNTHESIS.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0053-claim-extraction-grounding-boundary.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/rfcs/0053-claim-extraction-grounding-boundary.md",
+          "docs/rfcs/README.md",
+          "docs/schemas/README.md",
+          "ROADMAP.md",
+          "CHANGELOG.md",
+          "docs/reviews/rfc0053-claim-grounding-boundary/APPLY_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "DECISION_LOG.md", "HUMAN_REQUIREMENTS.md", "BUILD_PHASES.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "apply_handoff", "kind": "handoff", "path": "docs/reviews/rfc0053-claim-grounding-boundary/APPLY_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "final_review",
+      "type": "review",
+      "lane_id": "codex_final",
+      "role_id": "final_reviewer",
+      "fresh_session_required": true,
+      "title": "Final review of RFC 0053 review package",
+      "objective": "Audit that accepted findings were applied, residual blockers are clear, and the RFC still preserves the explicit network/corpus split.",
+      "task_prompt": {"path": "striatum/rfc-0053-claim-grounding-boundary-review-2026-05-18/prompts/final_review.md"},
+      "inputs": [
+        {"kind": "findings_ledger", "path": "docs/reviews/rfc0053-claim-grounding-boundary/FINDINGS_LEDGER.md"},
+        {"kind": "synthesis", "path": "docs/reviews/rfc0053-claim-grounding-boundary/SYNTHESIS.md"},
+        {"kind": "handoff", "path": "docs/reviews/rfc0053-claim-grounding-boundary/APPLY_HANDOFF.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0053-claim-extraction-grounding-boundary.md"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": ["docs/reviews/rfc0053-claim-grounding-boundary/FINAL_REVIEW.md"],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "docs/rfcs/", "CHANGELOG.md", "DECISION_LOG.md", "ROADMAP.md"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "final_review", "kind": "finding", "path": "docs/reviews/rfc0053-claim-grounding-boundary/FINAL_REVIEW.md", "required": true}
+      ],
+      "review_policy": {"posture": "neutral"}
+    }
+  ],
+  "edges": [
+    {"from": "review_privacy_query_boundary", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_network_security", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_schema_contract", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_runtime_integration", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_product_mcp_surface", "on": "completed", "to": "findings_ledger"},
+    {"from": "review_eval_gate", "on": "completed", "to": "findings_ledger"},
+    {"from": "findings_ledger", "on": "completed", "to": "synthesis"},
+    {"from": "synthesis", "on": "completed", "to": "apply_accepted_deltas"},
+    {"from": "apply_accepted_deltas", "on": "completed", "to": "final_review"}
+  ]
+}

@@ -7,8 +7,10 @@ The primary product surface is `context_for(conversation)` — a multi-lane
 compiler that retrieves relevant beliefs, entities, and recent signals and
 renders them as a sectioned context block for injection into an AI assistant.
 
-All data stays on-device. No cloud services. No outbound network from any
-corpus-reading process.
+All corpus data stays on-device by default. No cloud dependency. No outbound
+network from any corpus-reading process. Explicit operator-granted grounding
+broker searches are a separate RFC 0053 capability and may send only the
+bounded entity search query, not raw corpus context.
 
 ## What it ingests (V1)
 
@@ -17,9 +19,9 @@ corpus-reading process.
 | ChatGPT | JSON export | ingested (3,437 conversations) |
 | Claude | ZIP export | ingested (78 conversations) |
 | Gemini | Google Takeout JSON | ingested (4,401 conversations) |
-| Striatum | RFC 0044 JSONL corpus bundle | optional local application-memory tenant, raw retrieval only |
-| Obsidian | Vault on disk | Phase 1.5+ |
-| MCP capture | Live via MCP tool | Phase 4+ |
+| Striatum | RFC 0044 JSONL corpus bundle | optional local application-memory tenant with raw ingest/search/fetch, packet building, and MCP serving |
+| Obsidian | Vault on disk | deferred; schema-reserved |
+| MCP capture | Live via MCP tool | deferred; MCP serving exists separately |
 
 ## Architecture in one diagram
 
@@ -27,7 +29,7 @@ corpus-reading process.
 sources
   → conversations / messages / notes / captures   (immutable raw evidence)
   → segments                                       (topic-segmented, embedded)
-  → claims                                         (LLM-extracted, grounded)
+  → claims                                         (LLM-extracted, linked to local evidence)
   → beliefs                                        (bitemporal, stability-classed)
   → current_beliefs view
   → context_for(conversation)                      (multi-lane, sectioned output)
@@ -41,7 +43,8 @@ prior rows without overwriting them.
 ## Key design properties
 
 - **Three-tier separation:** raw evidence → claims → beliefs. No synthesis
-  without grounding; accepted beliefs require at least one evidence id.
+  without local evidence grounding; accepted beliefs require at least one
+  evidence id. Entity/network grounding is separate and gated by RFC 0052/0053.
 - **Bitemporal beliefs:** `valid_from/valid_to` + `observed_at/recorded_at`.
   Contradictions close the prior row and insert a new one — never UPDATE.
 - **Topic segments as the embedding unit:** whole conversations are too broad;
@@ -54,7 +57,9 @@ prior rows without overwriting them.
   inside a tenant. This is local isolation under one machine owner, not hosted
   multi-tenancy.
 - **No outbound network** from any corpus-reading process — enforced at the
-  OS level, not just by discipline.
+  OS level, not just by discipline. Optional RFC 0053 broker-owned internet
+  grounding is outside the corpus-reading process, disabled by default, and
+  requires a persisted grant.
 
 ## RFC 0044 Striatum Memory
 
@@ -68,20 +73,23 @@ engram describe-corpus striatum
 engram-mcp-stdio --tenant striatum --corpus striatum
 ```
 
-The MCP stdio server exposes exactly four read-only tools:
-`engram.search`, `engram.fetch_reference`, `engram.describe_corpus`, and
-`engram.health`. Default Striatum operator access grants only
+The MCP stdio server exposes local tools: `engram.search`,
+`engram.fetch_reference`, `engram.describe_corpus`, `engram.health`,
+`engram.build_packet`, capability-gated `engram.context_for`, and local-only
+`engram.ground_entity`. Default Striatum operator access grants
 `memory.read_striatum` for `tenant_id='striatum', corpus_id='striatum'` plus
 `memory.describe`. Personal memory requires `memory.read_personal`; cross-tenant
 and cross-corpus retrieval require explicit Engram-local capabilities.
 
 ## Build order
 
-D026's pre-Phase-2 adversarial gate has been synthesized into D027-D033.
-Current work is Phase 2 preflight probes, then segmentation + embeddings.
-After Phase 2, the remaining phases run with a smoke gate at the end.
-Currently at **Phase 1.5 complete** (all three AI conversation sources
-ingested, schema stable).
+Phase 1-3 are implemented and the primary claim/belief run is complete.
+Phase 4/5 have narrow serving and review slices: `current_beliefs`, belief
+review actions, minimal `context_for`, MCP serving, snapshots/feedback, generic
+evidence/reference indexing, and local grounding. A0-A9 architecture follow-up
+slices landed; active work is now Step 5A synthetic context-eval e2e with local
+proper-noun grounding, followed by Step 5B owner gold-set authoring and the real
+context-eval loop.
 
 See [BUILD_PHASES.md](BUILD_PHASES.md) for the full phase breakdown and
 acceptance criteria.

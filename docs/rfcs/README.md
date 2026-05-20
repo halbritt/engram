@@ -10,9 +10,9 @@ at the spec. The RFC remains provenance; it should not keep being reviewed as
 the implementation contract.
 
 The **Status** column tracks document state (proposal / specified / accepted /
-promoted / superseded). The **Implementation** column tracks whether the
+accepted_as_design_reference / promoted / superseded). The **Implementation** column tracks whether the
 proposal's deliverables exist in the codebase as of the last index sweep
-(2026-05-14): `implemented`, `partial`, `none`, or `n/a` for idea-capture docs
+(2026-05-19): `implemented`, `partial`, `none`, or `n/a` for idea-capture docs
 without a concrete code deliverable. Implementation status is descriptive, not
 prescriptive — a `none` here is not a TODO unless promoted via
 `BUILD_PHASES.md` or `DECISION_LOG.md`.
@@ -62,10 +62,37 @@ prescriptive — a `none` here is not a TODO unless promoted via
 | [0048](0048-striatum-context-injection-policy.md) | accepted_as_design_reference | landed via `MemoryService.build_packet`, `engram.build_packet` MCP tool, `striatum_packet_audits` | Striatum context-injection policy |
 | [0049](0049-striatum-evaluation-gates.md) | accepted_as_design_reference | landed in part via `make eval-gates`; full gate matrix is incremental | Striatum evaluation, no-egress, and retrieval-quality gates |
 | [0050](0050-source-ingestion-expansion.md) | accepted_as_design_reference | landed via Layers 1-6 of `SOURCE_INGESTION_BACKLOG.md` (migrations 017-020) | Source-ingestion expansion and source-contract template |
+| [0051](0051-generic-evidence-reference-index.md) | accepted_as_design_reference | partial (migration 022, generic backfill/search substrate) | Generic evidence and reference index |
+| [0052](0052-entity-identity-review-and-grounding.md) | accepted_as_design_reference | partial (migration 023, local MCP grounding lookup substrate) | Entity identity review and grounding |
+| [0053](0053-claim-extraction-grounding-boundary.md) | proposal | partial (request/response/network-dispatch schemas, validators, sidecar migration/helpers, grant lifecycle/product CLI, disabled extraction sidecars, constrained generic HTTP/Tavily adapter scaffolds, broker credential tests, synthetic/runtime e2e; no default live provider) | Claim extraction grounding boundary |
+| [0054](0054-entity-grounding-batch-workflow.md) | proposal | implemented (batch worker, CLI seam, and runtime gate coverage present) | Entity grounding batch workflow |
+| [0055](0055-grounding-evidence-materialization.md) | proposal | implemented (materializer, broker-DSN CLI seam, and runtime gate coverage present) | Grounding evidence materialization |
 
-Index note: RFC 0045 stays proposal-only. RFC 0046-0050 are accepted as
+Index note: RFC 0045 stays proposal-only. RFC 0046-0052 are accepted as
 the design reference for their respective implementation lanes per
-[D083](../../DECISION_LOG.md#d083) and [D084](../../DECISION_LOG.md#d084).
+[D083](../../DECISION_LOG.md#d083), [D084](../../DECISION_LOG.md#d084), and
+[D094](../../DECISION_LOG.md#d094).
+RFC 0053 remains proposal-only; it documents the missing extractor/grounder
+boundary, including a constrained network-capable broker contract. The current
+code scaffolds persisted grants, a CLI grant lifecycle, disabled extraction
+sidecars, credential tests, and disabled configured generic HTTP/Tavily adapter
+scaffolds, but does not enable a default live provider or allow the extractor to
+use network.
+Its 2026-05-18 Striatum review accepted blockers around exact entity-surface
+network queries, persisted grants, broker credential separation, sidecar/audit
+persistence, and a dedicated claim-grounding gate before extraction output may
+depend on grounding. The starter gates are `make e2e-claim-grounding-synthetic`
+and `make e2e-claim-grounding-runtime`.
+RFC 0054 and RFC 0055 split the next entity-wide grounding workflow into a
+draft-only batch selection/grant flow and a separate approved-grant
+materialization flow that must write local grounding evidence before responses
+or review actions consume provider rows. The operator command names are wired as
+`engram entity-grounding draft` and `engram entity-grounding process-approved`;
+both dispatch lazily to the dedicated implementation modules and sanitize JSON
+output so provider secrets are not displayed. The 2026-05-19 Striatum run added
+post-review hardening for byte-exact entity-surface queries, broker-DSN
+materializer authority, materializer-side public URL filtering, and
+privacy-tier preservation on evidence-attachment review actions.
 Acceptance as design reference does not freeze the proposal text against
 future implementation drift — when code diverges, the RFC text gets a
 patch, not a new acceptance.

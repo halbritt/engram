@@ -1,6 +1,18 @@
 # Striatum Memory Roadmap
 
-Last updated: 2026-05-14
+Last updated: 2026-05-17
+
+Execution note: this roadmap is historical orientation. The active execution
+plan is [`STRIATUM_MEMORY_E2E_BACKLOG.md`](STRIATUM_MEMORY_E2E_BACKLOG.md).
+As of 2026-05-17, the working Striatum path has advanced beyond the baseline
+below: Layers 1-5 landed, `make e2e-striatum` passes, RFC 0046-RFC 0049 are
+accepted as design reference by D083, default Striatum operator-token
+authorization is recorded by D085, and the architecture follow-up A0-A9 slice
+adds unified retrieval hits, non-capture `fetch_reference`, `context_for`, MCP
+serving, context snapshots/feedback, no-egress probes, and central policy
+checks, generic exact-reference indexing, and local-only MCP entity grounding.
+Generated products remain deferred until a downstream generated-product spec is
+accepted. Remote grounding fetches and full entity review UI remain gated.
 
 ## Purpose
 
@@ -43,8 +55,10 @@ RFC 0044 established the first Engram-side boundary for Striatum memory:
 - The default Striatum operator token can read Striatum memory and describe
   corpora, but it cannot read personal memory.
 
-This is sufficient for Phase 1 raw retrieval. It is not yet enough for a full
-Striatum instance memory system.
+This was sufficient for Phase 1 raw retrieval. The current implementation also
+has Striatum projections, exact-reference retrieval, packet building/audits,
+MCP smoke coverage, and the narrow `context_for` serving path. See the active
+backlog for current sequencing and gates.
 
 ## Target Memory Coverage
 
@@ -194,8 +208,8 @@ Engram should augment Striatum context, not become a runtime dependency.
 
 ### Phase 6: Produce Derived Memory Products
 
-After raw ingestion, projections, and retrieval are reliable, add generated
-memory products:
+After raw ingestion, projections, retrieval, and the generic evidence/reference
+index are reliable, add generated memory products:
 
 - known-friction ledger;
 - prior-decisions index;
@@ -206,7 +220,8 @@ memory products:
 - RFC lineage map.
 
 These products are derived artifacts. They must cite raw evidence and must not
-replace the evidence they summarize.
+replace the evidence they summarize. D089 keeps them retrieval-invisible until
+a downstream generated-product specification is accepted.
 
 ### Phase 7: Add Evaluation Gates
 
@@ -223,7 +238,7 @@ Before routine operator use, add gates for:
 
 ## Execution Backlog
 
-Recommended follow-up order:
+Historical recommended follow-up order:
 
 1. RFC alignment cleanup for the RFC 0047, RFC 0046, RFC 0048, and RFC 0049
    follow-up findings carried by the final synthesis.
@@ -253,8 +268,9 @@ contract:
 
 ## Immediate Next Step
 
-Complete the RFC alignment cleanup called out by the final synthesis, then
-gather RFC 0044 hardening and EG-000 evidence before any projection, retrieval,
-or operator-context implementation depends on this package. RFC 0045-RFC 0049
-remain proposal material until a recorded project decision or accepted spec
-handoff makes a binding contract.
+Use [`STRIATUM_MEMORY_E2E_BACKLOG.md`](STRIATUM_MEMORY_E2E_BACKLOG.md) for
+execution. The next Striatum-memory work is incremental hardening and operator
+documentation: keep the real-bundle runbook current, complete remaining Layer 4
+hardening gates only where still valuable, defer vector retrieval, keep
+generated products behind the downstream spec required by D089, and choose any
+RFC 0050 Stage 3+ source family from real `context_for` eval failures.

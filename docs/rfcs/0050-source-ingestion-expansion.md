@@ -8,10 +8,11 @@ Role: synthesizer
 |-------|-------|
 | RFC | RFC-0050 |
 | Title | Source Ingestion Expansion And Source Contract |
-| Status | proposal |
+| Status | accepted_as_design_reference |
 | Date | 2026-05-15 |
 | Authors | claude lane, codex lane, gemini lane |
 | Synthesizer | codex lane |
+| Implementation | landed via Layers 1-6 of `SOURCE_INGESTION_BACKLOG.md` (migrations 017-020) |
 | Primary input | `docs/design/source-ingestion-expansion-proposal-2026-05-15.md` |
 | Review inputs | `docs/reviews/source-ingestion-rfc-research-2026-05-15/DRAFT_claude.md`, `DRAFT_codex.md`, `DRAFT_gemini.md`, `PRIOR_ART_DOSSIER.md`, `FINDINGS_LEDGER.md` |
 | Context | `AGENTS.md`, `README.md`, `HUMAN_REQUIREMENTS.md`, `SPEC.md`, `BUILD_PHASES.md`, `ROADMAP.md`, `docs/schema/README.md`, `STRIATUM_MEMORY_E2E_BACKLOG.md`, `docs/AGENT_CONTEXT_NOTES.md`, RFC 0033-RFC 0036, RFC 0044-RFC 0049 |
@@ -22,7 +23,8 @@ Engram can expand beyond AI conversation exports without weakening its core
 contract only if every new source family arrives through a declared local source
 contract.
 
-This RFC proposes that contract. Each adapter must define:
+This RFC is accepted as the design reference for that contract. Each adapter
+must define:
 
 1. the immutable raw evidence boundary;
 2. the rebuildable projection families it emits;
@@ -36,9 +38,9 @@ alignment where useful, and selected Markdown/project documents. Human
 communication exports, browser/app activity, media, location, health, finance,
 contacts, and live capture remain behind explicit later gates.
 
-This is a proposal only. It does not add source kinds, create migrations,
-promote adjacent RFCs, edit the decision log, edit the RFC index, or authorize
-default ingestion of new personal sources.
+This began as a proposal. D084 accepted it as design reference after Layers 1-6
+of `SOURCE_INGESTION_BACKLOG.md` landed. It does not authorize default ingestion
+of new personal sources or Stage 3+ source families.
 
 ## Context
 
@@ -102,8 +104,10 @@ before implementation starts.
 - No human-chat, email, or meeting-transcript claim extraction by default.
 - No personal-memory access from Striatum or any application-memory tenant by
   default.
-- No generated-product projection family until a separate generated-product
-  privacy, citation, audit, and gate contract is accepted.
+- Generated products remain retrieval-invisible and injection-ineligible until a
+  downstream generated-product implementation spec from RFC 0051 is accepted
+  per D089, covering privacy inheritance, provenance/citation, audit,
+  rebuildability, and eval gates.
 - No replacement of the current closed `source_kind` enum in the first
   implementation slice unless enum churn becomes a measured migration burden.
 
@@ -394,8 +398,9 @@ Generated summaries, packet text, daily biographies, OCR text, captions,
 source-specific summaries, and context renderings are derived products. They
 inherit privacy, sensitivity, citation, and audit requirements from the
 evidence they cite. They are not raw evidence. They are not eligible for a
-`generated_product` projection family until a separate generated-product
-contract is accepted.
+`generated_product` projection family until a downstream generated-product
+implementation spec from RFC 0051 is accepted per D089, covering privacy
+inheritance, provenance/citation, audit, rebuildability, and eval gates.
 
 ### Third-Party Data Gate
 
@@ -595,9 +600,9 @@ required before any source family becomes Level 3 or default-on extraction.
 | Media/location/life | Exact coordinate and biometric defaults hold; binary bodies not stored in ordinary rows; local model stages are versioned and no-egress; observation and coverage-gap rows exist before claims. |
 | Live capture | Capture is visibly enabled, locally disabled by default, and auditable; disable creates coverage gaps rather than silent absence. |
 
-## Initial Implementation Slice
+## Implemented Slice
 
-The next implementation slice should remain narrow:
+The D084 implementation slice remained narrow and landed:
 
 1. add a source contract template and example contracts for `git`,
    `build_artifact`, and `exported_chat`;
@@ -613,11 +618,13 @@ The next implementation slice should remain narrow:
    table equivalents;
 7. expose exact-reference retrieval by commit SHA, path, run id, artifact hash,
    and failure signature;
-8. keep full patch bodies, full logs, generated summaries, and human
+8. keeping full patch bodies, full logs, generated summaries, and human
    communications out of memory packets by default.
 
-This slice deliberately avoids human-chat extraction, media bodies, cloud APIs,
-live capture, generated products, and generic source-registry migration.
+This slice deliberately avoided human-chat extraction, media bodies, cloud
+APIs, live capture, generated products, and generic source-registry migration.
+RFC 0051 separately provides the now-landed generic `evidence_items` /
+`evidence_refs` exact-reference index substrate.
 
 ## Schema Direction
 

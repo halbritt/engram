@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import inspect
 import json
 import os
 import sys
@@ -8,9 +10,19 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from uuid import UUID
 
+from engram.build_artifact_import import import_build_artifacts
 from engram.chatgpt_export import IngestConflict as ChatGPTIngestConflict
 from engram.chatgpt_export import ingest_chatgpt_export
+from engram.claim_grounding import ClaimGroundingError, ground_claim_entity_locally
+from engram.claim_grounding_runtime import (
+    record_claim_grounding_approved_grant,
+    record_claim_grounding_denied_grant,
+    record_claim_grounding_draft_grant,
+    record_claim_grounding_request,
+    record_claim_grounding_revoked_grant,
+)
 from engram.claude_export import IngestConflict as ClaudeIngestConflict
 from engram.claude_export import ingest_claude_export
 from engram.consolidator import (
@@ -19,8 +31,19 @@ from engram.consolidator import (
     apply_phase3_reclassification_invalidations,
     consolidate_beliefs,
 )
+from engram.context import ContextForRequest, context_for
+from engram.context_eval import (
+    CONTEXT_EVAL_DATASET_ENV_VAR,
+    ContextCompileRequest,
+    ContextEvalError,
+    resolve_context_eval_gold_set_path,
+    run_context_eval_file,
+    write_json_report,
+    write_markdown_summary,
+)
 from engram.db import connect
 from engram.embedder import DEFAULT_EMBEDDING_MODEL_VERSION, embed_pending_segments
+from engram.evidence import refresh_evidence_reference_index
 from engram.extractor import (
     DEFAULT_EXTRACTION_CONCURRENCY,
     EXTRACTION_PROMPT_VERSION,
@@ -38,6 +61,7 @@ from engram.extractor import (
 )
 from engram.gemini_export import IngestConflict as GeminiIngestConflict
 from engram.gemini_export import ingest_gemini_export
+from engram.git_import import import_git_repo
 from engram.interview import (
     SAMPLER_ID as INTERVIEW_SAMPLER_ID,
 )
@@ -71,8 +95,10 @@ from engram.interview.render import (
     pick_question,
     rationale_prompt_for,
 )
+from engram.markdown_import import import_markdown_tree
 from engram.memory import MemoryService
 from engram.migrations import migrate, migration_integrity_errors
+from engram.no_egress import NoEgressError, probe_enforcement, run_under_no_egress
 from engram.phase4 import (
     Phase4SchemaPreflightError,
     accept_belief,
@@ -83,6 +109,7 @@ from engram.phase4 import (
     reject_review_belief,
     run_phase4_smoke,
 )
+from engram.policy import decide_local_release
 from engram.progress import upsert_progress
 from engram.segmenter import DEFAULT_RETRIES, apply_reclassification_invalidations, segment_pending
 from engram.striatum_ingest import (
@@ -92,22 +119,14 @@ from engram.striatum_ingest import (
     StriatumBundleError,
     ingest_striatum_bundle,
 )
-from engram.git_import import (
-    GitImportError,
-    import_git_repo,
-)
-from engram.build_artifact_import import (
-    BuildArtifactImportError,
-    import_build_artifacts,
-)
-from engram.markdown_import import (
-    MarkdownImportError,
-    import_markdown_tree,
-)
 
 
 class Phase3SchemaPreflightError(RuntimeError):
     """Raised when Phase 3 pipeline prerequisites are not present in the DB."""
+
+
+class EntityGroundingCliError(RuntimeError):
+    """Raised when the RFC 0054/0055 CLI integration cannot dispatch."""
 
 
 AMBIGUOUS_PIPELINE_COMMAND = """ambiguous command: pipeline
@@ -115,6 +134,19 @@ Use one of:
   engram phase2 run
   engram phase3 run
   engram phase4 smoke"""
+
+
+_SECRET_OUTPUT_KEY_FRAGMENTS: tuple[str, ...] = (
+    "api_key",
+    "apikey",
+    "authorization",
+    "bearer",
+    "credential",
+    "password",
+    "secret",
+    "token",
+)
+ENTITY_GROUNDING_BROKER_DATABASE_URL_ENV = "ENGRAM_ENTITY_GROUNDING_BROKER_DATABASE_URL"
 
 
 def warn_legacy_command(invoked_command: str, replacement: str | None) -> None:
@@ -166,6 +198,444 @@ def _parse_cli_datetime(value: str) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed
+
+
+def read_context_query(
+    query: str | None,
+    query_file: Path | None,
+    parser: argparse.ArgumentParser,
+) -> str:
+    """Resolve a context query from --query or --query-file."""
+    if query is not None and query_file is not None:
+        parser.error("context-for accepts either --query or --query-file, not both")
+    if query_file is not None:
+        query_text = query_file.read_text(encoding="utf-8")
+    elif query is not None:
+        query_text = query
+    else:
+        parser.error("context-for requires --query or --query-file")
+    query_text = query_text.strip()
+    if query_text == "":
+        parser.error("context query must not be empty")
+    return query_text
+
+
+def read_claim_grounding_request_file(
+    path: Path,
+    parser: argparse.ArgumentParser,
+) -> dict[str, object]:
+    """Read a JSON object for RFC 0053 claim-grounding commands."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        parser.error("--request-json must contain a JSON object")
+    if not all(isinstance(key, str) for key in payload):
+        parser.error("--request-json object keys must be strings")
+    return payload
+
+
+def list_claim_grounding_grants(
+    conn: Any,
+    *,
+    tenant_id: str,
+    corpus_id: str,
+    status: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Return operator-visible RFC 0053 grant lifecycle rows."""
+    bounded_limit = max(1, min(limit, 100))
+    rows = conn.execute(
+        """
+        SELECT
+            g.id::text,
+            r.id::text,
+            r.request_payload->>'request_id',
+            g.grant_payload->>'grant_id',
+            g.grant_status,
+            g.tenant_id,
+            g.corpus_id,
+            g.surface_form,
+            g.search_query,
+            g.query_text_class,
+            g.query_privacy_tier,
+            g.allowed_network_targets,
+            g.granted_by,
+            g.granted_at,
+            g.expires_at,
+            g.revoked_at,
+            r.extraction_run_id,
+            r.source_refs,
+            g.created_at
+        FROM claim_grounding_grants g
+        LEFT JOIN claim_grounding_requests r ON r.id = g.request_id
+        WHERE g.tenant_id = %s
+          AND g.corpus_id = %s
+          AND (%s = 'all' OR g.grant_status = %s)
+        ORDER BY g.created_at DESC, g.id DESC
+        LIMIT %s
+        """,
+        (tenant_id, corpus_id, status, status, bounded_limit),
+    ).fetchall()
+    return [
+        {
+            "grant_record_id": row[0],
+            "request_record_id": row[1],
+            "request_id": row[2],
+            "grant_id": row[3],
+            "status": row[4],
+            "tenant_id": row[5],
+            "corpus_id": row[6],
+            "surface_form": row[7],
+            "search_query": row[8],
+            "query_text_class": row[9],
+            "query_privacy_tier": row[10],
+            "allowed_network_targets": list(row[11] or []),
+            "granted_by": row[12],
+            "granted_at": _json_datetime(row[13]),
+            "expires_at": _json_datetime(row[14]),
+            "revoked_at": _json_datetime(row[15]),
+            "extraction_run_id": row[16],
+            "source_refs": row[17] or [],
+            "created_at": _json_datetime(row[18]),
+        }
+        for row in rows
+    ]
+
+
+def load_claim_grounding_request_for_grant(
+    conn: Any,
+    *,
+    request_id: str,
+    grant_id: str,
+    tenant_id: str,
+    corpus_id: str,
+    parser: argparse.ArgumentParser,
+) -> dict[str, object]:
+    """Load the latest persisted request payload for a grant lifecycle action."""
+    row = conn.execute(
+        """
+        SELECT request_payload
+        FROM claim_grounding_requests
+        WHERE request_payload->>'request_id' = %s
+          AND tenant_id = %s
+          AND corpus_id = %s
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        (request_id, tenant_id, corpus_id),
+    ).fetchone()
+    if row is None:
+        parser.error(f'no persisted claim-grounding request found for request_id "{request_id}"')
+    payload = row[0]
+    if not isinstance(payload, dict):
+        parser.error(f'persisted claim-grounding request "{request_id}" is not a JSON object')
+    network_grant = payload.get("network_grant")
+    if not isinstance(network_grant, dict):
+        parser.error(f'claim-grounding request "{request_id}" has no network_grant')
+    if network_grant.get("grant_id") != grant_id:
+        parser.error(
+            f'claim-grounding request "{request_id}" has grant_id '
+            f'"{network_grant.get("grant_id")}", not "{grant_id}"'
+        )
+    return payload
+
+
+def approved_claim_grounding_request_payload(
+    payload: dict[str, object],
+    *,
+    granted_by: str,
+) -> dict[str, object]:
+    """Stamp an operator approval actor/time onto a request payload copy."""
+    copied = dict(payload)
+    network_grant = copied.get("network_grant")
+    if not isinstance(network_grant, dict):
+        return copied
+    copied["network_grant"] = {
+        **network_grant,
+        "granted_by": granted_by,
+        "granted_at": _rfc3339_now(),
+    }
+    return copied
+
+
+def claim_grounding_lifecycle_output(
+    *,
+    action: str,
+    record: Any,
+    request_payload: dict[str, object],
+) -> dict[str, object]:
+    """Return a compact audit payload after appending a grant lifecycle row."""
+    network_grant = request_payload.get("network_grant")
+    grant_payload = network_grant if isinstance(network_grant, dict) else {}
+    return {
+        "action": action,
+        "status": record.status,
+        "request_id": record.request_id,
+        "grant_id": record.grant_id,
+        "grant_record_id": str(record.id),
+        "display": {
+            "tenant_id": request_payload.get("tenant_id"),
+            "corpus_id": request_payload.get("corpus_id"),
+            "surface_form": request_payload.get("surface_form"),
+            "search_query": grant_payload.get("search_query"),
+            "query_text_class": grant_payload.get("query_text_class"),
+            "query_privacy_tier": grant_payload.get("query_privacy_tier"),
+            "allowed_network_targets": grant_payload.get("allowed_network_targets"),
+            "extraction_run_id": request_payload.get("extraction_run_id"),
+            "source_refs": request_payload.get("source_refs"),
+        },
+    }
+
+
+def run_entity_grounding_draft(
+    conn: Any,
+    *,
+    tenant_id: str,
+    corpus_id: str,
+    limit: int,
+    entity_id: str | None,
+) -> Any:
+    """Dispatch RFC 0054 draft workflow through the implementation module."""
+    try:
+        from engram import entity_grounding_workflow
+    except ModuleNotFoundError as exc:
+        if exc.name == "engram.entity_grounding_workflow":
+            raise EntityGroundingCliError(
+                "entity-grounding draft implementation is unavailable"
+            ) from exc
+        raise
+    worker = _first_callable(
+        entity_grounding_workflow,
+        (
+            "draft_entity_grounding",
+            "draft_entity_grounding_batch",
+            "run_entity_grounding_draft",
+            "run_entity_grounding_batch",
+        ),
+        "entity-grounding draft",
+    )
+    return _call_worker_with_supported_kwargs(
+        worker,
+        conn,
+        {
+            "tenant_id": tenant_id,
+            "corpus_id": corpus_id,
+            "limit": limit,
+            "entity_id": entity_id,
+        },
+    )
+
+
+def run_entity_grounding_process_approved(
+    conn: Any,
+    *,
+    tenant_id: str,
+    corpus_id: str,
+    limit: int,
+    request_id: str | None,
+    grant_id: str | None,
+    target_adapter: str | None,
+) -> Any:
+    """Dispatch RFC 0055 approved-grant materialization through its module."""
+    try:
+        from engram import entity_grounding_materialization
+    except ModuleNotFoundError as exc:
+        if exc.name == "engram.entity_grounding_materialization":
+            raise EntityGroundingCliError(
+                "entity-grounding process-approved implementation is unavailable"
+            ) from exc
+        raise
+    worker = _first_callable(
+        entity_grounding_materialization,
+        (
+            "process_approved_entity_grounding",
+            "process_approved_entity_grounding_grants",
+            "process_approved_grounding_grants",
+            "run_entity_grounding_process_approved",
+        ),
+        "entity-grounding process-approved",
+    )
+    return _call_worker_with_supported_kwargs(
+        worker,
+        conn,
+        {
+            "tenant_id": tenant_id,
+            "corpus_id": corpus_id,
+            "limit": limit,
+            "request_id": request_id,
+            "grant_id": grant_id,
+            "target_adapter": target_adapter,
+        },
+    )
+
+
+def run_entity_grounding_broker_daemon(
+    *,
+    broker_database_url: str,
+    tenant_id: str,
+    corpus_id: str,
+    limit: int | None,
+    interval_seconds: float | None,
+    target_adapter: str | None,
+    max_iterations: int | None,
+) -> Any:
+    """Dispatch the local RFC 0055 broker daemon workflow."""
+    try:
+        from engram import entity_grounding_daemon
+    except ModuleNotFoundError as exc:
+        if exc.name == "engram.entity_grounding_daemon":
+            raise EntityGroundingCliError(
+                "entity-grounding broker-daemon implementation is unavailable"
+            ) from exc
+        raise
+    worker = _first_callable(
+        entity_grounding_daemon,
+        (
+            "run_entity_grounding_broker_daemon",
+            "run_entity_grounding_daemon",
+            "run_broker_daemon",
+        ),
+        "entity-grounding broker-daemon",
+    )
+
+    def connect_factory() -> Any:
+        return connect(url=broker_database_url)
+
+    try:
+        return worker(
+            connect_factory,
+            tenant_id=tenant_id,
+            corpus_id=corpus_id,
+            limit=(
+                limit
+                if limit is not None
+                else entity_grounding_daemon.DEFAULT_ENTITY_GROUNDING_BROKER_DAEMON_BATCH_SIZE
+            ),
+            interval_seconds=(
+                interval_seconds
+                if interval_seconds is not None
+                else entity_grounding_daemon.DEFAULT_ENTITY_GROUNDING_BROKER_DAEMON_INTERVAL_SECONDS
+            ),
+            target_adapter=target_adapter,
+            max_iterations=max_iterations,
+        )
+    except entity_grounding_daemon.EntityGroundingBrokerDaemonError as exc:
+        raise EntityGroundingCliError(str(exc)) from exc
+
+
+def entity_grounding_broker_database_url() -> str | None:
+    """Return the optional restricted DSN for network-capable materialization."""
+    configured = os.environ.get(ENTITY_GROUNDING_BROKER_DATABASE_URL_ENV)
+    if configured is None or configured.strip() == "":
+        return None
+    return configured
+
+
+def _first_callable(module: Any, names: tuple[str, ...], command_name: str) -> Any:
+    """Return the first supported implementation entrypoint on a module."""
+    for name in names:
+        candidate = getattr(module, name, None)
+        if callable(candidate):
+            return candidate
+    raise EntityGroundingCliError(
+        f"{command_name} implementation has no supported entrypoint: {', '.join(names)}"
+    )
+
+
+def _call_worker_with_supported_kwargs(
+    worker: Any,
+    conn: Any,
+    kwargs: dict[str, Any],
+) -> Any:
+    """Call a worker while tolerating narrower implementation signatures."""
+    parameters = inspect.signature(worker).parameters
+    accepts_var_kwargs = any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+    supported_kwargs = kwargs if accepts_var_kwargs else {
+        key: value for key, value in kwargs.items() if key in parameters
+    }
+    return worker(conn, **supported_kwargs)
+
+
+def entity_grounding_output(result: Any) -> dict[str, Any]:
+    """Convert an RFC 0054/0055 result object into sanitized CLI JSON."""
+    if hasattr(result, "to_json") and callable(result.to_json):
+        payload = result.to_json()
+    elif isinstance(result, dict):
+        payload = result
+    elif dataclasses.is_dataclass(result) and not isinstance(result, type):
+        payload = dataclasses.asdict(result)
+    else:
+        payload = {
+            key: value
+            for key, value in vars(result).items()
+            if not key.startswith("_")
+        }
+    if not isinstance(payload, dict):
+        raise EntityGroundingCliError("entity-grounding result must serialize to a JSON object")
+    return _sanitize_cli_json(payload)
+
+
+def _sanitize_cli_json(value: Any) -> Any:
+    """Redact secret-shaped fields from operator-facing JSON output."""
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return _sanitize_cli_json(dataclasses.asdict(value))
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                continue
+            lowered = key.lower()
+            if any(fragment in lowered for fragment in _SECRET_OUTPUT_KEY_FRAGMENTS):
+                redacted[key] = "[redacted]"
+            else:
+                redacted[key] = _sanitize_cli_json(item)
+        return redacted
+    if isinstance(value, list):
+        return [_sanitize_cli_json(item) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_cli_json(item) for item in value]
+    if isinstance(value, datetime):
+        return _json_datetime(value)
+    if isinstance(value, UUID):
+        return str(value)
+    return value
+
+
+def _json_datetime(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat().replace("+00:00", "Z")
+    return str(value)
+
+
+def _rfc3339_now() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def build_cli_context_eval_compiler(
+    conn: Any,
+    *,
+    tenant_id: str,
+    corpus_id: str,
+    word_budget: int,
+    privacy_tier_max: int,
+) -> Any:
+    """Build the eval runner seam around the installed context_for service."""
+
+    def compile_request(request: ContextCompileRequest) -> dict[str, Any]:
+        context_request = ContextForRequest(
+            query_text=request.query_text,
+            tenant_id=tenant_id,
+            corpus_id=corpus_id,
+            word_budget=word_budget,
+            privacy_tier_ceiling=min(request.privacy_ceiling, privacy_tier_max),
+        )
+        return context_for(conn, context_request).to_json()
+
+    return compile_request
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -233,11 +703,11 @@ def main(argv: list[str] | None = None) -> int:
         "--full-patch",
         default="false",
         choices=("false",),
-        help="Reserved for a future opt-in slice (RFC 0050 OQ-SI-001); Layer 1 only accepts 'false'.",
+        help=(
+            "Reserved for a future opt-in slice (RFC 0050 OQ-SI-001); Layer 1 only accepts 'false'."
+        ),
     )
-    import_git_parser.set_defaults(
-        command="import-git", invoked_command="import git"
-    )
+    import_git_parser.set_defaults(command="import-git", invoked_command="import git")
     import_build_parser = import_subparsers.add_parser(
         "build-artifacts",
         help="Import a local build/test/lint/coverage/benchmark artifact directory",
@@ -261,9 +731,7 @@ def main(argv: list[str] | None = None) -> int:
     import_md_parser.add_argument("--corpus-id", default="personal")
     import_md_parser.add_argument("--repo-label", default=None)
     import_md_parser.add_argument("--dry-run", action="store_true")
-    import_md_parser.set_defaults(
-        command="import-markdown", invoked_command="import markdown"
-    )
+    import_md_parser.set_defaults(command="import-markdown", invoked_command="import markdown")
 
     describe_corpus_parser = subparsers.add_parser(
         "describe-corpus",
@@ -290,6 +758,232 @@ def main(argv: list[str] | None = None) -> int:
         command="phase-projection-run",
         invoked_command="phase-projection run",
     )
+
+    evidence_parser = subparsers.add_parser(
+        "evidence",
+        help="Generic evidence/reference projection commands",
+    )
+    evidence_subparsers = evidence_parser.add_subparsers(
+        dest="evidence_command",
+        required=True,
+    )
+    evidence_refresh_parser = evidence_subparsers.add_parser(
+        "refresh-index",
+        help="Rebuild the generic evidence/reference index for one tenant/corpus",
+    )
+    evidence_refresh_parser.add_argument("--tenant", default="personal")
+    evidence_refresh_parser.add_argument("--corpus", default="personal")
+    evidence_refresh_parser.set_defaults(command="evidence-refresh-index")
+
+    context_for_parser = subparsers.add_parser(
+        "context-for",
+        help="Compile a local personal context package for a query",
+    )
+    context_for_parser.add_argument("--query")
+    context_for_parser.add_argument("--query-file", type=Path)
+    context_for_parser.add_argument("--tenant", default="personal")
+    context_for_parser.add_argument("--corpus", default="personal")
+    context_for_parser.add_argument("--format", choices=["json", "markdown"], default="markdown")
+    context_for_parser.add_argument("--word-budget", type=int, default=500)
+    context_for_parser.add_argument("--privacy-tier-max", type=int, default=1)
+    context_for_parser.set_defaults(command="context-for")
+
+    claim_grounding_parser = subparsers.add_parser(
+        "claim-grounding",
+        help="RFC 0053 local claim-grounding broker commands",
+    )
+    claim_grounding_subparsers = claim_grounding_parser.add_subparsers(
+        dest="claim_grounding_command",
+        required=True,
+    )
+    claim_grounding_entity_parser = claim_grounding_subparsers.add_parser(
+        "entity",
+        help="Resolve a claim_grounding.request.v1 against local grounding evidence",
+    )
+    claim_grounding_entity_parser.add_argument("--request-json", type=Path, required=True)
+    claim_grounding_entity_parser.add_argument("--limit", type=int, default=5)
+    claim_grounding_entity_parser.set_defaults(command="claim-grounding-entity")
+    claim_grounding_grants_parser = claim_grounding_subparsers.add_parser(
+        "grants",
+        help="Inspect and append claim-grounding network grant lifecycle rows",
+    )
+    claim_grounding_grants_subparsers = claim_grounding_grants_parser.add_subparsers(
+        dest="claim_grounding_grants_command",
+        required=True,
+    )
+    claim_grounding_grants_list_parser = claim_grounding_grants_subparsers.add_parser(
+        "list",
+        help="List exact operator-visible grant rows",
+    )
+    claim_grounding_grants_list_parser.add_argument(
+        "--status",
+        choices=["all", "draft", "approved", "denied", "revoked", "expired"],
+        default="draft",
+    )
+    claim_grounding_grants_list_parser.add_argument("--tenant", default="personal")
+    claim_grounding_grants_list_parser.add_argument("--corpus", default="personal")
+    claim_grounding_grants_list_parser.add_argument("--limit", type=int, default=20)
+    claim_grounding_grants_list_parser.set_defaults(command="claim-grounding-grants-list")
+    claim_grounding_grants_draft_parser = claim_grounding_grants_subparsers.add_parser(
+        "draft",
+        help="Persist a draft grant from a claim_grounding.request.v1 JSON file",
+    )
+    claim_grounding_grants_draft_parser.add_argument("--request-json", type=Path, required=True)
+    claim_grounding_grants_draft_parser.set_defaults(command="claim-grounding-grants-draft")
+    claim_grounding_grants_approve_parser = claim_grounding_grants_subparsers.add_parser(
+        "approve",
+        help="Append an approved grant row for a persisted request",
+    )
+    claim_grounding_grants_approve_parser.add_argument("--request-id", required=True)
+    claim_grounding_grants_approve_parser.add_argument("--grant-id", required=True)
+    claim_grounding_grants_approve_parser.add_argument("--granted-by", required=True)
+    claim_grounding_grants_approve_parser.add_argument("--tenant", default="personal")
+    claim_grounding_grants_approve_parser.add_argument("--corpus", default="personal")
+    claim_grounding_grants_approve_parser.set_defaults(command="claim-grounding-grants-approve")
+    claim_grounding_grants_deny_parser = claim_grounding_grants_subparsers.add_parser(
+        "deny",
+        help="Append a denied grant row for a persisted request",
+    )
+    claim_grounding_grants_deny_parser.add_argument("--request-id", required=True)
+    claim_grounding_grants_deny_parser.add_argument("--grant-id", required=True)
+    claim_grounding_grants_deny_parser.add_argument("--denied-by", required=True)
+    claim_grounding_grants_deny_parser.add_argument("--reason", required=True)
+    claim_grounding_grants_deny_parser.add_argument("--tenant", default="personal")
+    claim_grounding_grants_deny_parser.add_argument("--corpus", default="personal")
+    claim_grounding_grants_deny_parser.set_defaults(command="claim-grounding-grants-deny")
+    claim_grounding_grants_revoke_parser = claim_grounding_grants_subparsers.add_parser(
+        "revoke",
+        help="Append a revoked grant row for a persisted request",
+    )
+    claim_grounding_grants_revoke_parser.add_argument("--request-id", required=True)
+    claim_grounding_grants_revoke_parser.add_argument("--grant-id", required=True)
+    claim_grounding_grants_revoke_parser.add_argument("--revoked-by", required=True)
+    claim_grounding_grants_revoke_parser.add_argument("--reason", required=True)
+    claim_grounding_grants_revoke_parser.add_argument("--tenant", default="personal")
+    claim_grounding_grants_revoke_parser.add_argument("--corpus", default="personal")
+    claim_grounding_grants_revoke_parser.set_defaults(command="claim-grounding-grants-revoke")
+
+    entity_grounding_parser = subparsers.add_parser(
+        "entity-grounding",
+        help="RFC 0054/0055 entity-wide grounding workflow commands",
+    )
+    entity_grounding_subparsers = entity_grounding_parser.add_subparsers(
+        dest="entity_grounding_command",
+        required=True,
+    )
+    entity_grounding_draft_parser = entity_grounding_subparsers.add_parser(
+        "draft",
+        help="Draft local-first RFC 0053 grounding requests for unresolved entities",
+    )
+    entity_grounding_draft_parser.add_argument("--tenant", default="personal")
+    entity_grounding_draft_parser.add_argument("--corpus", default="personal")
+    entity_grounding_draft_parser.add_argument("--limit", type=int, default=50)
+    entity_grounding_draft_parser.add_argument("--entity-id")
+    entity_grounding_draft_parser.set_defaults(command="entity-grounding-draft")
+    entity_grounding_process_parser = entity_grounding_subparsers.add_parser(
+        "process-approved",
+        help="Materialize approved entity-grounding grants into local evidence",
+    )
+    entity_grounding_process_parser.add_argument("--tenant", default="personal")
+    entity_grounding_process_parser.add_argument("--corpus", default="personal")
+    entity_grounding_process_parser.add_argument("--limit", type=int, default=20)
+    entity_grounding_process_parser.add_argument("--request-id")
+    entity_grounding_process_parser.add_argument("--grant-id")
+    entity_grounding_process_parser.add_argument("--target-adapter", default=None)
+    entity_grounding_process_parser.epilog = (
+        f"Set {ENTITY_GROUNDING_BROKER_DATABASE_URL_ENV} to run the network-capable "
+        "materializer through a restricted broker database role."
+    )
+    entity_grounding_process_parser.set_defaults(command="entity-grounding-process-approved")
+    entity_grounding_daemon_parser = entity_grounding_subparsers.add_parser(
+        "broker-daemon",
+        help="Poll approved entity-grounding grants with the restricted broker role",
+    )
+    entity_grounding_daemon_parser.add_argument("--tenant", default="personal")
+    entity_grounding_daemon_parser.add_argument("--corpus", default="personal")
+    entity_grounding_daemon_parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help=(
+            "Approved grants to process per iteration; default comes from "
+            "ENGRAM_ENTITY_GROUNDING_BROKER_DAEMON_BATCH_SIZE or 20"
+        ),
+    )
+    entity_grounding_daemon_parser.add_argument(
+        "--interval",
+        "--interval-seconds",
+        dest="interval_seconds",
+        type=float,
+        default=None,
+        help=(
+            "Seconds to sleep between iterations; default comes from "
+            "ENGRAM_ENTITY_GROUNDING_BROKER_DAEMON_INTERVAL_SECONDS or 10"
+        ),
+    )
+    entity_grounding_daemon_parser.add_argument("--target-adapter", default=None)
+    entity_grounding_daemon_parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        help="Stop after N iterations; omit for a long-running daemon",
+    )
+    entity_grounding_daemon_parser.epilog = (
+        f"Requires {ENTITY_GROUNDING_BROKER_DATABASE_URL_ENV}; this command is the "
+        "local long-running network-capable broker workflow."
+    )
+    entity_grounding_daemon_parser.set_defaults(command="entity-grounding-broker-daemon")
+
+    eval_parser = subparsers.add_parser(
+        "eval",
+        help="Local deterministic evaluation commands",
+    )
+    eval_subparsers = eval_parser.add_subparsers(dest="eval_command", required=True)
+    eval_context_parser = eval_subparsers.add_parser(
+        "context",
+        help="Run a context_for evaluation over an external local dataset",
+    )
+    eval_context_dataset_group = eval_context_parser.add_mutually_exclusive_group()
+    eval_context_dataset_group.add_argument(
+        "--dataset-path",
+        type=Path,
+        help=(
+            "External private eval dataset directory or JSONL file. "
+            f"Overrides {CONTEXT_EVAL_DATASET_ENV_VAR}."
+        ),
+    )
+    eval_context_dataset_group.add_argument(
+        "--gold-set",
+        type=Path,
+        help="Deprecated alias for a direct context eval JSONL file",
+    )
+    eval_context_parser.add_argument("--output", type=Path, required=True)
+    eval_context_parser.add_argument("--markdown-output", type=Path)
+    eval_context_parser.add_argument("--tenant", default="personal")
+    eval_context_parser.add_argument("--corpus", default="personal")
+    eval_context_parser.add_argument("--word-budget", type=int, default=500)
+    eval_context_parser.add_argument("--privacy-tier-max", type=int, default=1)
+    eval_context_parser.set_defaults(command="eval-context")
+
+    no_egress_parser = subparsers.add_parser(
+        "no-egress",
+        help="Probe or run commands inside an OS-level no-egress boundary",
+    )
+    no_egress_subparsers = no_egress_parser.add_subparsers(
+        dest="no_egress_command",
+        required=True,
+    )
+    no_egress_probe_parser = no_egress_subparsers.add_parser(
+        "probe",
+        help="Probe local OS support for enforced no-egress execution",
+    )
+    no_egress_probe_parser.set_defaults(command="no-egress-probe")
+    no_egress_run_parser = no_egress_subparsers.add_parser(
+        "run",
+        help="Run a command inside the best available no-egress boundary",
+    )
+    no_egress_run_parser.add_argument("command_argv", nargs=argparse.REMAINDER)
+    no_egress_run_parser.set_defaults(command="no-egress-run")
 
     segment_parser = subparsers.add_parser(
         "segment",
@@ -938,6 +1632,265 @@ def main(argv: list[str] | None = None) -> int:
             print_phase_projection_result(result, tenant_id=args.tenant, corpus_id=args.corpus)
             return 0
 
+        if args.command == "evidence-refresh-index":
+            with connect() as conn:
+                result = refresh_evidence_reference_index(
+                    conn,
+                    tenant_id=args.tenant,
+                    corpus_id=args.corpus,
+                )
+                conn.commit()
+            print(
+                "evidence index: "
+                f"tenant={result.tenant_id} "
+                f"corpus={result.corpus_id} "
+                f"evidence_items={result.evidence_items} "
+                f"evidence_refs={result.evidence_refs}"
+            )
+            return 0
+
+        if args.command == "context-for":
+            query_text = read_context_query(args.query, args.query_file, parser)
+            request = ContextForRequest(
+                query_text=query_text,
+                tenant_id=args.tenant,
+                corpus_id=args.corpus,
+                word_budget=args.word_budget,
+                privacy_tier_ceiling=args.privacy_tier_max,
+            )
+            with connect() as conn:
+                result = context_for(conn, request)
+            if args.format == "json":
+                print(json.dumps(result.to_json(), indent=2, sort_keys=True))
+            else:
+                print(result.rendered_context)
+            return 0
+
+        if args.command == "claim-grounding-entity":
+            request_payload = read_claim_grounding_request_file(args.request_json, parser)
+            with connect() as conn:
+                response = ground_claim_entity_locally(
+                    conn,
+                    request_payload,
+                    limit=args.limit,
+                )
+            print(json.dumps(response.to_json(), indent=2, sort_keys=True))
+            return 0
+
+        if args.command == "claim-grounding-grants-list":
+            with connect() as conn:
+                rows = list_claim_grounding_grants(
+                    conn,
+                    tenant_id=args.tenant,
+                    corpus_id=args.corpus,
+                    status=args.status,
+                    limit=args.limit,
+                )
+            print(json.dumps({"grants": rows}, indent=2, sort_keys=True))
+            return 0
+
+        if args.command == "claim-grounding-grants-draft":
+            request_payload = read_claim_grounding_request_file(args.request_json, parser)
+            with connect() as conn:
+                record_claim_grounding_request(conn, request_payload)
+                record = record_claim_grounding_draft_grant(conn, request_payload)
+                conn.commit()
+            print(
+                json.dumps(
+                    claim_grounding_lifecycle_output(
+                        action="draft",
+                        record=record,
+                        request_payload=request_payload,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+
+        if args.command == "claim-grounding-grants-approve":
+            with connect() as conn:
+                request_payload = load_claim_grounding_request_for_grant(
+                    conn,
+                    request_id=args.request_id,
+                    grant_id=args.grant_id,
+                    tenant_id=args.tenant,
+                    corpus_id=args.corpus,
+                    parser=parser,
+                )
+                approved_payload = approved_claim_grounding_request_payload(
+                    request_payload,
+                    granted_by=args.granted_by,
+                )
+                record = record_claim_grounding_approved_grant(conn, approved_payload)
+                conn.commit()
+            print(
+                json.dumps(
+                    claim_grounding_lifecycle_output(
+                        action="approve",
+                        record=record,
+                        request_payload=approved_payload,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+
+        if args.command == "claim-grounding-grants-deny":
+            with connect() as conn:
+                request_payload = load_claim_grounding_request_for_grant(
+                    conn,
+                    request_id=args.request_id,
+                    grant_id=args.grant_id,
+                    tenant_id=args.tenant,
+                    corpus_id=args.corpus,
+                    parser=parser,
+                )
+                record = record_claim_grounding_denied_grant(
+                    conn,
+                    request_payload,
+                    denied_by=args.denied_by,
+                    reason=args.reason,
+                )
+                conn.commit()
+            print(
+                json.dumps(
+                    claim_grounding_lifecycle_output(
+                        action="deny",
+                        record=record,
+                        request_payload=request_payload,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+
+        if args.command == "claim-grounding-grants-revoke":
+            with connect() as conn:
+                request_payload = load_claim_grounding_request_for_grant(
+                    conn,
+                    request_id=args.request_id,
+                    grant_id=args.grant_id,
+                    tenant_id=args.tenant,
+                    corpus_id=args.corpus,
+                    parser=parser,
+                )
+                record = record_claim_grounding_revoked_grant(
+                    conn,
+                    request_payload,
+                    revoked_by=args.revoked_by,
+                    reason=args.reason,
+                )
+                conn.commit()
+            print(
+                json.dumps(
+                    claim_grounding_lifecycle_output(
+                        action="revoke",
+                        record=record,
+                        request_payload=request_payload,
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+
+        if args.command == "entity-grounding-draft":
+            with connect() as conn:
+                result = run_entity_grounding_draft(
+                    conn,
+                    tenant_id=args.tenant,
+                    corpus_id=args.corpus,
+                    limit=args.limit,
+                    entity_id=args.entity_id,
+                )
+                conn.commit()
+            print(json.dumps(entity_grounding_output(result), indent=2, sort_keys=True))
+            return 0
+
+        if args.command == "entity-grounding-process-approved":
+            with connect(url=entity_grounding_broker_database_url()) as conn:
+                result = run_entity_grounding_process_approved(
+                    conn,
+                    tenant_id=args.tenant,
+                    corpus_id=args.corpus,
+                    limit=args.limit,
+                    request_id=args.request_id,
+                    grant_id=args.grant_id,
+                    target_adapter=args.target_adapter,
+                )
+                conn.commit()
+            print(json.dumps(entity_grounding_output(result), indent=2, sort_keys=True))
+            return 0
+
+        if args.command == "entity-grounding-broker-daemon":
+            broker_database_url = entity_grounding_broker_database_url()
+            if broker_database_url is None:
+                raise EntityGroundingCliError(
+                    "broker-daemon requires "
+                    f"{ENTITY_GROUNDING_BROKER_DATABASE_URL_ENV} to be set"
+                )
+            result = run_entity_grounding_broker_daemon(
+                broker_database_url=broker_database_url,
+                tenant_id=args.tenant,
+                corpus_id=args.corpus,
+                limit=args.limit,
+                interval_seconds=args.interval_seconds,
+                target_adapter=args.target_adapter,
+                max_iterations=args.max_iterations,
+            )
+            print(json.dumps(entity_grounding_output(result), indent=2, sort_keys=True))
+            return 0
+
+        if args.command == "eval-context":
+            try:
+                gold_set_path = resolve_context_eval_gold_set_path(
+                    dataset_path=args.dataset_path,
+                    gold_set_path=args.gold_set,
+                    environ=os.environ,
+                )
+            except ContextEvalError as exc:
+                parser.error(str(exc))
+            with connect() as conn:
+                report = run_context_eval_file(
+                    gold_set_path,
+                    compiler=build_cli_context_eval_compiler(
+                        conn,
+                        tenant_id=args.tenant,
+                        corpus_id=args.corpus,
+                        word_budget=args.word_budget,
+                        privacy_tier_max=args.privacy_tier_max,
+                    ),
+                )
+            write_json_report(report, args.output)
+            if args.markdown_output is not None:
+                write_markdown_summary(report, args.markdown_output)
+            print(
+                "context eval: "
+                f"items={report.item_count} "
+                f"required_fact_recall={report.summary['required_fact_recall']:.3f} "
+                f"citation_coverage={report.summary['citation_coverage']:.3f}"
+            )
+            return 0
+
+        if args.command == "no-egress-probe":
+            result = probe_enforcement()
+            print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+            return 0 if result.status == "egress_enforced" else 1
+
+        if args.command == "no-egress-run":
+            command_argv = list(args.command_argv)
+            if command_argv and command_argv[0] == "--":
+                command_argv = command_argv[1:]
+            if not command_argv:
+                parser.error("no-egress run requires -- <command>")
+            result = run_under_no_egress(command_argv)
+            if result.status != "egress_enforced":
+                print(json.dumps(result.to_dict(), indent=2, sort_keys=True), file=sys.stderr)
+            return result.returncode
+
         if args.command == "segment":
             with connect() as conn:
                 invalidated = apply_reclassification_invalidations(conn)
@@ -1303,6 +2256,15 @@ def main(argv: list[str] | None = None) -> int:
     except (GoldLabelStorageError, GoldLabelVerdictError) as exc:
         print(f"phase3 interview: {exc}", file=sys.stderr)
         return 1
+    except ClaimGroundingError as exc:
+        print(f"claim-grounding: {exc}", file=sys.stderr)
+        return 2
+    except EntityGroundingCliError as exc:
+        print(f"entity-grounding: {exc}", file=sys.stderr)
+        return 2
+    except NoEgressError as exc:
+        print(f"no-egress: {exc}", file=sys.stderr)
+        return 2
 
     parser.error(f"unknown command: {args.command}")
     return 2
@@ -2334,12 +3296,14 @@ def run_phase3_interview_resume(args) -> int:  # type: ignore[no-untyped-def]
     state = "open" if session.completed_at is None else "completed"
     with connect() as conn:
         targets = unanswered_session_targets(conn, session_id=args.session_id)
+        label_count_row = conn.execute(
+            "SELECT count(*) FROM gold_labels WHERE session_id = %s",
+            (args.session_id,),
+        ).fetchone()
+        label_count = int(label_count_row[0]) if label_count_row is not None else 0
         total = (
             len(targets)
-            + conn.execute(
-                "SELECT count(*) FROM gold_labels WHERE session_id = %s",
-                (args.session_id,),
-            ).fetchone()[0]
+            + label_count
         )
         if state == "completed":
             print(
@@ -2445,13 +3409,20 @@ def run_phase3_interview_export(args) -> int:  # type: ignore[no-untyped-def]
                 evidence_excerpt,
                 answered_at
             FROM gold_labels
-            WHERE privacy_tier <= %s
             ORDER BY answered_at
             """,
-            (tier_max,),
         ).fetchall()
     output_lines: list[str] = []
     for row in rows:
+        decision = decide_local_release(
+            privacy_tier=int(row[10]),
+            privacy_tier_ceiling=tier_max,
+            target_surface="external_export",
+            purpose="phase3_interview_export",
+            source_kind="gold_label",
+        )
+        if decision.action != "allow":
+            continue
         output_lines.append(
             json.dumps(
                 {

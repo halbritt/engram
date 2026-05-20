@@ -45,9 +45,10 @@ Residual cleanup that does not block step 5:
 - Adversarial round on V1 + principles + gold set + claim/belief inventory
   (Step 6).
 - Phase 3 cleanup: 149 unextracted segments + 22 failed extractions.
-- Phase 4: entity canonicalization + belief review queue.
-- Phase 5: `context_for`, context snapshots / hot state, MCP serving, and
-  `context_feedback`.
+- Phase 4 residuals beyond the existing `current_beliefs`, belief-review, and
+  local-grounding substrate: full entity canonicalization and review UI.
+- Phase 5 residuals beyond minimal `context_for`, MCP serving, snapshots, and
+  feedback: broader invalidation, eval, and reporting surfaces.
 - Smoke gate on a small corpus slice.
 - Gold-set validation cycle.
 

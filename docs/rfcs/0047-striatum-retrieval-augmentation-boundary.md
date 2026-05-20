@@ -6,8 +6,8 @@
 |-------|-------|
 | RFC | RFC-0047 |
 | Title | Striatum Retrieval Augmentation Boundary |
-| Status | proposal |
-| Implementation | none |
+| Status | accepted_as_design_reference |
+| Implementation | landed via `MemoryService.search` `filters.exact_refs` |
 | Created | 2026-05-14 |
 | Source | `STRIATUM_MEMORY_ROADMAP.md` |
 | Context | RFC 0044, RFC 0045, RFC 0046, `STRIATUM_MEMORY_ROADMAP.md` |
@@ -15,7 +15,8 @@
 
 ## Summary
 
-This RFC defines the Striatum/Engram retrieval augmentation boundary.
+This RFC is accepted as the design reference for the landed Striatum/Engram
+retrieval augmentation boundary.
 Striatum may use Engram as an optional local read-only augmentation source for
 operator and workflow context, but Engram must not become Striatum runtime
 infrastructure.
@@ -39,7 +40,7 @@ RFC 0047 follows:
 - RFC 0044, which established the first local Striatum application-memory
   boundary in Engram;
 - RFC 0045, which defines the Striatum Corpus Contract V2 disk bundle;
-- RFC 0046, which is expected to define rebuildable Striatum projections and
+- RFC 0046, which accepted and landed rebuildable Striatum projections and
   indexes over raw evidence.
 
 RFC 0047 feeds:
@@ -49,7 +50,8 @@ RFC 0047 feeds:
 - RFC 0049, which defines evaluation, no-egress, tenant/corpus isolation,
   stale-index, latency, and retrieval-quality gates.
 
-This document is a review target, not an implementation prompt.
+This document began as a review target. D083 accepted it as design reference
+after the exact-reference retrieval path landed.
 
 ## Boundary Statement
 

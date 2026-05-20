@@ -9,6 +9,24 @@ contract gate. The acceptance decisions (AL-D002, AL-D003, AL-D004) are
 recorded as humans review working code, not as conditions on shipping
 more paper.
 
+Current status as of 2026-05-17: Layers 1-5 landed on master and D083
+accepted RFC 0046-RFC 0049 as design reference for the implemented e2e
+pipeline. D085 records default-on Striatum operator-token authorization inside
+the Striatum tenant/corpus boundary. The architecture follow-up A0-A9 slice
+extended the serving path with a unified `MemoryHit` contract, non-capture
+`fetch_reference`, executable no-egress probe/run wrapper, minimal
+`context_for`, MCP `engram.context_for`, context snapshots/feedback, and
+central `engram.policy` checks for packet/context serving plus shared
+review/export tier guards, generic exact-reference indexing, and local-only
+entity grounding lookup. D086 and D089 defer generated products until a
+downstream generated-product spec is accepted; default-on or extraction-affecting
+remote grounding fetches and full review UI remain separately gated. The
+remaining work in this backlog is
+incremental: keep the real-bundle runbook current, use
+Layer 4 items as regression-hardening backlog where still valuable, and do not
+expand RFC 0050 Stage 3+ source families until real `context_for` eval failures
+justify the next family.
+
 ## Snapshot Of What Is Already Done
 
 - Phase 1 raw evidence layer: ChatGPT, Claude, Gemini, Striatum bundle
@@ -30,8 +48,17 @@ more paper.
   [`docs/reviews/eg-000-evidence-2026-05-15/EG_000_EVIDENCE.md`](docs/reviews/eg-000-evidence-2026-05-15/EG_000_EVIDENCE.md).
   Committed non-private fixture at
   [`tests/fixtures/striatum_eg000/`](tests/fixtures/striatum_eg000/).
-  579 engram tests pass; the Striatum-side zero-coupling test passes
+  EG-000-era verification: 579 engram tests passed; the Striatum-side
+  zero-coupling test passed
   at Striatum HEAD `a50f495`.
+- Layers 1-5 are implemented: migration 015 projection tables, exact-reference
+  retrieval, packet builder and audits, EG-010 fixture scaffolding, and
+  `make e2e-striatum`. Historical test counts above are retained as execution
+  provenance, not as the current suite size. Current evidence from 2026-05-17:
+  `make test` passed 798 tests in 704.41s; the context/packet focused suite
+  passed 35 tests in 42.05s; `make eval-gates` passed 16 tests in 21.88s;
+  `make eval-source-ingestion-gates` passed 16 tests in 38.38s; and
+  `make e2e-striatum` passed 1 test in 1.94s.
 
 ## Layer-By-Layer Execution Plan
 
@@ -39,7 +66,7 @@ The plan is ordered. Each layer should ship as one or more landed
 commits with tests on master before the next layer starts. RFC 0046-
 RFC 0049 are referenced; their proposal text is guidance, not contract.
 
-### Layer 1 — Projection Surface (RFC 0046 reference)
+### Layer 1 — Projection Surface (RFC 0046 reference) — completed
 
 Goal: materialize queryable projection rows from raw Striatum captures
 so retrieval no longer has to scan and score the `raw_payload` JSON
@@ -86,7 +113,7 @@ Scope kept out of Layer 1:
 - Cross-corpus / cross-tenant projection paths.
 - Generated/derived memory products (deferred to AL-D004 contract).
 
-### Layer 2 — Retrieval Surface (RFC 0047 reference)
+### Layer 2 — Retrieval Surface (RFC 0047 reference) — completed
 
 Goal: serve exact-reference and lexical queries from the projection
 table rather than from `captures.raw_payload`. Stay read-only, no
@@ -124,7 +151,7 @@ Scope kept out of Layer 2:
   end path; vector slots in behind the same API later.
 - Pagination, ranking quality. Deterministic small-N is fine.
 
-### Layer 3 — Injection / Packet Builder (RFC 0048 reference)
+### Layer 3 — Injection / Packet Builder (RFC 0048 reference) — completed
 
 Goal: produce a memory packet for a workflow query — a small typed
 shape with selected items, omitted-with-reason entries, and citations.
@@ -166,14 +193,21 @@ Scope kept out of Layer 3:
   integer. Deferred to Layer 5 / future RFC alignment.
 - Personal-memory paste-through (AL-N015 / AL-D004 territory).
 
-### Layer 4 — Evaluation Gates (RFC 0049 reference)
+### Layer 4 — Evaluation Gates (RFC 0049 reference) — current gate passing; broader hardening deferred
 
 Goal: deterministic gates that prove each prior layer stays correct
 under regression. EG-000 already exists; this layer extends to the
 gates that matter for the e2e path. Pick the minimum that exercises
 real behavior, not the full RFC 0049 matrix.
 
-Deliverables (in this order):
+Landed portions: EG-010 fixture library/scenarios and the current
+`make eval-gates` target. As of 2026-05-17 the target passes 16 tests covering
+fixture validation, exact-reference retrieval, packet building, policy
+omissions, dirty packet labels, audit reconstruction, and cross-tenant audit
+behavior. Remaining gate ideas below are regression-hardening backlog, not
+blockers for the current exact-reference Striatum serving path.
+
+Hardening backlog:
 
 - **EG-010 V2 fixture and validator.** Generalize the EG-000 fixture
   builder into a fixture *library* under
@@ -181,10 +215,14 @@ Deliverables (in this order):
   enumerated in RFC 0049 § EG-010. Most scenarios are small — start
   with `minimal`, `multi_corpus_isolation`, `redaction`, and
   `tombstone`. A single `validate_fixture()` helper proves each
-  bundle parses and verifies its manifest hash before ingest.
+  bundle parses and verifies its manifest hash before ingest. Initial scenarios
+  are covered by the current `make eval-gates` target.
 - **EG-050 stale/dirty gate.** Test cases for retrieval rendering of
   dirty rows and packet freshness labels per AL-N005. Cover the four
-  retrieval cases from the RFC 0049 alignment edits.
+  retrieval cases from the RFC 0049 alignment edits. Initial packet-label
+  coverage landed in
+  `tests/test_memory_packet.py::test_build_packet_preserves_dirty_working_tree_label_in_packet_and_audit`;
+  the remaining work is the broader retrieval rendering matrix.
 - **EG-060 raw_payload privacy inheritance gate.** Promote the
   proposed fixture in
   `docs/rfcs/0049-striatum-evaluation-gates.md` from `not_run` to
@@ -194,7 +232,10 @@ Deliverables (in this order):
   reason from Layer 3 has at least one fixture exercising it.
 - **EG-110 audit reconstruction.** Replay a packet audit row and
   prove the selected + omitted lists can be reconstructed without
-  loading `raw_payload` content above caller authorization.
+  loading `raw_payload` content above caller authorization. Initial
+  reconstruction coverage landed through `reconstruct_packet_audit()` and
+  `tests/test_memory_packet.py::test_reconstruct_packet_audit_replays_selected_and_omitted_without_payload`;
+  promotion-level paste-through fixtures remain optional.
 - **EG-120 disable-control transient-unless-promoted.** The four
   gate cases authored under AL-N009. Wire them to the disable-control
   surface added in Layer 3.
@@ -212,7 +253,7 @@ Scope kept out of Layer 4:
 - EG-090..EG-100 advanced quality gates (defer until vector search
   lands in Layer 2's vector extension).
 
-### Layer 5 — End-To-End MCP Wiring And Serving Smoke
+### Layer 5 — End-To-End MCP Wiring And Serving Smoke — completed
 
 Goal: a single end-to-end smoke from raw bundle on disk → ingest →
 projection → packet over MCP → consumer sees the citation. Proves the
@@ -230,7 +271,7 @@ Deliverables:
      packet shape, omitted reason vocabulary, and audit row.
 - `make e2e-striatum` Makefile target that runs the smoke against the
   current test DB.
-- A short serving runbook at
+- A real-bundle serving runbook at
   `docs/runbooks/striatum-memory-e2e-2026-05-15.md` describing how to
   ingest a real Striatum bundle, run projections, and verify a packet
   end-to-end on a developer machine.
@@ -239,7 +280,7 @@ Acceptance criteria:
 
 - `make e2e-striatum` exits 0 against the EG-000 fixture.
 - The runbook is reproducible on a fresh checkout with `make install`,
-  `make migrate`, and the smoke target only.
+  `make migrate`, and a local Striatum export bundle.
 
 ## Cross-Cutting Items
 
@@ -249,14 +290,14 @@ These are not single layers but they have to land alongside.
 
 - **AL-D002** — record an acceptance entry in `DECISION_LOG.md` that
   the RFC 0046-RFC 0049 proposals are the design reference for the
-  e2e pipeline. Owner: human. Trigger: after Layer 1 lands.
+  e2e pipeline. Completed by D083.
 - **AL-D003** — Level 3 / default-on automatic memory authorization.
-  Owner: human. Trigger: after Layer 5 lands and the user has used
-  the packet in a real workflow at least once.
+  Completed by D085 for the default Striatum operator token inside
+  `tenant_id='striatum', corpus_id='striatum'`.
 - **AL-D004** — generated-product contract (privacy inheritance,
-  citation, audit, gate). Owner: human + drafted spec. Trigger: only
-  if we choose to add generated/derived memory; currently deferred
-  past Layer 5.
+  citation, audit, gate). Deferred by D086 and D089 until a downstream
+  generated-product specification is accepted; RFC 0051/D094 covers only the
+  narrow generic evidence/reference substrate.
 
 ### Nonblocking RFC Polish (Defer Until Promotion Packet)
 
@@ -307,36 +348,53 @@ block any Striatum-memory layer.
 
 - 149 active segments without an extraction (Phase 3 gap).
 - 22 failed claim extractions to revisit.
-- Step 5 from [`ROADMAP.md`](ROADMAP.md): gold-set authoring.
-  Owner-only; cannot delegate.
+- Step 5A/5B from [`ROADMAP.md`](ROADMAP.md): synthetic context-eval e2e
+  harness first, owner gold-set authoring second. Owner chat history has too
+  much entity ambiguity for the first eval substrate. The public harness at
+  `tests/fixtures/context_eval/synthetic_e2e/` seeds beliefs, captures, and
+  local public-entity grounding evidence; it does not replace the later
+  owner-authored private dataset.
+- RFC 0053 claim-grounding synthetic e2e is separate from this Striatum-memory
+  backlog and from context serving. Its starter target is
+  `make e2e-claim-grounding-synthetic`; the sidecar/runtime scaffold target is
+  `make e2e-claim-grounding-runtime`. The current scaffold includes persisted
+  grant lifecycle rows, CLI grant approval/denial/revocation, disabled
+  extraction request sidecars, disabled configured generic HTTP and Tavily
+  search adapters, and broker credential-separation tests; default extraction
+  remains no-egress and network-free.
 - Steps 6-9 from `ROADMAP.md`: adversarial round → synthesize →
   full V1 corpus stabilization → gold set against consolidated V1
   corpus.
 - Phase 4 entity canonicalization + belief review queue.
-- Phase 5 context_for, context snapshots/hot state, MCP serving,
-  context_feedback.
+- Phase 5 residuals after the 2026-05-16 architecture slice: broad
+  context-snapshot invalidation policy, source/projection/entity event
+  coverage, feedback review/reporting surfaces, and real owner-authored
+  context evals. Minimal `context_for`, context snapshots, MCP serving, and
+  context feedback insertion now exist.
 
-## Sequencing Recommendation
+## Remaining Sequencing Recommendation
 
-Execute strictly in this order; later items make assumptions about
-earlier ones holding.
+Layers 1-5 and AL-D002/AL-D003 have landed. A0-A9 also landed the narrow
+serving/context/policy/generic-index/local-grounding follow-up slice. Remaining
+Striatum-memory work is limited to incremental hardening and operator
+documentation:
 
-1. Layer 1 projection.
-2. EG-010 V2 fixture library (extracted from Layer 1's fixture work).
-3. Layer 2 retrieval with `filters.exact_refs`.
-4. Layer 3 packet builder + omission audit.
-5. Layer 4 gates EG-050, EG-060, EG-080, EG-110, EG-120.
-6. Layer 5 e2e smoke.
-7. AL-D002 acceptance decision (human checkpoint).
-8. Optional vector retrieval extension in Layer 2.
-9. AL-D004 generated-product contract if/when generated memory is
-   wanted.
-10. AL-D003 Level 3 default-on authorization (user-only).
+1. Keep the real-bundle Striatum e2e runbook current.
+2. Complete remaining named Layer 4 hardening gates where still valuable:
+   EG-050 retrieval rendering, EG-060, EG-080, EG-120, and any promotion-level
+   EG-110 fixtures beyond the current audit reconstruction smoke.
+3. Keep optional vector retrieval deferred until exact-reference packet
+   behavior is stable under the unified hit contract.
+4. Keep generated products deferred until a downstream generated-product
+   specification is accepted (D089).
+5. Keep RFC 0050 Stage 3+ source-family expansion deferred until real
+   `context_for` eval failures identify the next source family.
 
 ## What This Plan Is Not
 
-- A promotion path for RFC 0045-RFC 0049 as binding spec. Those stay
-  proposal-only; this plan treats them as design references.
+- A promotion path for RFC 0045 as binding spec. RFC 0045 remains
+  proposal-only; RFC 0046-RFC 0049 are accepted design references, not frozen
+  binding specs.
 - A commitment to ship every gate in RFC 0049. Only the gates listed
   in Layer 4 are in scope.
 - A schedule. Sequencing is fixed; cadence is not. Each layer ships

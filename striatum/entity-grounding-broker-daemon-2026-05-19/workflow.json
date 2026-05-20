@@ -1,0 +1,299 @@
+{
+  "schema_version": "striatum.workflow.v1",
+  "workflow_id": "entity-grounding-broker-daemon-2026-05-19",
+  "workflow_version": "2026-05-19+local-daemon-scaffold",
+  "name": "Engram Entity Grounding Broker Daemon Scaffold",
+  "branch": {
+    "mode": "confirm",
+    "allow_dirty": true,
+    "suggested_name": "engram/entity-grounding-broker-daemon-2026-05-19"
+  },
+  "coordinator": {
+    "lane_id": "codex_synthesis",
+    "role_id": "synthesizer"
+  },
+  "parallelism": {
+    "mode": "declared",
+    "max_active_jobs": 4,
+    "require_disjoint_write_scopes": true
+  },
+  "lanes": {
+    "codex_daemon": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (daemon lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_cli": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (CLI lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_security": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (security lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_docs": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (docs lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["write", "review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_verification": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (verification lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_synthesis": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (synthesis lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["review", "synthesis"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    },
+    "codex_final": {
+      "adapter": "process",
+      "display_model": "Codex GPT-5.5 (final review lane)",
+      "command": ["codex", "exec", "--model", "gpt-5.5", "--prompt-file"],
+      "capabilities": ["review"],
+      "constraints": {"network": "forbidden", "repo_scope": "local_only", "transcripts": "off"}
+    }
+  },
+  "roles": {
+    "implementer": {
+      "definition_path": "striatum/entity-grounding-broker-daemon-2026-05-19/roles/implementer.md"
+    },
+    "reviewer": {
+      "definition_path": "striatum/entity-grounding-broker-daemon-2026-05-19/roles/reviewer.md"
+    },
+    "synthesizer": {
+      "definition_path": "striatum/entity-grounding-broker-daemon-2026-05-19/roles/synthesizer.md"
+    }
+  },
+  "context_docs": [
+    {"path": "AGENTS.md", "required": true},
+    {"path": "README.md", "required": true},
+    {"path": "HUMAN_REQUIREMENTS.md", "required": true},
+    {"path": "DECISION_LOG.md", "required": true},
+    {"path": "ROADMAP.md", "required": true},
+    {"path": "docs/AGENT_CONTEXT_NOTES.md", "required": true},
+    {"path": "docs/rfcs/0053-claim-extraction-grounding-boundary.md", "required": true},
+    {"path": "docs/rfcs/0054-entity-grounding-batch-workflow.md", "required": true},
+    {"path": "docs/rfcs/0055-grounding-evidence-materialization.md", "required": true},
+    {"path": "docs/runbooks/grounding-broker-role.md", "required": true}
+  ],
+  "jobs": [
+    {
+      "id": "daemon_core",
+      "type": "draft",
+      "lane_id": "codex_daemon",
+      "role_id": "implementer",
+      "parallel_group": "daemon_parallel_implementation",
+      "title": "Implement local broker daemon loop",
+      "objective": "Add the bounded local polling daemon over approved RFC 0055 grants with deterministic loop tests.",
+      "task_prompt": {"path": "striatum/entity-grounding-broker-daemon-2026-05-19/prompts/daemon_core.md"},
+      "inputs": [
+        {"kind": "materializer", "path": "src/engram/entity_grounding_materialization.py"},
+        {"kind": "tests", "path": "tests/test_entity_grounding_materialization.py"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/entity_grounding_daemon.py",
+          "tests/test_entity_grounding_daemon.py",
+          "docs/reviews/entity-grounding-broker-daemon-2026-05-19/DAEMON_CORE_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "migrations/", "src/engram/cli.py", "Makefile"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "daemon_core_handoff", "kind": "handoff", "path": "docs/reviews/entity-grounding-broker-daemon-2026-05-19/DAEMON_CORE_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "cli_operator_surface",
+      "type": "draft",
+      "lane_id": "codex_cli",
+      "role_id": "implementer",
+      "parallel_group": "daemon_parallel_implementation",
+      "title": "Wire daemon CLI and Makefile target",
+      "objective": "Expose the daemon as a broker-DSN-required CLI command and Makefile target with CLI dispatch tests.",
+      "task_prompt": {"path": "striatum/entity-grounding-broker-daemon-2026-05-19/prompts/cli_operator_surface.md"},
+      "inputs": [
+        {"kind": "cli", "path": "src/engram/cli.py"},
+        {"kind": "makefile", "path": "Makefile"},
+        {"kind": "tests", "path": "tests/test_cli.py"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/cli.py",
+          "Makefile",
+          "tests/test_cli.py",
+          "docs/reviews/entity-grounding-broker-daemon-2026-05-19/CLI_OPERATOR_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "migrations/", "src/engram/entity_grounding_materialization.py"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "cli_operator_handoff", "kind": "handoff", "path": "docs/reviews/entity-grounding-broker-daemon-2026-05-19/CLI_OPERATOR_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "idempotency_security",
+      "type": "draft",
+      "lane_id": "codex_security",
+      "role_id": "implementer",
+      "parallel_group": "daemon_parallel_implementation",
+      "title": "Harden materializer idempotency for daemon use",
+      "objective": "Prevent repeated provider dispatch for already attempted approved grants and document retry semantics.",
+      "task_prompt": {"path": "striatum/entity-grounding-broker-daemon-2026-05-19/prompts/idempotency_security.md"},
+      "inputs": [
+        {"kind": "materializer", "path": "src/engram/entity_grounding_materialization.py"},
+        {"kind": "runtime_schema", "path": "migrations/024_claim_grounding_runtime.sql"},
+        {"kind": "tests", "path": "tests/test_entity_grounding_materialization.py"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "src/engram/entity_grounding_materialization.py",
+          "tests/test_entity_grounding_materialization.py",
+          "docs/reviews/entity-grounding-broker-daemon-2026-05-19/IDEMPOTENCY_SECURITY_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "migrations/", "src/engram/cli.py", "Makefile"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "idempotency_security_handoff", "kind": "handoff", "path": "docs/reviews/entity-grounding-broker-daemon-2026-05-19/IDEMPOTENCY_SECURITY_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "docs_gate",
+      "type": "draft",
+      "lane_id": "codex_docs",
+      "role_id": "implementer",
+      "parallel_group": "daemon_parallel_implementation",
+      "title": "Update broker daemon docs and roadmap",
+      "objective": "Document the daemon workflow, broker role boundary, operator runbook, roadmap state, decision log, and changelog.",
+      "task_prompt": {"path": "striatum/entity-grounding-broker-daemon-2026-05-19/prompts/docs_gate.md"},
+      "inputs": [
+        {"kind": "rfc", "path": "docs/rfcs/0055-grounding-evidence-materialization.md"},
+        {"kind": "runbook", "path": "docs/runbooks/grounding-broker-role.md"},
+        {"kind": "roadmap", "path": "ROADMAP.md"}
+      ],
+      "write_scope": {
+        "mode": "repo_write",
+        "repo_write": true,
+        "allowed_paths": [
+          "docs/rfcs/0055-grounding-evidence-materialization.md",
+          "docs/runbooks/grounding-broker-role.md",
+          "docs/runbooks/grounding-broker-daemon.md",
+          "ROADMAP.md",
+          "docs/AGENT_CONTEXT_NOTES.md",
+          "CHANGELOG.md",
+          "DECISION_LOG.md",
+          "docs/reviews/entity-grounding-broker-daemon-2026-05-19/DOCS_GATE_HANDOFF.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/engram/", "tests/", "migrations/"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "docs_gate_handoff", "kind": "handoff", "path": "docs/reviews/entity-grounding-broker-daemon-2026-05-19/DOCS_GATE_HANDOFF.md", "required": true}
+      ]
+    },
+    {
+      "id": "verification",
+      "type": "review",
+      "lane_id": "codex_verification",
+      "role_id": "reviewer",
+      "fresh_session_required": true,
+      "title": "Verify daemon scaffold",
+      "objective": "Run focused local verification for daemon loop, idempotency, CLI wiring, docs, and formatting.",
+      "task_prompt": {"path": "striatum/entity-grounding-broker-daemon-2026-05-19/prompts/verification.md"},
+      "inputs": [
+        {"kind": "source", "path": "src/engram/entity_grounding_daemon.py"},
+        {"kind": "tests", "path": "tests/test_entity_grounding_daemon.py"},
+        {"kind": "tests", "path": "tests/test_entity_grounding_materialization.py"},
+        {"kind": "tests", "path": "tests/test_cli.py"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/reviews/entity-grounding-broker-daemon-2026-05-19/VERIFICATION.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "Makefile"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "verification", "kind": "test_report", "path": "docs/reviews/entity-grounding-broker-daemon-2026-05-19/VERIFICATION.md", "required": true}
+      ]
+    },
+    {
+      "id": "synthesis",
+      "type": "review",
+      "lane_id": "codex_synthesis",
+      "role_id": "synthesizer",
+      "title": "Synthesize daemon scaffold",
+      "objective": "Synthesize implementation handoffs, verification, accepted deltas, and residual daemon risks.",
+      "task_prompt": {"path": "striatum/entity-grounding-broker-daemon-2026-05-19/prompts/synthesis.md"},
+      "inputs": [
+        {"kind": "handoff", "path": "docs/reviews/entity-grounding-broker-daemon-2026-05-19/"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/reviews/entity-grounding-broker-daemon-2026-05-19/SYNTHESIS.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "Makefile"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "synthesis", "kind": "synthesis", "path": "docs/reviews/entity-grounding-broker-daemon-2026-05-19/SYNTHESIS.md", "required": true}
+      ]
+    },
+    {
+      "id": "final_review",
+      "type": "review",
+      "lane_id": "codex_final",
+      "role_id": "reviewer",
+      "fresh_session_required": true,
+      "title": "Final review of daemon scaffold",
+      "objective": "Review final daemon scaffold against local-first, broker authority, no repeated egress, and operator docs requirements.",
+      "task_prompt": {"path": "striatum/entity-grounding-broker-daemon-2026-05-19/prompts/final_review.md"},
+      "inputs": [
+        {"kind": "synthesis", "path": "docs/reviews/entity-grounding-broker-daemon-2026-05-19/SYNTHESIS.md"},
+        {"kind": "rfc", "path": "docs/rfcs/0055-grounding-evidence-materialization.md"}
+      ],
+      "write_scope": {
+        "mode": "review_only_artifact",
+        "repo_write": false,
+        "allowed_paths": [
+          "docs/reviews/entity-grounding-broker-daemon-2026-05-19/FINAL_REVIEW.md"
+        ],
+        "forbidden_paths": [".striatum/", "src/", "tests/", "migrations/", "Makefile"]
+      },
+      "expected_artifacts": [
+        {"logical_name": "final_review", "kind": "finding", "path": "docs/reviews/entity-grounding-broker-daemon-2026-05-19/FINAL_REVIEW.md", "required": true}
+      ]
+    }
+  ],
+  "edges": [
+    {"from": "daemon_core", "to": "verification", "on": "completed"},
+    {"from": "cli_operator_surface", "to": "verification", "on": "completed"},
+    {"from": "idempotency_security", "to": "verification", "on": "completed"},
+    {"from": "docs_gate", "to": "verification", "on": "completed"},
+    {"from": "verification", "to": "synthesis", "on": "completed"},
+    {"from": "synthesis", "to": "final_review", "on": "completed"}
+  ],
+  "cycles": [
+    {"from": "final_review", "to": "daemon_core", "on_verdict": "needs_revision", "max_iterations": 1}
+  ]
+}

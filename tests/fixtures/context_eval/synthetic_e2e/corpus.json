@@ -1,0 +1,77 @@
+{
+  "schema_version": "context_eval.synthetic_corpus.v1",
+  "description": "Public synthetic corpus for deterministic context_for e2e evaluation.",
+  "beliefs": [
+    {
+      "external_id": "belief:atlas-postgres",
+      "message_text": "Project Atlas uses local Postgres.",
+      "predicate": "uses_tool",
+      "object_text": "Project Atlas uses local Postgres",
+      "confidence": 0.96,
+      "privacy_tier": 1,
+      "sensitivity_class": "routine_project"
+    },
+    {
+      "external_id": "belief:rowan-owner",
+      "message_text": "Rowan owns the migration checklist.",
+      "predicate": "working_on",
+      "object_text": "Rowan owns the migration checklist",
+      "claim_stability_class": "project_status",
+      "confidence": 0.94,
+      "privacy_tier": 1,
+      "sensitivity_class": "routine_project"
+    }
+  ],
+  "captures": [
+    {
+      "external_id": "capture:atlas-privacy",
+      "content_text": "Project Atlas uses local Postgres. Project Atlas forbids cloud telemetry. No launch date is known.",
+      "privacy_tier": 1,
+      "sensitivity_class": "routine_project"
+    },
+    {
+      "external_id": "capture:rowan-plan",
+      "content_text": "Rowan owns the migration checklist. No budget is recorded.",
+      "privacy_tier": 1,
+      "sensitivity_class": "routine_project"
+    }
+  ],
+  "grounding_evidence": [
+    {
+      "query_text": "Project Atlas",
+      "entity_kind": "product",
+      "source_url": "https://example.invalid/synthetic/project-atlas",
+      "source_label": "Synthetic web grounding: Project Atlas",
+      "content_excerpt": "Project Atlas is an internal local-memory product surface, not a place or a person.",
+      "fetched_at": "2026-05-18T00:00:00Z",
+      "fetch_tool_version": "manual.local.synthetic.v1",
+      "extractor_version": "none",
+      "privacy_tier": 1,
+      "sensitivity_class": "routine_project"
+    },
+    {
+      "query_text": "Rowan",
+      "entity_kind": "person",
+      "source_url": "https://example.invalid/synthetic/rowan",
+      "source_label": "Synthetic web grounding: Rowan",
+      "content_excerpt": "Rowan is a person who owns the migration checklist, not a product or place.",
+      "fetched_at": "2026-05-18T00:00:00Z",
+      "fetch_tool_version": "manual.local.synthetic.v1",
+      "extractor_version": "none",
+      "privacy_tier": 1,
+      "sensitivity_class": "routine_project"
+    },
+    {
+      "query_text": "Atlas Station",
+      "entity_kind": "place",
+      "source_url": "https://example.invalid/synthetic/atlas-station",
+      "source_label": "Synthetic web grounding: Atlas Station",
+      "content_excerpt": "Atlas Station is a place in the synthetic fixture, distinct from Project Atlas.",
+      "fetched_at": "2026-05-18T00:00:00Z",
+      "fetch_tool_version": "manual.local.synthetic.v1",
+      "extractor_version": "none",
+      "privacy_tier": 1,
+      "sensitivity_class": "routine_project"
+    }
+  ]
+}

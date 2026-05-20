@@ -9,7 +9,9 @@ from fastapi import HTTPException
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from starlette.requests import Request
 
+from engram.policy import PolicyDecision
 from engram.web import assets, chrome
+from engram.web import tier as tier_module
 from engram.web.origin import require_origin
 from engram.web.status import status_definition
 from engram.web.tier import privacy_tier_envelope, require_tier_ceiling
@@ -282,6 +284,29 @@ def test_tier_guard_rejects_tier_above_ceiling_with_envelope() -> None:
         "message_id": "m-1",
     }
     assert privacy_tier_envelope(2)["error"] == "privacy_tier_ceiling"
+
+
+def test_tier_guard_uses_central_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_decide_local_release(**kwargs: object) -> PolicyDecision:
+        calls.append(kwargs)
+        return PolicyDecision("withhold", "privacy_tier_exceeded")
+
+    monkeypatch.setattr(tier_module, "decide_local_release", fake_decide_local_release)
+
+    with pytest.raises(HTTPException):
+        require_tier_ceiling(2, message_id="m-1")
+
+    assert calls == [
+        {
+            "privacy_tier": 2,
+            "privacy_tier_ceiling": 1,
+            "target_surface": "local_review",
+            "purpose": "review",
+            "source_kind": "web_tier_guard",
+        }
+    ]
 
 
 def test_shared_package_does_not_import_business_logic() -> None:

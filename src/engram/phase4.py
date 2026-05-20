@@ -11,6 +11,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from engram.consolidator.transitions import transition_belief_status
+from engram.events import insert_memory_event
 from engram.migrations import migration_integrity_errors
 
 PHASE4_RESOLUTION_VERSION = "phase4.v1.d077.tier0-smoke"
@@ -76,6 +77,7 @@ def phase4_schema_preflight(conn: psycopg.Connection) -> None:
         "entity_edges": "r",
         "belief_review_actions": "r",
         "pinned_beliefs": "r",
+        "memory_events": "r",
         "current_beliefs": "m",
         "belief_review_queue": "v",
     }
@@ -227,6 +229,7 @@ def correct_belief(
     request_uuid: str | None = None,
 ) -> ReviewActionResult:
     """Record a correction as raw capture evidence and queue reprocessing."""
+    phase4_schema_preflight(conn)
     if correction_text.strip() == "":
         raise ValueError("correction_text must not be empty")
     request_uuid = request_uuid or str(uuid.uuid4())
@@ -545,7 +548,108 @@ def _insert_review_action(
     ).fetchone()
     if row is None:
         raise Phase4Error("failed to insert belief review action")
-    return row[0]
+    action_id = row[0]
+    _insert_review_action_event(
+        conn,
+        belief_id=belief_id,
+        action_id=action_id,
+        action_kind=action_kind,
+        action_status=action_status,
+        request_uuid=request_uuid,
+        actor=actor,
+        note=note,
+        raw_payload=raw_payload,
+        capture_id=capture_id,
+    )
+    return action_id
+
+
+def _insert_review_action_event(
+    conn: psycopg.Connection,
+    *,
+    belief_id: str,
+    action_id: str,
+    action_kind: str,
+    action_status: str,
+    request_uuid: str,
+    actor: str,
+    note: str | None,
+    raw_payload: JsonObject,
+    capture_id: str | None,
+) -> None:
+    belief_scope = conn.execute(
+        """
+        SELECT tenant_id, corpus_id
+        FROM beliefs
+        WHERE id = %s
+        """,
+        (belief_id,),
+    ).fetchone()
+    if belief_scope is None:
+        raise Phase4Error("belief review action event has no belief scope")
+    tenant_id = str(belief_scope[0])
+    corpus_id = str(belief_scope[1])
+    insert_memory_event(
+        conn,
+        event_type="belief_changed",
+        aggregate_type="belief",
+        aggregate_id=belief_id,
+        tenant_id=tenant_id,
+        corpus_id=corpus_id,
+        scope_type="corpus",
+        scope_key=corpus_id,
+        payload=_review_action_event_payload(
+            belief_id=belief_id,
+            action_id=action_id,
+            action_kind=action_kind,
+            action_status=action_status,
+            request_uuid=request_uuid,
+            actor=actor,
+            note=note,
+            raw_payload=raw_payload,
+            capture_id=capture_id,
+        ),
+    )
+
+
+def _review_action_event_payload(
+    *,
+    belief_id: str,
+    action_id: str,
+    action_kind: str,
+    action_status: str,
+    request_uuid: str,
+    actor: str,
+    note: str | None,
+    raw_payload: JsonObject,
+    capture_id: str | None,
+) -> JsonObject:
+    metadata_keys = (
+        "previous_status",
+        "changed",
+        "status_changed",
+        "pinned_inserted",
+        "correction_capture_id",
+    )
+    action_metadata = {
+        key: raw_payload[key]
+        for key in metadata_keys
+        if key in raw_payload and raw_payload[key] is not None
+    }
+    payload: JsonObject = {
+        "belief_id": belief_id,
+        "review_action_id": action_id,
+        "action_kind": action_kind,
+        "action_status": action_status,
+        "request_uuid": request_uuid,
+        "actor": actor,
+        "note_present": note is not None and note.strip() != "",
+    }
+    if capture_id is not None:
+        payload["capture_id"] = capture_id
+    if action_metadata:
+        payload["action_metadata"] = action_metadata
+    return payload
 
 
 def _review_capture_source_id(conn: psycopg.Connection) -> str:

@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engram.local/schemas/claim_grounding_network_dispatch.v1.schema.json",
+  "title": "Engram Claim Grounding Network Dispatch",
+  "description": "RFC 0053 minimized payload from a grounding broker to a network-capable adapter.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "claim_grounding.network_dispatch.v1"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "corpus_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "surface_form": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "network_grant": {
+      "$ref": "#/$defs/network_grant"
+    },
+    "requested_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "schema_version",
+    "request_id",
+    "tenant_id",
+    "corpus_id",
+    "surface_form",
+    "network_grant",
+    "requested_at"
+  ],
+  "$defs": {
+    "network_grant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "grant_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "granted_by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "granted_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "purpose": {
+          "const": "entity_grounding"
+        },
+        "search_query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "query_text_class": {
+          "const": "entity_surface_form"
+        },
+        "query_privacy_tier": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "allowed_network_targets": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "internet_search",
+              "public_dataset_api"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "grant_id",
+        "granted_by",
+        "granted_at",
+        "purpose",
+        "search_query",
+        "query_text_class",
+        "query_privacy_tier",
+        "allowed_network_targets"
+      ]
+    }
+  }
+}

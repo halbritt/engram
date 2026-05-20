@@ -126,68 +126,37 @@ branch for a typo fix is friction.
 
 ## 2. Active project context
 
-### Source-ingestion expansion (2026-05-15 late)
+### Current handoff (verified 2026-05-17)
 
-After the Striatum-memory e2e pipeline (Layers 1-5) landed and was
-committed to master, the user invoked a sequenced "scaffold + build"
-plan from `docs/design/source-ingestion-expansion-proposal-2026-05-15.md`:
+`OPERATOR_REPORT.md` is the current handoff summary. Historical sections in
+that file and in older review artifacts remain provenance, but the top summary
+wins when status conflicts.
 
-1. Scaffold and run a multi-lane research workflow to produce a usable
-   Engram RFC — landed as **RFC 0050** at
-   `docs/rfcs/0050-source-ingestion-expansion.md` (850 lines, proposal
-   status). Workflow at
-   `striatum/source-ingestion-rfc-research-2026-05-15/`.
-2. Author a layered execution backlog — landed at
-   `SOURCE_INGESTION_BACKLOG.md`.
-3. Build all six layers on the branch `engram/source-ingestion-rfc-research`:
-   Layer 1 source contract + git importer; Layer 2 build-artifact
-   importer; Layer 3 Markdown importer; Layer 4 EG-SI gates; Layer 5
-   exact-reference retrieval extension; Layer 6 `source_audits` +
-   EG-SI-090 reconstruction.
-4. Full suite at branch tip: `make test` 702 passed (was 626 at the
-   start of the session). 76 new tests across the six layers.
+Striatum-memory e2e Layers 1-5 have landed on master: projection, retrieval,
+packet builder, gate harness, and the MCP smoke. `STRIATUM_MEMORY_E2E_BACKLOG.md`
+is reconciled to incremental hardening. The real-bundle e2e runbook lives at
+`docs/runbooks/striatum-memory-e2e-2026-05-15.md`; remaining Striatum work is
+keeping that runbook current and selected Layer 4 hardening gates where still
+useful.
 
-The RFC is proposal status only; promotion to accepted requires an
-operator-recorded decision in `DECISION_LOG.md`. The branch has not
-been merged into master in this session.
+Source-ingestion expansion is no longer branch-only proposal work. RFC 0050 is
+accepted as design reference by D084, and Layers 1-6 landed on master: source
+contracts, git/build-artifact/Markdown importers, EG-SI gates,
+exact-reference retrieval for project-execution sources, `source_audits`, and
+EG-SI-090 reconstruction. Optional Stage 3+ source families wait for real
+owner-authored `context_for` eval failures per D093.
 
-### Striatum-memory e2e pivot (2026-05-15 — earlier)
+Architecture follow-up A0-A9 landed narrow serving/context/policy/generic-index
+and local-grounding slices. Generated schema docs are refreshed for migrations
+021-023. Generated products, remote grounding fetches, high-risk source-family
+ingestion, backup implementation, and blob-vault implementation remain
+separately gated.
 
-On 2026-05-15 the user pivoted off the RFC 0045-0049 promotion / spec
-paperwork track and onto building the e2e Striatum-memory pipeline
-incrementally. The active plan is
-[`STRIATUM_MEMORY_E2E_BACKLOG.md`](../STRIATUM_MEMORY_E2E_BACKLOG.md):
-five sequenced layers — projection, retrieval, packet builder, gates,
-e2e MCP smoke — each shipping as working code with tests on master.
-
-**Done so far on the new track:**
-
-- RFC 0044 Phase 1 read-only API was already implemented before the
-  pivot (migration 014, `MemoryService`, `engram-mcp-stdio`,
-  `engram ingest-striatum`).
-- AL-D001 / EG-000 hardening baseline closed. Evidence at
-  `docs/reviews/eg-000-evidence-2026-05-15/EG_000_EVIDENCE.md`.
-  Committed non-private fixture at `tests/fixtures/striatum_eg000/`.
-- Implementation checkpoint `25decf4` (`Build Striatum memory retrieval
-  layers`) landed Layer 1 projection, Layer 2 exact-reference retrieval,
-  Layer 3 packet building, first Layer 4 gates, and the Layer 5 MCP smoke.
-  Verification before that commit: `make test` 626 passed,
-  `make eval-gates` 12 passed, and `make e2e-striatum` 1 passed.
-- Current handoff is in `OPERATOR_REPORT.md`. The backlog doc is now partly
-  stale where it describes Layers 1-3 and the e2e smoke as future work; use
-  it as design/order reference until it is reconciled.
-- Remaining near-term work: refresh generated schema docs if desired, add the
-  real-bundle Striatum e2e runbook, complete the remaining named Layer 4
-  gates, and then decide whether to start source-ingestion expansion with the
-  source contract template plus local git/build-artifact importers.
-
-**Important:** treat RFC 0045-RFC 0049 as design *reference*, not as
-contract gates. The acceptance decisions (AL-D002, AL-D003, AL-D004)
-are recorded as humans review working code, not as conditions on
-shipping more paper. The promotion-workflow scaffold at
-`striatum/striatum-memory-rfc-promotion-2026-05-14/` is deferred-
-canceled (run `run_c16bd15778f6473e800af5378d609449`); do not restart
-it until [striatum#18](https://github.com/halbritt/striatum/issues/18)
+RFC 0045 remains proposal-only. RFC 0046-RFC 0052 are accepted as design
+references for their scoped implementation lanes, as recorded in D083, D084,
+and D094. The canceled promotion-workflow scaffold at
+`striatum/striatum-memory-rfc-promotion-2026-05-14/` remains historical
+provenance; do not restart it until [striatum#18](https://github.com/halbritt/striatum/issues/18)
 lands or the workflow lane command is moved off stdin.
 
 ### Striatum daemon/MCP/Postgres transition is rocky
@@ -252,7 +221,7 @@ integration bugs.
 `ENGRAM_TEST_DATABASE_URL="postgresql:///engram_test"`. The `conn`
 fixture in `tests/conftest.py` drops + recreates the schema per test.
 
-### Pipeline state at handoff (2026-05-15)
+### Pipeline state and architecture follow-up handoff (verified 2026-05-17)
 
 - Phase 1 raw evidence: complete (ChatGPT, Claude, Gemini, Striatum
   bundle).
@@ -266,6 +235,72 @@ fixture in `tests/conftest.py` drops + recreates the schema per test.
   TODO.md mirrors it. Step 5 is owner-only and cannot be delegated.
 - Striatum-memory e2e: see `STRIATUM_MEMORY_E2E_BACKLOG.md` for the
   layered plan.
+
+### Architecture follow-up decisions (2026-05-17)
+
+- D087-D094 record the operator's architecture-followup interview decisions.
+- `context_for` V1 output shape and `context_eval.item.v1` are accepted for the
+  first real eval loop.
+- The real context eval dataset lives outside the repo. The repo carries only
+  public schema/validator material and synthetic fixtures. Use
+  `ENGRAM_EVAL_DATASET_PATH` or `engram eval context --dataset-path`.
+- RFC 0051 is accepted as design reference for the narrow generic
+  evidence/reference substrate: migration 022, `src/engram/evidence.py`, and
+  generic exact-reference lookup before source-specific fallback.
+- RFC 0052 is accepted as design reference for the narrow local grounding
+  substrate: migration 023, `src/engram/entity_grounding.py`, and MCP
+  `engram.ground_entity`. RFC 0030 remains seed context, not an accepted
+  implementation contract.
+- RFC 0053 remains proposal-level for the claim extraction / grounding broker
+  boundary. It now has runtime scaffolding, grant lifecycle helpers, and
+  disabled generic HTTP/Tavily adapter scaffolds, but no default-on live
+  grounding and no extraction-affecting use.
+- RFC 0054 and RFC 0055 remain proposal-level documents, but their first
+  implementation slice is present. RFC 0054 defines the entity-wide draft
+  workflow for unresolved entities with no network. RFC 0055 defines
+  approved-grant materialization into append-only `entity_grounding_evidence`
+  before responses or review actions consume provider rows. The operator
+  CLI/gate seam is wired as of 2026-05-19:
+  `engram entity-grounding draft`, `engram entity-grounding process-approved`,
+  and `make e2e-entity-grounding` dispatch/include the implementation modules,
+  with sanitized JSON output. The 2026-05-19 Striatum pass verified the worker
+  and materializer through `make e2e-claim-grounding-runtime` and hardened
+  byte-exact entity-surface query matching, broker-DSN materializer authority,
+  materializer-side public URL filtering, and review-action privacy tiers.
+  The local restricted-role provisioning path is
+  `make provision-grounding-broker` plus `make check-grounding-broker`; see
+  `docs/runbooks/grounding-broker-role.md`. The local broker daemon scaffold is
+  `engram entity-grounding broker-daemon` / `make grounding-broker-daemon`; it
+  requires `ENGRAM_ENTITY_GROUNDING_BROKER_DATABASE_URL`, runs materialization
+  under a transaction advisory lock, and skips grants with existing dispatch
+  audit rows to avoid repeated provider calls. The Striatum scaffold for this
+  slice is `striatum/entity-grounding-broker-daemon-2026-05-19/workflow.json`;
+  it validates with `--allow-same-model-pairing` and declares parallel lanes
+  for daemon core, CLI, idempotency/security, docs, verification, synthesis,
+  and final review. Run `run_ecf126b2e6234ae3b54958d8471e5e56` completed on
+  2026-05-19 with all seven jobs completed and final review
+  `accept_with_findings`; artifacts live under
+  `docs/reviews/entity-grounding-broker-daemon-2026-05-19/`. Residual daemon
+  follow-up work is scaffolded at
+  `striatum/entity-grounding-broker-daemon-followups-2026-05-19/workflow.json`
+  with five first-wave parallel lanes: durable dispatch/concurrency,
+  retry/cooldown policy, production daemon packaging, CLI typecheck debt, and
+  review/claim-use gate. Validate it with
+  `STRIATUM_DAEMON_REQUIRED=0 STRIATUM_TEST_HARNESS=1 .venv/bin/striatum --repo . workflow validate --allow-same-model-pairing striatum/entity-grounding-broker-daemon-followups-2026-05-19/workflow.json --json`.
+- Generated products remain retrieval-invisible until a downstream
+  generated-product spec is accepted.
+- The next RFC 0050 Stage 3+ source family must be chosen from real
+  `context_for` eval failures.
+- The A7 central policy slice covers packet/context serving, the shared
+  interview/bench-review web tier guard, and Phase 3 interview export tier
+  filtering. Future export families and dashboards still need their own
+  policy wiring.
+- A10/A11 have proposal-level specs only:
+  `docs/specs/local-backup-key-tier5-design-v1.md` and
+  `docs/specs/blob-vault-local-s3-exploration-v1.md`. They are not accepted
+  implementation contracts. High-risk source-family expansion still needs an
+  accepted backup/key/Tier 5 design; blob storage still needs local
+  S3-compatible endpoint exploration.
 
 ### RFC 0027 web UI polish is deferred
 

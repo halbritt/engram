@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 
+from engram.policy import decide_local_release
+
 DEFAULT_TIER_CEILING: int = 1
 
 
@@ -22,10 +24,22 @@ def privacy_tier_envelope(
 
 
 def require_tier_ceiling(
-    tier: int, *, ceiling: int = DEFAULT_TIER_CEILING, message_id: str | None = None
+    tier: int,
+    *,
+    ceiling: int = DEFAULT_TIER_CEILING,
+    message_id: str | None = None,
+    target_surface: str = "local_review",
+    purpose: str = "review",
 ) -> None:
     """Raise 403 if ``tier`` exceeds the render ceiling."""
-    if int(tier) > int(ceiling):
+    decision = decide_local_release(
+        privacy_tier=int(tier),
+        privacy_tier_ceiling=int(ceiling),
+        target_surface=target_surface,
+        purpose=purpose,
+        source_kind="web_tier_guard",
+    )
+    if decision.action != "allow":
         raise HTTPException(
             status_code=403,
             detail=privacy_tier_envelope(tier, ceiling=ceiling, message_id=message_id),

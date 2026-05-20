@@ -18,6 +18,7 @@ from typing import Any, Protocol
 import psycopg
 from psycopg.types.json import Jsonb
 
+from engram.claim_grounding_integration import emit_claim_grounding_requests_for_claims
 from engram.consolidator import apply_phase3_reclassification_invalidations
 from engram.progress import upsert_progress
 from engram.segmenter import (
@@ -67,6 +68,10 @@ EXTRACTION_ADAPTIVE_SPLIT_MAX_DEPTH = int(
     os.environ.get("ENGRAM_EXTRACTOR_ADAPTIVE_SPLIT_MAX_DEPTH", "4")
 )
 DEFAULT_EXTRACTION_CONCURRENCY = int(os.environ.get("ENGRAM_EXTRACTOR_CONCURRENCY", "1"))
+CLAIM_GROUNDING_EMIT_SIDECARES = os.environ.get(
+    "ENGRAM_CLAIM_GROUNDING_EMIT_SIDECARES",
+    "",
+).strip().casefold() in {"1", "true", "yes", "on"}
 
 
 STABILITY_CLASSES = [
@@ -798,6 +803,7 @@ def extract_claims_from_segment(
     claimed_extraction_id: str | None = None,
     maintenance: bool = True,
     use_signal_deadline: bool = True,
+    emit_claim_grounding_sidecars: bool = CLAIM_GROUNDING_EMIT_SIDECARES,
 ) -> ExtractionResult:
     if maintenance:
         apply_phase3_reclassification_invalidations(conn)
@@ -1030,6 +1036,26 @@ def extract_claims_from_segment(
             prompt_version=prompt_version,
             model_version=model_id,
         )
+        grounding_sidecars = emit_claim_grounding_requests_for_claims(
+            conn,
+            extraction_id=extraction_id,
+            segment=segment,
+            claims=valid,
+            prompt_version=prompt_version,
+            model_version=model_id,
+            enabled=emit_claim_grounding_sidecars,
+        )
+        if grounding_sidecars:
+            raw_payload["claim_grounding_sidecars"] = [
+                {
+                    "request_id": sidecar.request_id,
+                    "request_record_id": sidecar.request_record_id,
+                    "link_id": sidecar.link_id,
+                    "surface_form": sidecar.surface_form,
+                    "mention_role": sidecar.mention_role,
+                }
+                for sidecar in grounding_sidecars
+            ]
         raw_payload["extraction_result_kind"] = extraction_result_kind(inserted, raw_payload)
         conn.execute(
             """
@@ -1736,16 +1762,12 @@ def attach_attempt_diagnostics(
     *,
     max_tokens: int,
 ) -> None:
-    setattr(
-        exc,
-        "extractor_attempt_diagnostics",
-        {
-            "attempts": len(errors),
-            "attempt_errors": list(errors),
-            "attempt_max_tokens": [max_tokens for _ in errors],
-            "decode_counts": [],
-        },
-    )
+    exc.extractor_attempt_diagnostics = {  # type: ignore[attr-defined]
+        "attempts": len(errors),
+        "attempt_errors": list(errors),
+        "attempt_max_tokens": [max_tokens for _ in errors],
+        "decode_counts": [],
+    }
 
 
 def attach_chunk_diagnostics(
@@ -1769,7 +1791,7 @@ def attach_chunk_diagnostics(
             "chunk_message_count": message_count,
         }
     )
-    setattr(exc, "extractor_attempt_diagnostics", diagnostics)
+    exc.extractor_attempt_diagnostics = diagnostics  # type: ignore[attr-defined]
 
 
 def is_schema_construction_error(exc: BaseException) -> bool:
@@ -1848,7 +1870,7 @@ def salvage_claims(
     dropped: list[dict[str, Any]] = []
     allowed_evidence = set(segment.message_ids)
     for index, claim in enumerate(claims):
-        claim, normalizations = normalize_claim_draft(claim)
+        claim, _normalizations = normalize_claim_draft(claim)
         reason = validate_claim_draft(
             claim,
             allowed_evidence,
@@ -1931,9 +1953,10 @@ def validate_claim_draft(
         return f"evidence_message_ids must be a subset of {allowed_evidence_label}"
     if (claim.object_text is None) == (claim.object_json is None):
         return "exactly one of object_text or object_json is required"
-    if vocab["object_kind"] == "text":
-        if claim.object_text is None or not claim.object_text.strip():
-            return "predicate requires non-empty object_text"
+    if vocab["object_kind"] == "text" and (
+        claim.object_text is None or not claim.object_text.strip()
+    ):
+        return "predicate requires non-empty object_text"
     if vocab["object_kind"] == "json":
         if not isinstance(claim.object_json, dict):
             return "predicate requires object_json"

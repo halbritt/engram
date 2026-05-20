@@ -7,12 +7,214 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Hardened RFC 0054/0055 entity grounding after adversarial review: entity
+  surface network grants now require byte-exact `search_query == surface_form`
+  validation before persistence and adapter dispatch; materialization re-filters
+  provider result URLs before local evidence insertion; and materialized
+  evidence-attachment review actions preserve the approved query privacy tier.
+- Added `ENGRAM_ENTITY_GROUNDING_BROKER_DATABASE_URL` as the restricted
+  broker-authority DSN seam for `engram entity-grounding process-approved`;
+  the default connection remains available only for local development and
+  mocked tests.
+- Added `scripts/provision_grounding_broker_role.py`,
+  `scripts/check_grounding_broker_role.py`,
+  `make provision-grounding-broker`, `make check-grounding-broker`, and
+  `docs/runbooks/grounding-broker-role.md` to provision and verify the local
+  restricted PostgreSQL role for provider-backed grounding materialization.
+
 ### Added
+- `engram entity-grounding broker-daemon`, `make grounding-broker-daemon`, and
+  `docs/runbooks/grounding-broker-daemon.md` scaffold the local long-running
+  network-capable grounding broker workflow. The daemon requires the restricted
+  broker DSN, uses a per-iteration PostgreSQL advisory lock, and skips grants
+  that already have dispatch audit rows to avoid repeated provider calls.
+- `striatum/entity-grounding-broker-daemon-2026-05-19/` adds a max-parallelism
+  Striatum scaffold for daemon core, CLI surface, idempotency/security, docs,
+  verification, synthesis, and final review lanes.
+- Striatum run `run_ecf126b2e6234ae3b54958d8471e5e56` executed that daemon
+  scaffold to completion with all seven jobs completed and final review
+  `accept_with_findings`.
+- `striatum/entity-grounding-broker-daemon-followups-2026-05-19/` scaffolds the
+  residual daemon work: durable dispatch/concurrency, retry/cooldown policy,
+  production daemon packaging, CLI typecheck debt, review/claim-use gate, docs,
+  verification, synthesis, and final review.
+- `ROADMAP.md` now records
+  `ARCHITECTURE_RECOMMENDATION_EXECUTION_PLAN_2026-05-16.md` as the active
+  architecture-followup supplement, freezing RFC 0050 Stage 3+ source-family
+  expansion until minimal cited `context_for` and the first eval loop exist.
+- Direct `PyYAML` runtime dependency plus `scripts/authority_lint.py` for
+  RFC header/index status, schema-doc table coverage, and dependency checks.
+- Unified `MemoryHit` retrieval contract for Striatum, git, build-artifact,
+  and Markdown exact-reference lanes. `MemoryService.fetch_reference()` now
+  supports non-capture references (`git_commits`, `build_artifacts`,
+  `markdown_files`) with tenant/corpus re-authorization, and packet citations
+  use stable source fields without raw body leakage.
+- `engram no-egress probe`, `engram no-egress run -- <command>`, and
+  `make no-egress-smoke` with honest unsupported reporting when OS-level
+  network isolation is unavailable.
+- Minimal personal `engram context-for` compiler over pinned/current beliefs,
+  historical beliefs, recent captures, exact message refs, explicit gaps,
+  provenance/confidence tags, privacy/sensitivity policy withholding, word
+  budgets, and append-only warm snapshots.
+- MCP stdio `engram.context_for` tool with explicit `memory.read_personal`
+  authorization, strict local argument parsing, privacy-tier ceiling support,
+  and response limiting for recent-signal and per-lane output.
+- Context eval runner and `engram eval context` command over JSONL gold items,
+  scoring required fact recall, stale fact hits, required gaps, citation
+  coverage, unsupported-fact approximation, and token/word waste.
+- Public context eval item schema at
+  `docs/schemas/context_eval_item.v1.schema.json`, schema notes at
+  `docs/schemas/README.md`, Python dataset validation in
+  `src/engram/context_eval.py`, and external private eval dataset discovery via
+  `ENGRAM_EVAL_DATASET_PATH` or `engram eval context --dataset-path`.
+- Public synthetic context-eval starter dataset at
+  `tests/fixtures/context_eval/gold.jsonl`, plus a seeded synthetic-corpus
+  regression that runs the real `engram eval context` CLI/compiler path without
+  committing owner data.
+- Synthetic context-eval e2e harness at
+  `tests/fixtures/context_eval/synthetic_e2e/` plus `make e2e-context-synthetic`.
+  The harness seeds synthetic beliefs, captures, and local public-entity
+  grounding evidence so proper nouns can be resolved as product/person/place
+  through local `engram.ground_entity` without live network access.
+- `docs/specs/context-serving-eval-v1.md` records the accepted `context_for`
+  V1 and context eval contracts from D087.
+- `docs/specs/README.md` indexes current implementation specs and
+  proposal-level design contracts.
+- RFC 0051 and RFC 0052 design-reference docs for the generic
+  evidence/reference substrate and local entity grounding/review substrate.
+- RFC 0053 proposal for the constrained claim-extraction/grounding boundary:
+  versioned grounding request/response shapes, process capability split, and
+  explicit prohibition on surrounding raw corpus context reaching
+  network-capable broker modes.
+- `src/engram/claim_grounding.py` plus public request, response, and
+  network-dispatch schemas scaffold the RFC 0053 contract. The extractor
+  request records network intent and grant metadata, while the dedicated
+  `claim_grounding.network_dispatch.v1` shape is the minimized broker-to-adapter
+  egress payload. The granted `search_query` may be private entity-name text and
+  carries `query_privacy_tier`; internet search remains broker-side only and
+  disabled by default.
+- `make e2e-claim-grounding-synthetic` adds a deterministic synthetic
+  claim-grounding gate for RFC 0053 request/dispatch/response validation,
+  local ambiguity, denied network results, fake granted-broker citation,
+  poisoned public evidence, and no-live-network behavior.
+- Migration `024_claim_grounding_runtime.sql` adds append-only RFC 0053
+  sidecars for claim-grounding requests, grants, grant uses, network dispatch
+  attempts, responses, and response/claim/evidence links.
+- `src/engram/claim_grounding_runtime.py` and
+  `src/engram/claim_grounding_broker.py` scaffold persisted local broker
+  execution for RFC 0053. Sidecar persistence is explicit, network behavior is
+  injected-adapter-only, and default execution performs no live network access.
+- RFC 0053 runtime-completion scaffold: append-only grant lifecycle helpers
+  now record draft/approved/denied/revoked rows and verify the latest live,
+  unexpired, target-authorized persisted grant before network dispatch audit.
+- `src/engram/claim_grounding_network.py` adds a disabled-by-default,
+  operator-configured HTTP search-adapter scaffold with fixed GET dispatch,
+  timeout/byte/result limits, private-address result filtering, and sanitized
+  response-shaped candidate payloads. It is not ambient network access and is
+  not enabled by default.
+- RFC 0053 Tavily provider scaffold for broker-owned internet grounding:
+  `ENGRAM_CLAIM_GROUNDING_SEARCH_PROVIDER=tavily` selects fixed POST dispatch to
+  Tavily's HTTPS Search API, `ENGRAM_CLAIM_GROUNDING_TAVILY_API_KEY` supplies
+  the secret outside the repo, and the adapter sends only the exact
+  grant-bound entity surface query. Live broker invocation now requires
+  persisted sidecars plus a latest-approved grant before calling any injected
+  network adapter.
+- RFC 0054 and RFC 0055 proposal docs split entity-wide grounding into a
+  draft-only batch workflow over unresolved entities and a separate
+  approved-grant materialization workflow that must write provider rows to
+  append-only local grounding evidence before responses or review actions
+  consume them.
+- `engram entity-grounding draft` and
+  `engram entity-grounding process-approved` expose the RFC 0054/0055 operator
+  command names through lazy implementation-module dispatch with sanitized JSON
+  output. `make e2e-claim-grounding-runtime` now includes the entity-grounding
+  workflow/materialization tests when those lane files are present, and
+  `make e2e-entity-grounding` aliases that gate.
+- `engram claim-grounding grants list|draft|approve|deny|revoke` provides a
+  CLI-first operator surface for exact grant display and append-only grant
+  lifecycle decisions without performing network IO.
+- `src/engram/claim_grounding_integration.py` adds disabled extraction-adjacent
+  sidecar emission for accepted claim drafts, linking grounding requests to the
+  extraction without mutating claim content or sending raw segment/message text.
+- `tests/test_claim_grounding_security.py` adds a starter broker credential
+  separation regression proving a broker role can read only minimized
+  request/grant rows, write only bounded audit/evidence rows, and cannot read
+  raw corpus tables.
+- Local RFC 0053 entry points:
+  `engram claim-grounding entity --request-json PATH` and MCP
+  `engram.claim_ground_entity`, both local-only.
+- `make e2e-claim-grounding-runtime` runs the request validator, broker,
+  runtime sidecar, grant lifecycle, network-adapter, credential-separation,
+  extraction-sidecar, migration, and synthetic no-live-network grounding tests.
+- Adversarial security review for RFC 0053 documents the broker/network threat
+  model and blockers required before network grounding can become default-on or
+  affect extraction output.
+- Canonical docs now distinguish ordinary evidence-linked claims, local
+  public-entity grounding evidence, and the proposal-only RFC 0053
+  extractor/grounder boundary so "grounding" does not imply approved network
+  access.
+- Striatum RFC 0053 review workflow added and run for six parallel Codex lanes
+  over privacy/query boundary, network security, schema contract, runtime
+  integration, product/MCP surface, and eval gate. The resulting ledger and
+  synthesis keep RFC 0053 proposal-only while pinning blockers for exact
+  entity-surface network queries, persisted grants, broker credential
+  separation, sidecar/audit persistence, and the now-scaffolded
+  `make e2e-claim-grounding-synthetic` /
+  `make e2e-claim-grounding-runtime` gates before any live network runtime or
+  extraction-affecting grounding ships.
+- Proposal-level A10/A11 design specs:
+  `docs/specs/local-backup-key-tier5-design-v1.md` for local encrypted
+  backup, key hierarchy, restore smoke, dead-man's-switch, and Tier 5
+  destruction; and `docs/specs/blob-vault-local-s3-exploration-v1.md` for the
+  local S3-compatible blob-vault exploration.
+- Migration `021_context_events_snapshots_feedback.sql` adds append-only
+  `memory_events`, `context_snapshots`, and `context_feedback` tables plus
+  `memory_epoch_seq`. `src/engram/events.py` adds memory-event and
+  context-feedback helpers. Phase 4 belief review actions now emit sanitized
+  `belief_changed` memory events without note/correction body leakage.
+- Central deterministic `engram.policy` module with closed action/reason
+  vocabulary. `context_for` uses it for privacy tier, sensitivity, and
+  tenant/corpus release decisions, `MemoryService.build_packet()` now uses it
+  for packet omissions and cite-only body suppression, and the shared
+  interview/bench-review web tier guard plus Phase 3 interview export tier
+  filtering now route through the same policy contract.
+- Migration `022_generic_evidence_reference_index.sql` adds rebuildable
+  `evidence_items` and `evidence_refs` projections. `src/engram/evidence.py`
+  backfills current supported sources, `engram evidence refresh-index` /
+  `make evidence-refresh` expose the rebuild, and exact-reference search now
+  reads the generic index before falling back to source-specific lookup
+  branches.
+- Migration `023_entity_grounding_review.sql` adds append-only
+  `entity_grounding_evidence` and `entity_identity_review_actions`.
+  `src/engram/entity_grounding.py` and MCP `engram.ground_entity` provide
+  authorized local-only entity grounding lookup; internet-search
+  requests to that local MCP tool fail closed.
+- Generated schema docs refreshed via `make schema-docs` so
+  `docs/schema/README.md` includes migrations 021-023, including the context
+  event tables, generic evidence/reference index, and entity grounding/review
+  substrate.
+- Canonical roadmap, handoff, backlog, RFC, and spec docs were scanned and
+  refreshed for the D094 A8/A9 status change: stale A0-A7 summaries, RFC
+  0051/0052 proposal-gate wording, old generated-product gate phrasing, and
+  verification-count references now point at the current A0-A9 state.
+- Top-level README/SPEC/TODO/source-ingestion/agent-context docs now describe
+  the actual partial Phase 4/5 surface instead of treating `current_beliefs`,
+  `context_for`, MCP serving, snapshots, feedback, generic references, and
+  local grounding as wholly future work.
+- `docs/runbooks/striatum-memory-e2e-2026-05-15.md` documents the local
+  real-bundle Striatum ingest/projection/index/MCP packet smoke path.
+- Striatum packet audit reconstruction helper and regression coverage for
+  dirty working-tree packet labels and selected/omitted packet-audit replay
+  without loading raw memory content.
+- D094 records operator approval to proceed with the narrow RFC 0051/0052
+  implementation slices while keeping generated products, remote grounding
+  fetches, high-risk source families, backup, and blob-vault implementation
+  separately gated.
 - RFC 0050 source-ingestion expansion proposal landed via multi-lane research
   workflow (claude/codex/gemini drafts, codex prior-art research, claude
   privacy + gemini project-judgment reviews, codex findings ledger and
-  synthesis). Output is proposal-status; acceptance is a separate operator
-  decision.
+  synthesis), and was later accepted as design reference by D084.
 - `SOURCE_INGESTION_BACKLOG.md` layer-by-layer execution plan derived from
   RFC 0050.
 - Source-contract template at `docs/source-contracts/README.md` and example

@@ -6,15 +6,17 @@
 |-------|-------|
 | RFC | RFC-0046 |
 | Title | Engram Striatum Projection And Index Schema |
-| Status | proposal |
-| Implementation | none |
+| Status | accepted_as_design_reference |
+| Implementation | landed via Layers 1-5 of `STRIATUM_MEMORY_E2E_BACKLOG.md` (migration 015, `MemoryService`) |
 | Created | 2026-05-14 |
 | Source | `STRIATUM_MEMORY_ROADMAP.md` |
 | Context | RFC 0044, RFC 0045, `STRIATUM_MEMORY_ROADMAP.md`, `docs/schema/README.md` |
 
 ## Summary
 
-This RFC proposes the Engram-side derived schema for Striatum Corpus Contract V2
+This RFC is accepted as the design reference for the Engram-side derived schema
+used by the landed Striatum memory pipeline. It proposes the projection shape
+for Striatum Corpus Contract V2
 bundles. It turns validated Striatum raw evidence into rebuildable projection
 families and local indexes for exact reference lookup, structured filtering, and
 future layered retrieval.
@@ -25,9 +27,9 @@ raw Engram capture rows, hashes, privacy/redaction metadata, and derivation
 versions so they can be invalidated, rebuilt, audited, and superseded without
 rewriting raw evidence.
 
-This RFC is a schema handoff, not an implementation. It does not create
-migrations, expand MCP tools, alter authorization, implement the Striatum
-exporter, or authorize cloud/hosted dependencies.
+This RFC began as a schema handoff; D083 later accepted it as design reference
+after the corresponding projection, retrieval, packet, gate, and MCP smoke
+layers landed. It does not authorize cloud/hosted dependencies.
 
 ## Roadmap Position
 
@@ -56,9 +58,11 @@ compatibility adapter supplies the required V2 fields and is reviewed separately
 ## Non-Goals
 
 - No Striatum exporter implementation.
-- No Engram ingestion implementation.
-- No migration or generated schema-doc change in this RFC pass.
-- No MCP tool expansion unless a later RFC accepts it.
+- No Striatum bundle schema replacement.
+- No additional migration or generated schema-doc change beyond the landed
+  scoped implementation unless a future change needs it.
+- No MCP tool expansion beyond the landed packet/retrieval surfaces unless a
+  later RFC accepts it.
 - No retrieval-ranking or context-injection policy.
 - No claim/belief creation from Striatum evidence in this pass.
 - No personal-memory projection redesign.
@@ -90,16 +94,14 @@ Open RFC 0045 decisions remain upstream decisions, not hidden RFC 0046 choices:
 8. fixture bundle selection for RFC 0049.
 
 If any of those decisions change field names or required semantics, RFC 0046's
-projection implementation must be revised before migration work starts.
+projection implementation and this design reference must be revised together.
 
 ## Dependencies And Implementation Prerequisites
 
-This RFC remains a proposal. It does not authorize migrations, projection
-workers, serving paths, or default operator use.
-
-Before any RFC 0046 migration or projection worker is implemented, the project
-must have either completed the RFC 0044 Phase 0 hardening queue or produced
-EG-000-equivalent evidence from RFC 0049. The prerequisite evidence must cover:
+D083 accepted this RFC as design reference after migration 015 and the
+projection, retrieval, packet, gate, and e2e smoke slices landed. Future
+projection changes must preserve or refresh the hardening evidence below and
+update this RFC when code drifts:
 
 - primary-pair semantics for Striatum reads, including
   `memory.read_cross_corpus` and `memory.read_cross_tenant` requirements for
